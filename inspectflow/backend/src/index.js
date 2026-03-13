@@ -11,6 +11,7 @@ import recordsRouter from "./routes/records.js";
 import auditRouter from "./routes/audit.js";
 import rolesRouter from "./routes/roles.js";
 import sessionsRouter from "./routes/sessions.js";
+import issuesRouter from "./routes/issues.js";
 
 dotenv.config();
 
@@ -32,6 +33,7 @@ app.use("/api/records", recordsRouter);
 app.use("/api/audit", auditRouter);
 app.use("/api/roles", rolesRouter);
 app.use("/api/sessions", sessionsRouter);
+app.use("/api/issues", issuesRouter);
 
 app.use((err, req, res, next) => {
   console.error(err);

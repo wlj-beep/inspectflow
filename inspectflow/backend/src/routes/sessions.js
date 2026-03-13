@@ -23,11 +23,16 @@ router.post("/end", requireAnyCapability(["view_operator", "view_admin"]), async
     const { userId } = req.body || {};
     if (!userId) return res.status(400).json({ error: "user_required" });
     const { rows } = await query(
-      `UPDATE user_sessions
+      `WITH latest AS (
+         SELECT id
+         FROM user_sessions
+         WHERE user_id=$1 AND end_ts IS NULL
+         ORDER BY start_ts DESC
+         LIMIT 1
+       )
+       UPDATE user_sessions
        SET end_ts=NOW()
-       WHERE user_id=$1 AND end_ts IS NULL
-       ORDER BY start_ts DESC
-       LIMIT 1
+       WHERE id IN (SELECT id FROM latest)
        RETURNING *`,
       [userId]
     );

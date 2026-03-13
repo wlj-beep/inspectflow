@@ -6,6 +6,9 @@ These instructions optimize context usage. Read in order and use the criteria be
 
 ## 1) Always Read First (Small, High Signal)
 - `README.md`
+- `STATUS.md`
+- `docs/backlog.md`
+- `WORKLOG.md`
 - `docs/architecture.md`
 - `docs/mvp-scope.md`
 - `docs/test-plan.md`
@@ -13,6 +16,9 @@ These instructions optimize context usage. Read in order and use the criteria be
 Criteria:
 - Small bug fix or doc tweak: Section 1 is usually sufficient.
 - Feature work or behavior changes: read Section 1 + the relevant parts of Section 2.
+
+Coordination requirement:
+- No coding without prior claim in `STATUS.md`.
 
 ## 2) Then Read Based on Task
 - Backend API or data behavior:
@@ -70,7 +76,12 @@ Criteria:
 - Prefer docs over code for intent; use code for exact behavior.
 - If a task spans frontend + backend, read both entrypoints before proposing a change.
 
-## 11) Thread Hygiene / Context Windows
+## 11) Forward Progress / Decision Gates
+- Default behavior: proceed with implementation using reasonable assumptions.
+- Stop only when blocked (missing critical info) or when a major product/architecture decision requires user input.
+- When you proceed with assumptions, state them clearly in the response.
+
+## 12) Thread Hygiene / Context Windows
 - Start a new thread when:
   - Switching to a different feature/area (frontend ↔ backend, testing ↔ UX, etc.).
   - The request is unrelated to the thread’s main purpose.
@@ -82,3 +93,14 @@ Criteria:
   - You want continuity for a single milestone.
 - Assistant behavior:
   - If a request appears to drift from the thread’s main purpose, call it out and prompt the user to start a new thread.
+
+## 13) Global Priority + Claim Workflow
+- `STATUS.md` is the canonical global execution queue.
+- `docs/backlog.md` is the detailed backlog spec keyed by stable `BL-###` IDs.
+- `WORKLOG.md` is the immutable completion log.
+- Start from the highest-ranked eligible item in `STATUS.md`.
+- Claim work before implementation by setting `Status`, `Owner`, and `Updated`.
+- Soft claim policy: one lead owner is required; collaborators are allowed only when explicitly listed in `Owner`.
+- Only the Coordinator may change global `Rank` or `Priority`.
+- Stale handoff rule: if `Updated` is older than 24 hours, another agent may claim the item after adding a handoff note in `STATUS.md`.
+- Completion flow: remove/close the active queue entry in `STATUS.md`, then append a dated result in `WORKLOG.md`.

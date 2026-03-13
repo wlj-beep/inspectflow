@@ -10,7 +10,9 @@ describe("API smoke", () => {
   });
 
   it("returns seeded users", async () => {
-    const res = await request(app).get("/api/users");
+    const res = await request(app)
+      .get("/api/users")
+      .set("x-user-role", "Operator");
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
     expect(res.body.length).toBeGreaterThan(0);

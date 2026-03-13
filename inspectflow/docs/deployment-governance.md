@@ -16,6 +16,7 @@ This plan defines the minimum controls required before any deployment.
 - Emergency: urgent fixes. Reviewer Agent approval required; document justification and follow-up review.
 
 ## Required Checks
+- Coordination queue validation (`npm run coordination:check`).
 - API smoke tests (`npm run test:api`) or repo root `npm run test`.
 - UI smoke tests (`npm run test:ui`) for UI-impacting changes.
 - Manual tests from `docs/test-plan.md` when behavior changes.

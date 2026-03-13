@@ -2,41 +2,43 @@
 
 ## Goals
 - Prevent duplicate or conflicting work across agents.
+- Drive work by one global ranked priority queue.
 - Ensure every change is reviewed and tested before merge or deploy.
-- Keep a single source of truth for work in progress and intent.
 
 ## Roles
 Coordinator Agent
-- Owns work intake and de-duplication.
-- Assigns a single owner to each work item.
-- Maintains `STATUS.md` and `WORKLOG.md`.
-- Sequences merges to reduce conflicts.
-- Verifies that required checks and approvals are complete before changes are accepted.
+- Owns intake, de-duplication, and queue ordering.
+- Maintains ranked priority order in `STATUS.md`.
+- Maintains `WORKLOG.md` completion history.
+- Resolves overlap and sequencing conflicts.
 
 Reviewer Agent
 - Performs required code review for every change.
 - Enforces PR checklist compliance and test evidence.
 - Verifies rollback and risk notes for production-impacting changes.
-- Flags cross-cutting impacts and requests additional reviewers when needed.
 
 ## Required Artifacts
-- `STATUS.md`: live snapshot of active work, owners, and intent.
-- `WORKLOG.md`: brief, chronological record of decisions and merged changes.
-- PR template: consistent change summary, test plan, risk, and rollback fields.
+- `STATUS.md`: canonical global execution queue and active ownership state.
+- `docs/backlog.md`: backlog detail and acceptance context keyed by `BL-###` IDs.
+- `WORKLOG.md`: chronological merged-change and decision history.
+- PR template: consistent change summary, test plan, risk, rollback, and coordination approvals.
 
 ## Working Rules
-- One work item, one owner, one branch.
-- No parallel work on the same file set without explicit coordination.
-- If overlap is detected, the Coordinator Agent decides sequencing.
+- No coding without prior claim in `STATUS.md`.
+- Agents start with the highest-ranked eligible queue item.
+- Soft claim policy: one lead owner per active item; collaborators allowed only when listed in `Owner`.
+- Only the Coordinator may change queue `Rank` or `Priority`.
+- If `Updated` is older than 24 hours, another agent may take over after recording a handoff note in `STATUS.md`.
+- Every `STATUS.md` item must reference a valid `BL-###` entry in `docs/backlog.md`.
 - Reviewer Agent approval is required before merge.
-- High-risk changes require explicit approval and documented rollback steps.
 
 ## Definition of Ready
-- Clear scope and acceptance criteria.
-- Owner assigned in `STATUS.md`.
-- Dependencies identified.
+- Item exists in `docs/backlog.md` with a stable `BL-###` ID.
+- Item is ranked in `STATUS.md` with `Priority` and `Status` set.
+- Lead owner is assigned for active states (`Claimed`, `In Progress`, `Blocked`).
 
 ## Definition of Done
+- Change is merged or explicitly closed.
+- Queue entry is removed/closed in `STATUS.md`.
+- `WORKLOG.md` entry is appended with date, owner, and result.
 - Tests pass or are explicitly waived with justification.
-- Reviewer Agent approval recorded.
-- `WORKLOG.md` entry added with outcome and date.

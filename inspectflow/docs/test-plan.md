@@ -6,6 +6,16 @@ This checklist validates the MVP requirements and is intended for manual executi
 1. Ensure `DATABASE_URL_TEST` is set in `backend/.env`.
 2. Run `npm run test` from the repo root.
 
+## Latest Validation Run (2026-03-12)
+- Executed `npm run test` from repo root: API + UI suites passing.
+- Added backend regression coverage for:
+  - Capability enforcement across admin/workflow endpoints.
+  - Job lock ownership rules and `manage_jobs` override unlock.
+  - Record validation for invalid dimension/tool references.
+  - Missing-piece reason requirements (`Scrapped`, `Other`, `Unable to Measure`).
+  - Supervisor edit audit-log integrity and CSV export verification.
+  - Role capability read/write persistence checks.
+
 ## Setup
 1. Start Postgres.
 2. Start backend (`npm run dev`) and frontend (`npm run dev`).

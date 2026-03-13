@@ -36,6 +36,10 @@ jobs:
           cache-dependency-path: |
             inspectflow/backend/package-lock.json
 
+      - name: Validate coordination queue
+        run: npm run coordination:check
+        working-directory: inspectflow
+
       - name: Install backend dependencies
         run: npm ci
         working-directory: inspectflow/backend

@@ -37,6 +37,16 @@ function validateRecordTools(tools) {
   return null;
 }
 
+function isFiniteNonNegativeNumber(value) {
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0;
+}
+
+function splitRange(value) {
+  const [minRaw = "", maxRaw = ""] = String(value || "").split("|");
+  return [minRaw.trim(), maxRaw.trim()];
+}
+
 async function validateRecordRefs(operationId, values, tools) {
   const dimIds = Array.from(
     new Set([
@@ -167,17 +177,44 @@ router.get("/:id/export", requireCapability("view_records"), async (req, res, ne
       [id]
     );
 
-    const header = "record_id,dimension_id,dimension_name,piece_number,value,is_oot";
-    const lines = rows.map((r) =>
-      [
+    const auditRes = await query(
+      `SELECT a.field, a.before_value, a.after_value, a.reason, a.timestamp, a.user_id, u.name AS user_name
+       FROM audit_log a
+       LEFT JOIN users u ON u.id = a.user_id
+       WHERE a.record_id=$1
+       ORDER BY a.timestamp ASC`,
+      [id]
+    );
+    const auditByKey = {};
+    for (const a of auditRes.rows) {
+      const m = String(a.field || "").match(/^dim:(\d+)\|piece:(\d+)$/);
+      if (!m) continue;
+      const key = `${m[1]}_${m[2]}`;
+      if (!auditByKey[key]) auditByKey[key] = [];
+      auditByKey[key].push(a);
+    }
+
+    const header = "record_id,dimension_id,dimension_name,piece_number,value,is_oot,override_count,last_override_ts,last_override_user_id,last_override_user,last_override_reason,last_before_value,last_after_value";
+    const lines = rows.map((r) => {
+      const key = `${r.dimension_id}_${r.piece_number}`;
+      const edits = auditByKey[key] || [];
+      const last = edits.length ? edits[edits.length - 1] : null;
+      return [
         r.record_id,
         r.dimension_id,
         `"${String(r.dimension_name).replace(/\"/g, '""')}"`,
         r.piece_number,
         `"${String(r.value).replace(/\"/g, '""')}"`,
-        r.is_oot
-      ].join(",")
-    );
+        r.is_oot,
+        edits.length,
+        last ? `"${String(last.timestamp).replace(/\"/g, '""')}"` : "\"\"",
+        last?.user_id ?? "",
+        last ? `"${String(last.user_name || "").replace(/\"/g, '""')}"` : "\"\"",
+        last ? `"${String(last.reason || "").replace(/\"/g, '""')}"` : "\"\"",
+        last ? `"${String(last.before_value || "").replace(/\"/g, '""')}"` : "\"\"",
+        last ? `"${String(last.after_value || "").replace(/\"/g, '""')}"` : "\"\""
+      ].join(",");
+    });
 
     const csv = [header, ...lines].join("\n");
     res.setHeader("Content-Type", "text/csv");
@@ -302,7 +339,7 @@ router.post("/", requireCapability("submit_records"), async (req, res, next) => 
 router.put("/:id/value", requireCapability("edit_records"), async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { userId, dimensionId, pieceNumber, value, isOot, reason } = req.body;
+    const { userId, dimensionId, pieceNumber, value, reason } = req.body;
     const userIdNum = Number(userId);
     const dimIdNum = Number(dimensionId);
     const pieceNum = Number(pieceNumber);
@@ -320,15 +357,56 @@ router.put("/:id/value", requireCapability("edit_records"), async (req, res, nex
       const prev = prevRes.rows[0];
       if (!prev) return { error: "not_found" };
 
+      const dimCtxRes = await client.query(
+        `SELECT d.nominal, d.tol_plus, d.tol_minus, d.input_mode, t.type AS tool_type
+         FROM dimensions d
+         JOIN records r ON r.id=$1 AND r.operation_id=d.operation_id
+         LEFT JOIN record_tools rt ON rt.record_id=r.id AND rt.dimension_id=d.id
+         LEFT JOIN tools t ON t.id=rt.tool_id
+         WHERE d.id=$2`,
+        [id, dimIdNum]
+      );
+      const dimCtx = dimCtxRes.rows[0];
+      if (!dimCtx) return { error: "dimension_not_in_record" };
+
+      let normalizedValue = String(value).trim();
+      let nextIsOot = false;
+      if (dimCtx.tool_type === "Go/No-Go") {
+        normalizedValue = normalizedValue.toUpperCase();
+        if (!["PASS", "FAIL"].includes(normalizedValue)) {
+          return { error: "invalid_value_for_mode" };
+        }
+        nextIsOot = normalizedValue === "FAIL";
+      } else if (dimCtx.input_mode === "range") {
+        const [minRaw, maxRaw] = splitRange(normalizedValue);
+        if (!isFiniteNonNegativeNumber(minRaw) || !isFiniteNonNegativeNumber(maxRaw)) {
+          return { error: "invalid_value_for_mode" };
+        }
+        const minNum = Number(minRaw);
+        const maxNum = Number(maxRaw);
+        normalizedValue = `${minRaw}|${maxRaw}`;
+        const lower = Number(dimCtx.nominal) - Number(dimCtx.tol_minus);
+        const upper = Number(dimCtx.nominal) + Number(dimCtx.tol_plus);
+        nextIsOot = minNum < lower || minNum > upper || maxNum < lower || maxNum > upper;
+      } else {
+        if (!isFiniteNonNegativeNumber(normalizedValue)) {
+          return { error: "invalid_value_for_mode" };
+        }
+        const n = Number(normalizedValue);
+        const lower = Number(dimCtx.nominal) - Number(dimCtx.tol_minus);
+        const upper = Number(dimCtx.nominal) + Number(dimCtx.tol_plus);
+        nextIsOot = n < lower || n > upper;
+      }
+
       await client.query(
         `UPDATE record_values SET value=$1, is_oot=$2 WHERE record_id=$3 AND dimension_id=$4 AND piece_number=$5`,
-        [String(value), !!isOot, id, dimIdNum, pieceNum]
+        [normalizedValue, nextIsOot, id, dimIdNum, pieceNum]
       );
 
       await client.query(
         `INSERT INTO audit_log (record_id, user_id, field, before_value, after_value, reason)
          VALUES ($1,$2,$3,$4,$5,$6)`,
-        [id, userIdNum, `dim:${dimIdNum}|piece:${pieceNum}`, prev.value, String(value), String(reason).trim()]
+        [id, userIdNum, `dim:${dimIdNum}|piece:${pieceNum}`, prev.value, normalizedValue, String(reason).trim()]
       );
 
       const ootRes = await client.query(
@@ -342,6 +420,8 @@ router.put("/:id/value", requireCapability("edit_records"), async (req, res, nex
 
     if (result?.error === "user_not_found") return res.status(400).json({ error: "user_not_found" });
     if (result?.error === "not_found") return res.status(404).json({ error: "not_found" });
+    if (result?.error === "dimension_not_in_record") return res.status(404).json({ error: "not_found" });
+    if (result?.error === "invalid_value_for_mode") return res.status(400).json({ error: "invalid_value_for_mode" });
     res.json({ ok: true });
   } catch (err) {
     next(err);

@@ -45,4 +45,7 @@ Playwright requires browser binaries:
 
 ## Coordination and Deployment
 - `docs/coordination-plan.md` defines agent roles, artifacts, and working rules.
+- `STATUS.md` is the canonical global ranked queue for active backlog work.
+- `docs/backlog.md` stores detailed backlog items keyed by `BL-###`.
+- `WORKLOG.md` stores completed work history.
 - `docs/deployment-governance.md` defines change controls and pre-deploy checks.

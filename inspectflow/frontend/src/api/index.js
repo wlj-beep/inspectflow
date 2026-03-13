@@ -66,5 +66,13 @@ export const api = {
   sessions: {
     start: (userId, role) => apiFetch("/api/sessions/start", { method: "POST", body: { userId }, role }),
     end: (userId, role) => apiFetch("/api/sessions/end", { method: "POST", body: { userId }, role })
+  },
+  issues: {
+    list: (filters = {}, role) => {
+      const qs = new URLSearchParams(filters).toString();
+      return apiFetch(`/api/issues${qs ? `?${qs}` : ""}`, { role });
+    },
+    create: (payload, role) => apiFetch("/api/issues", { method: "POST", body: payload, role }),
+    complete: (id, payload, role) => apiFetch(`/api/issues/${id}/complete`, { method: "PUT", body: payload, role })
   }
 };

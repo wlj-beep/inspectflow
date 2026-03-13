@@ -111,6 +111,33 @@ CREATE TABLE IF NOT EXISTS audit_log (
   reason TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS issue_reports (
+  id SERIAL PRIMARY KEY,
+  category TEXT NOT NULL CHECK (category IN (
+    'part_issue',
+    'tolerance_issue',
+    'dimension_issue',
+    'operation_mapping_issue',
+    'app_functionality_issue',
+    'tool_issue',
+    'sampling_issue',
+    'other'
+  )),
+  details TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','completed')),
+  part_id TEXT REFERENCES parts(id),
+  operation_id INTEGER REFERENCES operations(id),
+  dimension_id INTEGER REFERENCES dimensions(id),
+  job_id TEXT REFERENCES jobs(id),
+  record_id INTEGER REFERENCES records(id),
+  submitted_by_user_id INTEGER NOT NULL REFERENCES users(id),
+  submitted_by_role TEXT NOT NULL CHECK (submitted_by_role IN ('Operator','Quality','Supervisor','Admin')),
+  submitted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  resolved_by_user_id INTEGER REFERENCES users(id),
+  resolved_at TIMESTAMPTZ,
+  resolution_note TEXT
+);
+
 ALTER TABLE tools ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE tools ADD COLUMN IF NOT EXISTS visible BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE tools ADD COLUMN IF NOT EXISTS size TEXT;

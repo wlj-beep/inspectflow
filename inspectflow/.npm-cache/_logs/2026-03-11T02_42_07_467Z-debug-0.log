@@ -30,3 +30,7 @@
 29 timing npm:load:configScope Completed in 0ms
 30 timing npm:load Completed in 19ms
 31 silly logfile done cleaning log files
+32 timing command:run Completed in 169956198ms
+33 verbose exit 0
+34 timing npm Completed in 169956230ms
+35 info ok

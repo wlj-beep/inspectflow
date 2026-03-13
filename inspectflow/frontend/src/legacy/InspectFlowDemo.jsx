@@ -40,6 +40,16 @@ const COMMON_TOOL_TEMPLATES = [
   { name:"Surface Comparator", type:"Attribute" },
   { name:"Optical Comparator", type:"Attribute" }
 ];
+const ISSUE_CATEGORIES = [
+  { value:"part_issue", label:"Part issue" },
+  { value:"tolerance_issue", label:"Tolerance issue" },
+  { value:"dimension_issue", label:"Dimension issue" },
+  { value:"operation_mapping_issue", label:"Wrong operation-stage mapping" },
+  { value:"app_functionality_issue", label:"App/functionality issue" },
+  { value:"tool_issue", label:"Tool issue" },
+  { value:"sampling_issue", label:"Sampling-plan issue" },
+  { value:"other", label:"Other" }
+];
 function getSamplePieces(plan,qty){
   if(qty<=0) return [];
   switch(plan){
@@ -144,6 +154,16 @@ function formatValue(value, dim){
   const num=parseFloat(s);
   if(isNaN(num)) return s;
   return num.toFixed(dec);
+}
+function splitRangeValue(value){
+  if(!value || !String(value).includes("|")) return ["",""];
+  const [minRaw,maxRaw]=String(value).split("|");
+  return [minRaw || "", maxRaw || ""];
+}
+function isValidNonNegativeNumber(value){
+  if(value===undefined || value===null || String(value).trim()==="") return false;
+  const n=Number(value);
+  return Number.isFinite(n) && n >= 0;
 }
 
 class ErrorBoundary extends React.Component {
@@ -519,6 +539,7 @@ select option{background:var(--panel2)}
 .det-section{font-family:var(--cond);font-size:.68rem;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--info);padding:.6rem 0 .35rem;border-bottom:1px solid var(--border2);margin-bottom:.5rem}
 .it-reminder{font-family:var(--mono);font-size:.68rem;color:var(--info);margin-top:.22rem;padding:.1rem .35rem;background:#0d1f2e;border:1px solid #1e4a6e;border-radius:2px;display:inline-block}
 .meas-table .dc{position:relative}
+.ux-hint{font-size:.88rem !important;line-height:1.45 !important;color:#9eb7cf !important}
 .col-resize{position:absolute;top:0;right:0;width:5px;height:100%;cursor:col-resize;z-index:10;background:transparent;user-select:none}
 .col-resize:hover,.col-resize.dragging{background:var(--accent)}
 `;
@@ -670,6 +691,11 @@ function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, currentUser
   const [jobErr,setJobErr]=useState("");
   const [submitErr,setSubmitErr]=useState("");
   const [submitting,setSubmitting]=useState(false);
+  const [issueCategory,setIssueCategory]=useState("app_functionality_issue");
+  const [issueDetails,setIssueDetails]=useState("");
+  const [issueErr,setIssueErr]=useState("");
+  const [issueOk,setIssueOk]=useState("");
+  const [reportingIssue,setReportingIssue]=useState(false);
   const idleRef=useRef(null);
   const currentUserName = usersById?.[String(currentUserId)] || "";
 
@@ -686,6 +712,17 @@ function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, currentUser
     function onUp(){ document.removeEventListener("mousemove",onMove);document.removeEventListener("mouseup",onUp); }
     document.addEventListener("mousemove",onMove);document.addEventListener("mouseup",onUp);
   }
+  function maybeStartResize(e){
+    if(e.button!==0) return;
+    const cell=e.target?.closest?.("td[data-dim-id]");
+    if(!cell) return;
+    const rect=cell.getBoundingClientRect();
+    const nearRightEdge=(rect.right - e.clientX) <= 12;
+    if(!nearRightEdge) return;
+    const dimId=cell.getAttribute("data-dim-id");
+    if(!dimId) return;
+    startResize(e, dimId);
+  }
   function preventNegative(e){
     if(e.key==="-"||e.key==="e"||e.key==="E") e.preventDefault();
   }
@@ -695,11 +732,7 @@ function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, currentUser
       setValues(p=>({...p,[key]:""}));
     }
   }
-  function splitRange(val){
-    if(!val||!String(val).includes("|")) return ["",""];
-    const [a,b]=String(val).split("|");
-    return [a||"",b||""];
-  }
+  function splitRange(val){ return splitRangeValue(val); }
   function setRangeValue(key, which, nextVal){
     const [minVal,maxVal]=splitRange(values[key]);
     const nextMin = which==="min"?nextVal:minVal;
@@ -820,6 +853,42 @@ function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, currentUser
     }
   }
   function handleDraft(){onDraft({jobNumber:currentJob.jobNumber,draftData:{values,toolSel,unlocked,missing,comment}});setStep("saved");}
+  async function handleIssueSubmit(){
+    if(dataStatus!=="live"){
+      setIssueErr("Issue reporting requires live data mode.");
+      setIssueOk("");
+      return;
+    }
+    if(!currentUserId){
+      setIssueErr("Select a current user before submitting an issue.");
+      setIssueOk("");
+      return;
+    }
+    if(!issueDetails.trim()){
+      setIssueErr("Issue details are required.");
+      setIssueOk("");
+      return;
+    }
+    setReportingIssue(true);
+    setIssueErr("");
+    setIssueOk("");
+    try{
+      await api.issues.create({
+        category: issueCategory,
+        details: issueDetails.trim(),
+        userId: Number(currentUserId),
+        partId: currentJob?.partNumber || null,
+        operationId: currentJob?.operationId || null,
+        jobId: currentJob?.jobNumber || null
+      }, currentRole || "Operator");
+      setIssueDetails("");
+      setIssueOk("Issue reported successfully.");
+    }catch(err){
+      setIssueErr(err?.message || "Unable to submit issue report.");
+    }finally{
+      setReportingIssue(false);
+    }
+  }
   function releaseLock(){
     if(onUnlockJob&&currentJob?.jobNumber){
       onUnlockJob(currentJob.jobNumber).catch(()=>{});
@@ -927,10 +996,10 @@ function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, currentUser
       <div className="card" style={{padding:0}}>
         <div className="card-head">
           <div className="card-title">Measurement Entry</div>
-          <div className="text-muted" style={{fontSize:".7rem"}}>+ unlocks N/A cells · × re-locks empty cells · Esc clears a value · auto-save after 20 min idle · drag column edges to resize</div>
+          <div className="text-muted ux-hint">+ unlocks N/A cells · × re-locks empty cells · Esc clears a value · auto-save after 20 min idle · drag near any column edge to resize</div>
         </div>
         <div className="meas-scroll">
-          <table className="meas-table" style={{width: 118 + dims.reduce((s,d)=>s+getColWidth(d.id),0)}}>
+          <table className="meas-table" onMouseDown={maybeStartResize} style={{width: 118 + dims.reduce((s,d)=>s+getColWidth(d.id),0)}}>
             <colgroup>
               <col style={{width:"118px"}}/>
               {dims.map(d=><col key={d.id} style={{width:getColWidth(d.id)+"px"}}/>)}
@@ -939,7 +1008,7 @@ function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, currentUser
               <tr className="hrow">
                 <td className="rl">Dimension</td>
                 {dims.map(d=>(
-                  <td key={d.id} className="dc" style={{padding:0,verticalAlign:"top",position:"relative"}}>
+                  <td key={d.id} data-dim-id={d.id} className="dc" style={{padding:0,verticalAlign:"top",position:"relative"}}>
                     <div className="dim-hdr"><div className="dim-hdr-name">{d.name}</div><div className="dim-hdr-spec">{fmtSpec(d)}</div></div>
                     <div className="col-resize" onMouseDown={e=>startResize(e,d.id)}/>
                   </td>
@@ -952,7 +1021,7 @@ function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, currentUser
                   const toolNames=[...new Set(allowedTools.map(t=>t.name))];
                   const selectedName=toolSel[d.id]?.toolName||"";
                   return (
-                    <td key={d.id} className="dc hdr-cell" style={{verticalAlign:"top"}}>
+                    <td key={d.id} data-dim-id={d.id} className="dc hdr-cell" style={{verticalAlign:"top"}}>
                       <select className="hdr-inp" value={selectedName}
                         onChange={e=>{const name=e.target.value;setToolSel(p=>({...p,[d.id]:{...p[d.id],toolName:name,toolId:"",itNum:""}}));}}>
                         <option value="">— Select Tool —</option>
@@ -967,19 +1036,19 @@ function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, currentUser
                 {dims.map(d=>{
                   const allowedTools=d.tools.map(tid=>toolLibrary[tid]).filter(isToolSelectable);
                   const selectedName=toolSel[d.id]?.toolName||"";
-                  const itOptions=selectedName?allowedTools.filter(t=>t.name===selectedName):[];
+                  const itOptions=selectedName?allowedTools.filter(t=>t.name===selectedName):allowedTools;
                   const itListId=`itlist_${d.id}`;
                   const currentIt=(toolSel[d.id]?.itNum||"").toUpperCase();
-                  const match=itOptions.find(t=>String(t.itNum).toUpperCase()===currentIt);
+                  const match=allowedTools.find(t=>String(t.itNum).toUpperCase()===currentIt);
                   const invalid=currentIt && !match;
                   return (
-                    <td key={d.id} className="dc hdr-cell">
-                      <input className="hdr-inp mf" list={itListId} value={currentIt} disabled={!selectedName}
-                        placeholder="Type or select IT #"
+                    <td key={d.id} data-dim-id={d.id} className="dc hdr-cell">
+                      <input className="hdr-inp mf" list={itListId} value={currentIt}
+                        placeholder={selectedName ? "Type or select IT #" : "Type IT # or choose tool first"}
                         onChange={e=>{
                           const v=e.target.value.toUpperCase();
-                          const t=itOptions.find(x=>String(x.itNum).toUpperCase()===v);
-                          setToolSel(p=>({...p,[d.id]:{...p[d.id],toolId:t?.id||"",itNum:v}}));
+                          const t=allowedTools.find(x=>String(x.itNum).toUpperCase()===v);
+                          setToolSel(p=>({...p,[d.id]:{...p[d.id],toolName:t?.name||p[d.id]?.toolName||"",toolId:t?.id||"",itNum:v}}));
                         }}
                         onBlur={()=>{
                           if(!currentIt){
@@ -987,7 +1056,7 @@ function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, currentUser
                             return;
                           }
                           if(match){
-                            setToolSel(p=>({...p,[d.id]:{...p[d.id],toolId:match.id,itNum:match.itNum}}));
+                            setToolSel(p=>({...p,[d.id]:{...p[d.id],toolName:match.name,toolId:match.id,itNum:match.itNum}}));
                           }
                         }}
                       />
@@ -1002,7 +1071,7 @@ function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, currentUser
               <tr className="hrow">
                 <td className="rl">Sampling</td>
                 {dims.map(d=>(
-                  <td key={d.id} className="dc tag-cell">
+                  <td key={d.id} data-dim-id={d.id} className="dc tag-cell">
                     <span className="sample-tag">{samplingLabel(d.sampling)}</span>
                     {isGaugeMode(d.id)&&<span className="gauge-tag">Go/No-Go</span>}
                     {(d.inputMode||"single")==="range" && !isGaugeMode(d.id) && <span className="range-tag">Range</span>}
@@ -1011,7 +1080,7 @@ function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, currentUser
               </tr>
               <tr className="div-row">
                 <td style={{padding:0,height:"2px",borderBottom:"2px solid var(--accent)"}}/>
-                {dims.map(d=><td key={d.id} style={{padding:0,height:"2px",borderBottom:"2px solid var(--accent)"}}/>)}
+                {dims.map(d=><td key={d.id} data-dim-id={d.id} style={{padding:0,height:"2px",borderBottom:"2px solid var(--accent)"}}/>)}
               </tr>
               {allPieces.map(pNum=>{
                 const isMissing=!!missing[pNum];
@@ -1029,14 +1098,14 @@ function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, currentUser
                       const gaugeMode=isGaugeMode(dim.id);
                       const rangeMode=(dim.inputMode||"single")==="range" && !gaugeMode;
                       if(isMissing){
-                        return <td key={dim.id} style={{textAlign:"center",color:"var(--border2)",fontFamily:"var(--mono)",fontSize:".78rem",padding:".26rem .4rem",verticalAlign:"middle"}}>—</td>;
+                        return <td key={dim.id} data-dim-id={dim.id} style={{textAlign:"center",color:"var(--border2)",fontFamily:"var(--mono)",fontSize:".78rem",padding:".26rem .4rem",verticalAlign:"middle"}}>—</td>;
                       }
                       if(!inPlan&&!isUnlocked){
-                        return <td key={dim.id} style={{padding:".26rem .4rem",verticalAlign:"middle"}}><button className="na-btn" onClick={()=>setUnlocked(p=>({...p,[key]:true}))}>+</button></td>;
+                        return <td key={dim.id} data-dim-id={dim.id} style={{padding:".26rem .4rem",verticalAlign:"middle"}}><button className="na-btn" onClick={()=>setUnlocked(p=>({...p,[key]:true}))}>+</button></td>;
                       }
                       if(isUnlocked&&!hasVal&&!inPlan){
                         return (
-                          <td key={dim.id} style={{padding:".26rem .4rem",verticalAlign:"middle"}}>
+                          <td key={dim.id} data-dim-id={dim.id} style={{padding:".26rem .4rem",verticalAlign:"middle"}}>
                             <div className="ue-wrap">
                               {gaugeMode?(
                                 <div className="pf-wrap" style={{flex:1}}>
@@ -1067,7 +1136,7 @@ function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, currentUser
                       if(gaugeMode){
                         const v=values[key];
                         return (
-                          <td key={dim.id} style={{padding:".26rem .4rem",verticalAlign:"middle"}}>
+                          <td key={dim.id} data-dim-id={dim.id} style={{padding:".26rem .4rem",verticalAlign:"middle"}}>
                             <div className="pf-wrap">
                               <button className={`pf-btn${v==="PASS"?" pass-on":""}`} onClick={()=>togglePf(key,"PASS")}>Pass</button>
                               <button className={`pf-btn${v==="FAIL"?" fail-on":""}`} onClick={()=>togglePf(key,"FAIL")}>Fail</button>
@@ -1079,7 +1148,7 @@ function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, currentUser
                       const st=isOOT(v,dim.tolPlus,dim.tolMinus,dim.nominal);
                       const cls=v===""?"":st===false?"ok":"oot";
                       return (
-                        <td key={dim.id} style={{padding:".26rem .4rem",verticalAlign:"middle"}}>
+                        <td key={dim.id} data-dim-id={dim.id} style={{padding:".26rem .4rem",verticalAlign:"middle"}}>
                           {rangeMode?(
                             <div style={{display:"flex",gap:".35rem"}}>
                               <input className={`vi ${cls}${isUnlocked?" ux":""}`} type="number" min="0" step="0.0001"
@@ -1131,6 +1200,30 @@ function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, currentUser
             {toolsReady&&hasOOT&&!comment.trim()&&<span className="text-warn" style={{fontSize:".75rem"}}>Comment required for OOT</span>}
           </div>
           {submitErr&&<p className="err-text mt1">{submitErr}</p>}
+        </div>
+      </div>
+      <div className="card">
+        <div className="card-head"><div className="card-title">Report Issue</div></div>
+        <div className="card-body">
+          <div className="row2">
+            <div className="field">
+              <label>Category</label>
+              <select value={issueCategory} onChange={e=>setIssueCategory(e.target.value)}>
+                {ISSUE_CATEGORIES.map(c=><option key={c.value} value={c.value}>{c.label}</option>)}
+              </select>
+            </div>
+            <div className="field" style={{gridColumn:"span 2"}}>
+              <label>Details</label>
+              <textarea value={issueDetails} onChange={e=>setIssueDetails(e.target.value)} placeholder="Describe the issue, what you expected, and what happened." />
+            </div>
+          </div>
+          <div className="gap1 mt1">
+            <button className="btn btn-ghost" onClick={handleIssueSubmit} disabled={reportingIssue || !issueDetails.trim()}>
+              {reportingIssue ? "Submitting…" : "Submit Issue"}
+            </button>
+            {issueOk && <span className="text-ok">{issueOk}</span>}
+            {issueErr && <span className="text-warn">{issueErr}</span>}
+          </div>
         </div>
       </div>
     </div>
@@ -1692,6 +1785,17 @@ function RecordDetailModal({ record, parts, toolLibrary, usersById, canEdit, onE
   const part   = parts[localRecord.partNumber];
   const opData = part?.operations[localRecord.operation];
   const dims   = opData?.dimensions ?? [];
+  const editDim = editTarget ? dims.find(d=>String(d.id)===String(editTarget.dimensionId)) : null;
+  const editToolSel = editTarget ? localRecord.tools?.[String(editTarget.dimensionId)] : null;
+  const editTool = editToolSel ? toolLibrary[editToolSel.toolId] : null;
+  const editMode = editTool?.type==="Go/No-Go" ? "gauge" : ((editDim?.inputMode||"single")==="range" ? "range" : "single");
+  const [editRangeMin,editRangeMax] = splitRangeValue(editValue);
+  function setEditRange(which, nextVal){
+    const nextMin = which==="min" ? nextVal : editRangeMin;
+    const nextMax = which==="max" ? nextVal : editRangeMax;
+    const next = (nextMin || nextMax) ? `${nextMin}|${nextMax}` : "";
+    setEditValue(next);
+  }
   const operatorName = getOperatorName(localRecord, usersById);
   const allPieces = dims.length > 0
     ? [...new Set(dims.flatMap(d => getSamplePieces(d.sampling, localRecord.qty)))].sort((a,b)=>a-b)
@@ -1705,19 +1809,44 @@ function RecordDetailModal({ record, parts, toolLibrary, usersById, canEdit, onE
     if(!editTarget) return;
     if(!editReason.trim()){ setEditErr("Reason required for supervisor edits."); return; }
     if(!onEditValue){ setEditErr("Editing not available."); return; }
+    let normalizedValue=String(editValue ?? "").trim();
+    if(editMode==="gauge"){
+      const v=normalizedValue.toUpperCase();
+      if(v!=="PASS" && v!=="FAIL"){
+        setEditErr("This dimension only allows PASS or FAIL corrections.");
+        return;
+      }
+      normalizedValue=v;
+    }else if(editMode==="range"){
+      const [minStr,maxStr]=splitRangeValue(normalizedValue);
+      if(!isValidNonNegativeNumber(minStr) || !isValidNonNegativeNumber(maxStr)){
+        setEditErr("Range dimensions require numeric Min and Max values.");
+        return;
+      }
+      normalizedValue=`${minStr}|${maxStr}`;
+    }else{
+      if(!isValidNonNegativeNumber(normalizedValue)){
+        setEditErr("Numeric dimensions require a valid non-negative value.");
+        return;
+      }
+    }
     setSaving(true);setEditErr("");
     try{
       const updated=await onEditValue({
         recordId: localRecord.id,
         dimensionId: editTarget.dimensionId,
         pieceNumber: editTarget.pieceNumber,
-        value: editValue,
+        value: normalizedValue,
         reason: editReason.trim()
       });
       if(updated) setLocalRecord(updated);
       setEditTarget(null);setEditValue("");setEditReason("");
     }catch(e){
-      setEditErr(e?.message||"Unable to save edit.");
+      if(e?.message==="invalid_value_for_mode"){
+        setEditErr("Value does not match the required input mode for this dimension.");
+      }else{
+        setEditErr(e?.message||"Unable to save edit.");
+      }
     }finally{
       setSaving(false);
     }
@@ -1766,7 +1895,7 @@ function RecordDetailModal({ record, parts, toolLibrary, usersById, canEdit, onE
           </div>
           <div className="det-section">Tools Used</div>
           <table className="det-table" style={{marginBottom:"1.25rem"}}>
-            <thead><tr><th>Dimension</th><th>Specification</th><th>Tool</th><th>Type</th><th>IT #</th></tr></thead>
+            <thead><tr><th>Dimension</th><th>Specification</th><th>Sampling</th><th>Tool</th><th>Type</th><th>IT #</th></tr></thead>
             <tbody>
               {dims.map(d => {
                 const ts  = localRecord.tools?.[d.id];
@@ -1775,6 +1904,7 @@ function RecordDetailModal({ record, parts, toolLibrary, usersById, canEdit, onE
                   <tr key={d.id}>
                     <td style={{fontWeight:600}}>{d.name}</td>
                     <td style={{fontFamily:"var(--mono)",fontSize:".78rem",color:"var(--muted)"}}>{fmtSpec(d)}</td>
+                    <td><span className="sample-tag">{samplingLabel(d.sampling)}</span></td>
                     <td>{tl?.name ?? <span style={{color:"var(--muted)"}}>—</span>}</td>
                     <td>{tl ? <TypeBadge type={tl.type}/> : "—"}</td>
                     <td style={{fontFamily:"var(--mono)",fontSize:".78rem"}}>{ts?.itNum ?? "—"}</td>
@@ -1789,7 +1919,7 @@ function RecordDetailModal({ record, parts, toolLibrary, usersById, canEdit, onE
               <thead>
                 <tr>
                   <th style={{minWidth:"60px"}}>Piece</th>
-                  {dims.map(d=><th key={d.id}>{d.name}<div style={{fontFamily:"var(--mono)",fontSize:".6rem",color:"var(--border2)",fontWeight:400,marginTop:".1rem"}}>{fmtSpec(d)}</div></th>)}
+                  {dims.map(d=><th key={d.id}>{d.name}<div style={{fontFamily:"var(--mono)",fontSize:".6rem",color:"var(--border2)",fontWeight:400,marginTop:".1rem"}}>{fmtSpec(d)}</div><div style={{fontFamily:"var(--mono)",fontSize:".58rem",color:"var(--info)",fontWeight:500,marginTop:".15rem"}}>{samplingLabel(d.sampling)}</div></th>)}
                 </tr>
               </thead>
               <tbody>
@@ -1848,7 +1978,23 @@ function RecordDetailModal({ record, parts, toolLibrary, usersById, canEdit, onE
               </div>
               <div className="field" style={{marginTop:".6rem"}}>
                 <label>New Value</label>
-                <input value={editValue} onChange={e=>setEditValue(e.target.value)} />
+                {editMode==="gauge"?(
+                  <select value={String(editValue||"").toUpperCase()} onChange={e=>setEditValue(e.target.value.toUpperCase())}>
+                    <option value="">Select…</option>
+                    <option value="PASS">PASS</option>
+                    <option value="FAIL">FAIL</option>
+                  </select>
+                ):editMode==="range"?(
+                  <div style={{display:"flex",gap:".45rem"}}>
+                    <input type="number" min="0" step="0.0001" placeholder="Min" value={editRangeMin} onChange={e=>setEditRange("min", e.target.value)} style={{flex:1}} />
+                    <input type="number" min="0" step="0.0001" placeholder="Max" value={editRangeMax} onChange={e=>setEditRange("max", e.target.value)} style={{flex:1}} />
+                  </div>
+                ):(
+                  <input type="number" min="0" step="0.0001" value={editValue} onChange={e=>setEditValue(e.target.value)} />
+                )}
+                <div className="text-muted" style={{fontSize:".7rem",marginTop:".3rem"}}>
+                  {editMode==="gauge" ? "Correction mode: PASS/FAIL only." : editMode==="range" ? "Correction mode: numeric range (Min and Max required)." : "Correction mode: numeric value required."}
+                </div>
               </div>
               <div className="field" style={{marginTop:".6rem"}}>
                 <label>Reason (Required)</label>
@@ -2005,7 +2151,7 @@ function AdminRecords({ records, parts, toolLibrary, usersById, loadRecordDetail
     setExportErr("");setExporting(true);
     try{
       const lines=[];
-      const header=["Job #","Part","Operation","Lot","Qty","Piece","Dimension","Value","Is OOT","Tool","IT #","Operator","Timestamp","Status","Comment","Missing Reason","Missing Details"];
+      const header=["Job #","Part","Operation","Lot","Qty","Piece","Dimension","Sampling Plan","Value","Is OOT","Tool","IT #","Operator","Timestamp","Status","Comment","Override Count","Last Override By","Last Override Timestamp","Override Reason","Prior Value","Corrected Value","Missing Reason","Missing Details"];
       lines.push(header.join(","));
       for(const r of sorted){
         const detail = (r.values && Object.keys(r.values).length>0) ? r : await loadRecordDetail(r.id);
@@ -2014,12 +2160,21 @@ function AdminRecords({ records, parts, toolLibrary, usersById, loadRecordDetail
         const dims = opData?.dimensions || [];
         const dimMap = new Map(dims.map(d=>[String(d.id),d]));
         const toolMap = detail.tools || {};
+        const auditByField = new Map();
+        (detail.auditLog || []).forEach(a=>{
+          const fieldKey=String(a.field || "");
+          if(!auditByField.has(fieldKey)) auditByField.set(fieldKey, []);
+          auditByField.get(fieldKey).push(a);
+        });
         for(const [key,val] of Object.entries(detail.values||{})){
           const [dimId,pieceStr]=key.split("_");
           const d=dimMap.get(String(dimId));
           const ts=toolMap?.[String(dimId)];
           const tl=toolLibrary?.[ts?.toolId];
           const oot=isOOT(val,d?.tolPlus??0,d?.tolMinus??0,d?.nominal??0);
+          const editKey=`dim:${dimId}|piece:${pieceStr}`;
+          const edits=auditByField.get(editKey) || [];
+          const latestEdit=edits[0] || null;
           const row=[
             detail.jobNumber,
             detail.partNumber,
@@ -2028,6 +2183,7 @@ function AdminRecords({ records, parts, toolLibrary, usersById, loadRecordDetail
             detail.qty,
             pieceStr,
             d?.name||`Dim ${dimId}`,
+            d?.sampling ? samplingLabel(d.sampling) : "",
             val,
             oot===true?"Yes":oot===false?"No":"",
             tl?.name||"",
@@ -2036,6 +2192,12 @@ function AdminRecords({ records, parts, toolLibrary, usersById, loadRecordDetail
             detail.timestamp,
             detail.status,
             detail.comment||"",
+            edits.length,
+            latestEdit?.userName || "",
+            latestEdit?.timestamp || "",
+            latestEdit?.reason || "",
+            latestEdit?.beforeValue || "",
+            latestEdit?.afterValue || "",
             "",
             ""
           ];
@@ -2054,10 +2216,17 @@ function AdminRecords({ records, parts, toolLibrary, usersById, loadRecordDetail
             "",
             "",
             "",
+            "",
             getOperatorName(detail, usersById),
             detail.timestamp,
             detail.status,
             detail.comment||"",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
             info.reason||"",
             info.details||info.ncNum||""
           ];
@@ -2150,6 +2319,115 @@ function AdminRecords({ records, parts, toolLibrary, usersById, loadRecordDetail
         </table>
       </div>
       <p className="text-muted">{sorted.length} record{sorted.length!==1?"s":""}</p>
+    </div>
+  );
+}
+
+function AdminIssueReports({ currentRole, currentUserId }) {
+  const [statusFilter,setStatusFilter]=useState("open");
+  const [issues,setIssues]=useState([]);
+  const [loading,setLoading]=useState(false);
+  const [err,setErr]=useState("");
+  const [resolvingId,setResolvingId]=useState(null);
+
+  async function loadIssues(nextStatus=statusFilter){
+    setLoading(true);
+    setErr("");
+    try{
+      const filters=nextStatus ? { status: nextStatus } : {};
+      const rows=await api.issues.list(filters, currentRole || "Admin");
+      setIssues(rows||[]);
+    }catch(e){
+      setErr(e?.message||"Unable to load issue reports.");
+    }finally{
+      setLoading(false);
+    }
+  }
+
+  useEffect(()=>{
+    loadIssues(statusFilter);
+  },[statusFilter,currentRole]);
+
+  async function markCompleted(issueId){
+    if(!currentUserId){
+      setErr("Select a current user before resolving reports.");
+      return;
+    }
+    setResolvingId(issueId);
+    setErr("");
+    try{
+      await api.issues.complete(issueId, { userId:Number(currentUserId), resolutionNote:"Reviewed and completed." }, currentRole || "Admin");
+      await loadIssues(statusFilter);
+    }catch(e){
+      setErr(e?.message||"Unable to mark issue as completed.");
+    }finally{
+      setResolvingId(null);
+    }
+  }
+
+  function categoryLabel(category){
+    return ISSUE_CATEGORIES.find(c=>c.value===category)?.label || category;
+  }
+
+  return (
+    <div className="card" style={{padding:0,overflow:"hidden"}}>
+      <div className="card-head">
+        <div className="card-title">Operator Issue Reports</div>
+        <div style={{display:"flex",alignItems:"center",gap:".5rem"}}>
+          <select value={statusFilter} onChange={e=>setStatusFilter(e.target.value)} style={{minWidth:"140px"}}>
+            <option value="open">Open</option>
+            <option value="completed">Completed</option>
+            <option value="">All</option>
+          </select>
+          <button className="btn btn-ghost btn-sm" onClick={()=>loadIssues(statusFilter)} disabled={loading}>
+            {loading?"Refreshing…":"Refresh"}
+          </button>
+        </div>
+      </div>
+      {err && <div className="err-text" style={{padding:"0 .85rem .6rem"}}>{err}</div>}
+      <table className="data-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Status</th>
+            <th>Category</th>
+            <th>Submitted By</th>
+            <th>Submitted At</th>
+            <th>Context</th>
+            <th>Details</th>
+            <th>Resolution</th>
+          </tr>
+        </thead>
+        <tbody>
+          {issues.length===0 && <tr><td colSpan={8}><div className="empty-state">{loading?"Loading reports…":"No issue reports found."}</div></td></tr>}
+          {issues.map(i=>{
+            const context = [i.part_id ? `Part ${i.part_id}` : "", i.job_id ? `Job ${i.job_id}` : "", i.operation_id ? `Op ${i.operation_id}` : ""].filter(Boolean).join(" · ");
+            return (
+              <tr key={i.id}>
+                <td className="mono">{i.id}</td>
+                <td>{i.status==="completed" ? <span className="badge badge-ok">Completed</span> : <span className="badge badge-open">Open</span>}</td>
+                <td>{categoryLabel(i.category)}</td>
+                <td>{i.submitted_by_name || `User #${i.submitted_by_user_id}`}</td>
+                <td className="mono" style={{fontSize:".74rem",whiteSpace:"nowrap"}}>{fmtTs(i.submitted_at)}</td>
+                <td className="text-muted" style={{fontSize:".74rem"}}>{context || "—"}</td>
+                <td style={{maxWidth:"360px",whiteSpace:"normal",lineHeight:1.4}}>{i.details}</td>
+                <td>
+                  {i.status==="completed" ? (
+                    <div style={{fontSize:".74rem"}}>
+                      <div>{i.resolved_by_name || (i.resolved_by_user_id ? `User #${i.resolved_by_user_id}` : "—")}</div>
+                      <div className="text-muted mono" style={{fontSize:".7rem"}}>{fmtTs(i.resolved_at)}</div>
+                    </div>
+                  ) : (
+                    <button className="btn btn-ghost btn-sm" onClick={()=>markCompleted(i.id)} disabled={resolvingId===i.id}>
+                      {resolvingId===i.id ? "Updating…" : "Mark Complete"}
+                    </button>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -2301,7 +2579,7 @@ function AdminParts({ parts, toolLibrary, onCreatePart, onUpdatePart, onCreateOp
   );
 }
 
-function AdminView({ parts, jobs, records, toolLibrary, users, usersById, currentCaps, roleCaps, loadRecordDetail, onEditValue, onCreateJob, onCreatePart, onUpdatePart, onCreateOp, onCreateDim, onUpdateDim, onRemoveDim, onCreateTool, onUpdateTool, onCreateUser, onUpdateUser, onRemoveUser, onUpdateRoleCaps, onUnlockJob }) {
+function AdminView({ parts, jobs, records, toolLibrary, users, usersById, currentCaps, roleCaps, currentRole, currentUserId, loadRecordDetail, onEditValue, onCreateJob, onCreatePart, onUpdatePart, onCreateOp, onCreateDim, onUpdateDim, onRemoveDim, onCreateTool, onUpdateTool, onCreateUser, onUpdateUser, onRemoveUser, onUpdateRoleCaps, onUnlockJob }) {
   const [tab,setTab]=useState("jobs");
   const [dirtyByTab,setDirtyByTab]=useState({});
   const hasCap = cap => (currentCaps || []).includes(cap);
@@ -2314,13 +2592,15 @@ function AdminView({ parts, jobs, records, toolLibrary, users, usersById, curren
   const canViewRecords=hasCap("view_records");
   const canManageJobs=hasCap("manage_jobs");
   const canViewAdmin=hasCap("view_admin");
+  const canViewIssueReports=hasCap("view_admin");
   useEffect(()=>{
     if(!canViewAdmin) setTab("jobs");
     if(!canManageUsers && tab==="users") setTab("jobs");
     if(!canManageParts && tab==="parts") setTab("jobs");
     if(!canManageTools && tab==="tools") setTab("jobs");
     if(!canManageRoles && tab==="roles") setTab("jobs");
-  },[canViewAdmin,canManageUsers,canManageParts,canManageTools,canManageRoles,tab]);
+    if(!canViewIssueReports && tab==="issues") setTab("jobs");
+  },[canViewAdmin,canManageUsers,canManageParts,canManageTools,canManageRoles,canViewIssueReports,tab]);
   useEffect(()=>{
     const dirty=!!dirtyByTab[tab];
     const handler=e=>{
@@ -2341,6 +2621,7 @@ function AdminView({ parts, jobs, records, toolLibrary, users, usersById, curren
       <div className="sub-tabs">
         {canViewJobs && <button className={`sub-tab ${tab==="jobs"?"active":""}`} onClick={()=>setTabSafe("jobs")}>Job Management</button>}
         {canViewRecords && <button className={`sub-tab ${tab==="records"?"active":""}`} onClick={()=>setTabSafe("records")}>Inspection Records</button>}
+        {canViewIssueReports && <button className={`sub-tab ${tab==="issues"?"active":""}`} onClick={()=>setTabSafe("issues")}>Issue Reports</button>}
         {canManageParts && <button className={`sub-tab ${tab==="parts"?"active":""}`} onClick={()=>setTabSafe("parts")}>Part / Op Setup</button>}
         {canManageTools && <button className={`sub-tab ${tab==="tools"?"active":""}`} onClick={()=>setTabSafe("tools")}>Tool Library</button>}
         {canManageUsers && <button className={`sub-tab ${tab==="users"?"active":""}`} onClick={()=>setTabSafe("users")}>Users</button>}
@@ -2348,6 +2629,7 @@ function AdminView({ parts, jobs, records, toolLibrary, users, usersById, curren
       </div>
       {tab==="jobs"&&canViewJobs&&<AdminJobs parts={parts} jobs={jobs} usersById={usersById} onCreateJob={onCreateJob} canManageJobs={canManageJobs} onUnlockJob={onUnlockJob}/>}
       {tab==="records"&&canViewRecords&&<AdminRecords records={records} parts={parts} toolLibrary={toolLibrary} usersById={usersById} loadRecordDetail={loadRecordDetail} canEdit={canEdit} onEditValue={onEditValue}/>}
+      {tab==="issues"&&canViewIssueReports&&<AdminIssueReports currentRole={currentRole} currentUserId={currentUserId}/>}
       {tab==="parts"&&canManageParts&&<AdminParts parts={parts} toolLibrary={toolLibrary} onCreatePart={onCreatePart} onUpdatePart={onUpdatePart} onCreateOp={onCreateOp} onCreateDim={onCreateDim} onUpdateDim={onUpdateDim} onRemoveDim={onRemoveDim} onDirtyChange={dirty=>setDirtyByTab(p=>({...p,parts:dirty}))}/>}
       {tab==="tools"&&canManageTools&&<AdminTools toolLibrary={toolLibrary} onCreateTool={onCreateTool} onUpdateTool={onUpdateTool}/>}
       {tab==="users"&&canManageUsers&&<AdminUsers users={users} onCreateUser={onCreateUser} onUpdateUser={onUpdateUser} onRemoveUser={onRemoveUser} onDirtyChange={dirty=>setDirtyByTab(p=>({...p,users:dirty}))}/>}
@@ -2375,7 +2657,7 @@ export default function App() {
 
   useEffect(()=>{
     let active=true;
-    api.users.list()
+    api.users.list(currentRole || "Operator")
       .then(rows=>{
         if(!active)return;
         setUsers(rows);
@@ -2471,6 +2753,18 @@ export default function App() {
     return ()=>{active=false;};
   },[]);
 
+  const currentCaps=roleCaps[currentRole] || [];
+  const hasCap = cap => currentCaps.includes(cap);
+  const canViewAdmin = hasCap("view_admin");
+  const canViewOperator = hasCap("view_operator") || currentRole==="Operator";
+  const canViewRecords = hasCap("view_records");
+  const canEditRecords = hasCap("edit_records");
+  const canManageJobs = hasCap("manage_jobs");
+  const canManageParts = hasCap("manage_parts");
+  const canManageTools = hasCap("manage_tools");
+  const canManageUsers = hasCap("manage_users");
+  const canManageRoles = hasCap("manage_roles");
+
   useEffect(()=>{
     if(view==="admin" && !canViewAdmin) setView(canViewOperator?"operator":"records");
     if(view==="operator" && !canViewOperator) setView(canViewAdmin?"admin":"records");
@@ -2546,17 +2840,6 @@ export default function App() {
     setJobs(prev=>({...prev,[jobNumber]:{...prev[jobNumber],status:nextStatus,draftData:undefined}}));
   }
   function handleDraft({jobNumber,draftData}){setJobs(prev=>({...prev,[jobNumber]:{...prev[jobNumber],status:"draft",draftData}}));}
-  const currentCaps=roleCaps[currentRole] || [];
-  const hasCap = cap => currentCaps.includes(cap);
-  const canViewAdmin = hasCap("view_admin");
-  const canViewOperator = hasCap("view_operator") || currentRole==="Operator";
-  const canViewRecords = hasCap("view_records");
-  const canEditRecords = hasCap("edit_records");
-  const canManageJobs = hasCap("manage_jobs");
-  const canManageParts = hasCap("manage_parts");
-  const canManageTools = hasCap("manage_tools");
-  const canManageUsers = hasCap("manage_users");
-  const canManageRoles = hasCap("manage_roles");
   async function handleCreateJob(job){
     if(dataStatus!=="live"){
       setJobs(prev=>({...prev,[job.jobNumber]:job}));
@@ -2802,28 +3085,11 @@ export default function App() {
     if(dataStatus!=="live") throw new Error("Edits require live data mode.");
     if(!currentUserId) throw new Error("Select a current user before editing.");
     if(!canEditRecords) throw new Error("Permission required for edits.");
-    const dimIdStr=String(dimensionId);
-    let dim=null;
-    for(const part of Object.values(parts||{})){
-      for(const op of Object.values(part.operations||{})){
-        const found=(op.dimensions||[]).find(d=>String(d.id)===dimIdStr);
-        if(found){ dim=found; break; }
-      }
-      if(dim) break;
-    }
-    let isOot=false;
-    if(String(value).toUpperCase()==="FAIL") isOot=true;
-    else if(String(value).toUpperCase()==="PASS") isOot=false;
-    else if(dim) {
-      const st=isOOT(value, dim.tolPlus, dim.tolMinus, dim.nominal);
-      isOot=st===true;
-    }
     await api.records.editValue(recordId, {
       userId: Number(currentUserId),
       dimensionId: Number(dimensionId),
       pieceNumber: Number(pieceNumber),
-      value,
-      isOot,
+      value: String(value),
       reason
     }, currentRole);
     const detail=await api.records.get(recordId, currentRole);
@@ -2894,7 +3160,7 @@ export default function App() {
             <AdminRecords records={records} parts={parts} toolLibrary={toolLibrary} usersById={usersById} loadRecordDetail={loadRecordDetail} canEdit={canEditRecords} onEditValue={handleEditRecordValue}/>
           )}
           {view==="admin" && (
-            <AdminView parts={parts} jobs={jobs} records={records} toolLibrary={toolLibrary} users={users} usersById={usersById} currentCaps={currentCaps} roleCaps={roleCaps} loadRecordDetail={loadRecordDetail} onEditValue={handleEditRecordValue} onCreateJob={handleCreateJob} onCreatePart={handleCreatePart} onUpdatePart={handleUpdatePart} onCreateOp={handleCreateOp} onCreateDim={handleCreateDim} onUpdateDim={handleUpdateDim} onRemoveDim={handleRemoveDim} onCreateTool={handleCreateTool} onUpdateTool={handleUpdateTool} onCreateUser={handleCreateUser} onUpdateUser={handleUpdateUser} onRemoveUser={handleRemoveUser} onUpdateRoleCaps={handleUpdateRoleCaps} onUnlockJob={handleUnlockJob}/>
+            <AdminView parts={parts} jobs={jobs} records={records} toolLibrary={toolLibrary} users={users} usersById={usersById} currentCaps={currentCaps} roleCaps={roleCaps} currentRole={currentRole} currentUserId={currentUserId} loadRecordDetail={loadRecordDetail} onEditValue={handleEditRecordValue} onCreateJob={handleCreateJob} onCreatePart={handleCreatePart} onUpdatePart={handleUpdatePart} onCreateOp={handleCreateOp} onCreateDim={handleCreateDim} onUpdateDim={handleUpdateDim} onRemoveDim={handleRemoveDim} onCreateTool={handleCreateTool} onUpdateTool={handleUpdateTool} onCreateUser={handleCreateUser} onUpdateUser={handleUpdateUser} onRemoveUser={handleRemoveUser} onUpdateRoleCaps={handleUpdateRoleCaps} onUnlockJob={handleUnlockJob}/>
           )}
         </div>
       </>

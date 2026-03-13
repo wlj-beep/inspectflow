@@ -1,12 +1,12 @@
 import { Router } from "express";
 import { query } from "../db.js";
-import { requireCapability } from "../middleware/requireCapability.js";
+import { requireAnyCapability, requireCapability } from "../middleware/requireCapability.js";
 
 const router = Router();
 
 const VALID_ROLES = ["Operator", "Quality", "Supervisor", "Admin"];
 
-router.get("/", async (req, res) => {
+router.get("/", requireAnyCapability(["view_operator", "view_admin"]), async (req, res) => {
   const { rows } = await query("SELECT * FROM users ORDER BY name ASC", []);
   res.json(rows);
 });
