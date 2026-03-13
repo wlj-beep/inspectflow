@@ -235,6 +235,31 @@ function normalizeOpNumber(value){
   if(!Number.isInteger(n) || n < 1 || n > 999) return null;
   return String(n).padStart(3,"0");
 }
+function revisionCodeToIndex(value){
+  const code=String(value||"").trim().toUpperCase();
+  if(!/^[A-Z]+$/.test(code)) return null;
+  let idx=0;
+  for(const ch of code){
+    idx=(idx*26)+(ch.charCodeAt(0)-64);
+  }
+  return idx;
+}
+function revisionIndexToCode(value){
+  let n=Number(value);
+  if(!Number.isInteger(n) || n<=0) return null;
+  let out="";
+  while(n>0){
+    n-=1;
+    out=String.fromCharCode(65+(n%26))+out;
+    n=Math.floor(n/26);
+  }
+  return out;
+}
+function nextRevisionCode(value){
+  const idx=revisionCodeToIndex(value);
+  if(!idx) return "A";
+  return revisionIndexToCode(idx+1) || "A";
+}
 function isToolSelectable(t){
   if(!t) return false;
   return t.active !== false && t.visible !== false;
@@ -250,11 +275,26 @@ function mapToolLibrary(apiTools){
       type:t.type,
       itNum:t.it_num ?? t.itNum,
       size:t.size ?? "",
+      calibrationDueDate:t.calibration_due_date ?? t.calibrationDueDate ?? "",
+      currentLocationId:t.current_location_id ?? t.currentLocationId ?? null,
+      currentLocationName:t.current_location_name ?? t.currentLocationName ?? "",
+      currentLocationType:t.current_location_type ?? t.currentLocationType ?? "",
+      homeLocationId:t.home_location_id ?? t.homeLocationId ?? null,
+      homeLocationName:t.home_location_name ?? t.homeLocationName ?? "",
+      homeLocationType:t.home_location_type ?? t.homeLocationType ?? "",
       active:t.active ?? true,
       visible:t.visible ?? true
     };
   }
   return out;
+}
+
+function mapToolLocations(apiLocations){
+  return (apiLocations||[]).map((loc)=>({
+    id:Number(loc.id),
+    name:loc.name,
+    locationType:loc.location_type ?? loc.locationType
+  }));
 }
 
 function buildPartsFromApi(partDetails){
@@ -279,7 +319,16 @@ function buildPartsFromApi(partDetails){
       }));
       opsObj[normalizedOp]={ id:String(op.id), label:op.label, dimensions:dims };
     }
-    partsObj[part.id]={ partNumber:part.id, description:part.description, operations:opsObj };
+    const currentRevision=part.selectedRevision || part.currentRevision || null;
+    partsObj[part.id]={
+      partNumber:part.id,
+      description:part.description,
+      currentRevision,
+      nextRevision:part.nextRevision || (currentRevision ? nextRevisionCode(currentRevision) : "A"),
+      revisions:Array.isArray(part.revisions) ? part.revisions : [],
+      readOnlyRevision:!!part.readOnlyRevision,
+      operations:opsObj
+    };
   }
   return { partsObj, opIdToNumber };
 }
@@ -292,6 +341,7 @@ function mapJobsFromApi(apiJobs, opIdToNumber){
     out[j.id]={
       jobNumber:j.id,
       partNumber:j.part_id,
+      partRevision:j.part_revision_code || j.partRevision || "A",
       operation:opNum,
       operationId:j.operation_id,
       lot:j.lot,
@@ -1337,15 +1387,18 @@ function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, currentUser
   );
 }
 
-function AdminTools({ toolLibrary, onCreateTool, onUpdateTool }) {
-  const empty={name:"",type:"Variable",itNum:"",size:"",active:true,visible:true};
+function AdminTools({ toolLibrary, toolLocations, onCreateTool, onUpdateTool, onCreateToolLocation, onUpdateToolLocation, onRemoveToolLocation }) {
+  const empty={name:"",type:"Variable",itNum:"",size:"",calibrationDueDate:"",currentLocationId:"",homeLocationId:"",active:true,visible:true};
   const [form,setForm]=useState(empty);
+  const [locationForm,setLocationForm]=useState({ name:"", locationType:"machine" });
   const [err,setErr]=useState("");
   const [apiErr,setApiErr]=useState("");
+  const [locErr,setLocErr]=useState("");
   const [saving,setSaving]=useState(false);
   const [savingId,setSavingId]=useState("");
   const [search,setSearch]=useState("");
   const [tf,setTf]=useState("All");
+
   async function handleAdd(){
     if(!form.name.trim()||!form.itNum.trim()){setErr("Name and IT # required.");return;}
     setErr("");setApiErr("");setSaving(true);
@@ -1355,6 +1408,9 @@ function AdminTools({ toolLibrary, onCreateTool, onUpdateTool }) {
         type:form.type,
         itNum:form.itNum.trim().toUpperCase(),
         size:form.size.trim(),
+        calibrationDueDate:form.calibrationDueDate || null,
+        currentLocationId:form.currentLocationId ? Number(form.currentLocationId) : null,
+        homeLocationId:form.homeLocationId ? Number(form.homeLocationId) : null,
         active:form.active!==false,
         visible:form.visible!==false
       });
@@ -1380,13 +1436,64 @@ function AdminTools({ toolLibrary, onCreateTool, onUpdateTool }) {
       setSavingId("");
     }
   }
+  async function handleAddLocation(){
+    if(!locationForm.name.trim()){ setLocErr("Location name required."); return; }
+    setLocErr("");
+    try{
+      await onCreateToolLocation({ name:locationForm.name.trim(), locationType:locationForm.locationType });
+      setLocationForm({ name:"", locationType:"machine" });
+    }catch(e){
+      setLocErr(e?.message || "Unable to create location.");
+    }
+  }
+  async function handleRemoveLocation(id){
+    setLocErr("");
+    try{
+      await onRemoveToolLocation(id);
+    }catch(e){
+      if(e?.message==="location_in_use"){
+        setLocErr("Location is in use by one or more tools.");
+      }else{
+        setLocErr(e?.message || "Unable to remove location.");
+      }
+    }
+  }
   const filtered=Object.values(toolLibrary).filter(t=>{
-    const hay=[t.name,t.itNum,t.size].filter(Boolean).join(" ").toLowerCase();
+    const hay=[t.name,t.itNum,t.size,t.currentLocationName,t.homeLocationName].filter(Boolean).join(" ").toLowerCase();
     const ms=!search||hay.includes(search.toLowerCase());
     return ms&&(tf==="All"||t.type===tf);
   });
+  const locationTypes=["machine","user","job","vendor","out_for_calibration"];
   return (
     <div>
+      <div className="card">
+        <div className="card-head"><div className="card-title">Location Master Data</div></div>
+        <div className="card-body">
+          <div className="row3">
+            <div className="field"><label>Location Name</label><input value={locationForm.name} onChange={e=>setLocationForm(p=>({...p,name:e.target.value}))} placeholder="e.g. Machine Cell C"/></div>
+            <div className="field"><label>Location Type</label>
+              <select value={locationForm.locationType} onChange={e=>setLocationForm(p=>({...p,locationType:e.target.value}))}>
+                {locationTypes.map(type=><option key={type} value={type}>{type}</option>)}
+              </select></div>
+            <div className="field" style={{justifyContent:"flex-end"}}>
+              <button className="btn btn-ghost" onClick={handleAddLocation}>+ Add Location</button>
+            </div>
+          </div>
+          {locErr&&<p className="err-text mt1">{locErr}</p>}
+          <div className="mt1" style={{display:"grid",gap:".35rem"}}>
+            {toolLocations.length===0 && <div className="text-muted">No locations configured.</div>}
+            {toolLocations.map(loc=>(
+              <div key={loc.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:".75rem",padding:".3rem .45rem",border:"1px solid var(--border2)",borderRadius:"2px"}}>
+                <div>
+                  <span style={{fontWeight:600}}>{loc.name}</span>
+                  <span className="text-muted" style={{marginLeft:".5rem",fontSize:".72rem"}}>{loc.locationType}</span>
+                </div>
+                <button className="btn btn-danger btn-sm" onClick={()=>handleRemoveLocation(loc.id)}>Remove</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
       <div className="card">
         <div className="card-head"><div className="card-title">Add New Tool</div></div>
         <div className="card-body">
@@ -1399,9 +1506,23 @@ function AdminTools({ toolLibrary, onCreateTool, onUpdateTool }) {
             <div className="field"><label>IT # / Cal. Number</label>
               <input value={form.itNum} onChange={e=>setForm(p=>({...p,itNum:e.target.value.toUpperCase()}))} placeholder="IT-0099" style={{fontFamily:"var(--mono)"}}/></div>
           </div>
-          <div className="row2 mt1">
+          <div className="row3 mt1">
             <div className="field"><label>Size</label>
               <input value={form.size} onChange={e=>setForm(p=>({...p,size:e.target.value}))} placeholder='e.g. 0-6 in' style={{fontFamily:"var(--mono)"}}/></div>
+            <div className="field"><label>Calibration Due Date</label>
+              <input type="date" value={form.calibrationDueDate||""} onChange={e=>setForm(p=>({...p,calibrationDueDate:e.target.value}))}/></div>
+            <div className="field"><label>Home Location</label>
+              <select value={form.homeLocationId} onChange={e=>setForm(p=>({...p,homeLocationId:e.target.value}))}>
+                <option value="">— None —</option>
+                {toolLocations.map(loc=><option key={loc.id} value={String(loc.id)}>{loc.name} ({loc.locationType})</option>)}
+              </select></div>
+          </div>
+          <div className="row3 mt1">
+            <div className="field"><label>Current Location</label>
+              <select value={form.currentLocationId} onChange={e=>setForm(p=>({...p,currentLocationId:e.target.value}))}>
+                <option value="">— None —</option>
+                {toolLocations.map(loc=><option key={loc.id} value={String(loc.id)}>{loc.name} ({loc.locationType})</option>)}
+              </select></div>
             <div className="field" style={{display:"flex",gap:"1.25rem",alignItems:"flex-end"}}>
               <label style={{display:"flex",alignItems:"center",gap:".5rem",fontSize:".85rem"}}>
                 <input type="checkbox" checked={form.active!==false} onChange={e=>setForm(p=>({...p,active:e.target.checked}))}/>
@@ -1430,21 +1551,49 @@ function AdminTools({ toolLibrary, onCreateTool, onUpdateTool }) {
         <div className="card-head"><div className="card-title">Tool Library</div><div className="text-muted" style={{fontSize:".7rem"}}>{Object.keys(toolLibrary).length} tools</div></div>
         <div className="card-body" style={{paddingBottom:".5rem"}}>
           <div className="row2" style={{gap:".75rem",marginBottom:".75rem"}}>
-            <input className="search-inp" placeholder="Search by name or IT #…" value={search} onChange={e=>setSearch(e.target.value)}/>
+            <input className="search-inp" placeholder="Search by name, IT #, or location…" value={search} onChange={e=>setSearch(e.target.value)}/>
             <div style={{display:"flex",gap:".35rem",flexWrap:"wrap"}}>
               {["All",...TOOL_TYPES].map(t=><button key={t} className={`tpf-btn${tf===t?" on":""}`} onClick={()=>setTf(t)}>{t}</button>)}
             </div>
           </div>
         </div>
         <table className="data-table">
-          <thead><tr><th>Tool Name</th><th>Type</th><th>IT #</th><th>Size</th><th style={{width:"110px"}}>Active</th><th style={{width:"120px"}}>Selectable</th></tr></thead>
+          <thead><tr><th>Tool Name</th><th>Type</th><th>IT #</th><th>Cal Due</th><th>Current Location</th><th>Home Location</th><th>Size</th><th style={{width:"110px"}}>Active</th><th style={{width:"120px"}}>Selectable</th></tr></thead>
           <tbody>
-            {filtered.length===0&&<tr><td colSpan={6}><div className="empty-state">No tools match.</div></td></tr>}
+            {filtered.length===0&&<tr><td colSpan={9}><div className="empty-state">No tools match.</div></td></tr>}
             {filtered.map(t=>(
               <tr key={t.id}>
                 <td style={{fontWeight:600}}>{t.name}</td>
                 <td><TypeBadge type={t.type}/></td>
                 <td className="mono">{t.itNum}</td>
+                <td>
+                  <input
+                    type="date"
+                    value={t.calibrationDueDate || ""}
+                    disabled={savingId===String(t.id)}
+                    onChange={e=>handleToggle(t.id, { calibrationDueDate: e.target.value || null })}
+                  />
+                </td>
+                <td>
+                  <select
+                    value={t.currentLocationId ? String(t.currentLocationId) : ""}
+                    disabled={savingId===String(t.id)}
+                    onChange={e=>handleToggle(t.id, { currentLocationId: e.target.value ? Number(e.target.value) : null })}
+                  >
+                    <option value="">— None —</option>
+                    {toolLocations.map(loc=><option key={loc.id} value={String(loc.id)}>{loc.name} ({loc.locationType})</option>)}
+                  </select>
+                </td>
+                <td>
+                  <select
+                    value={t.homeLocationId ? String(t.homeLocationId) : ""}
+                    disabled={savingId===String(t.id)}
+                    onChange={e=>handleToggle(t.id, { homeLocationId: e.target.value ? Number(e.target.value) : null })}
+                  >
+                    <option value="">— None —</option>
+                    {toolLocations.map(loc=><option key={loc.id} value={String(loc.id)}>{loc.name} ({loc.locationType})</option>)}
+                  </select>
+                </td>
                 <td className="mono" style={{fontSize:".74rem",color:"var(--muted)"}}>{t.size||"—"}</td>
                 <td>
                   <label style={{display:"flex",alignItems:"center",gap:".4rem",fontSize:".8rem"}}>
@@ -1740,13 +1889,13 @@ function AdminJobs({ parts, jobs, usersById, onCreateJob, canManageJobs, onUnloc
       runIndex:Number(run)
     };
   }
-  const empty={jobNumber:"",partNumber:"",operation:"",lot:"",qty:""};
+  const empty={jobNumber:"",partNumber:"",partRevision:"",operation:"",lot:"",qty:""};
   const [form,setForm]=useState(empty);
   const [err,setErr]=useState("");
   const [saving,setSaving]=useState(false);
   const [buildErr,setBuildErr]=useState("");
   const [building,setBuilding]=useState(false);
-  const [builder,setBuilder]=useState({partNumber:"",lot:"",qty:"",ops:{}});
+  const [builder,setBuilder]=useState({partNumber:"",partRevision:"",lot:"",qty:"",ops:{}});
   const [baseId,setBaseId]=useState(()=>newBaseId());
   const partOps=form.partNumber&&parts[form.partNumber]?Object.entries(parts[form.partNumber].operations):[];
   const builderOps=builder.partNumber&&parts[builder.partNumber]?Object.entries(parts[builder.partNumber].operations):[];
@@ -1758,8 +1907,8 @@ function AdminJobs({ parts, jobs, usersById, onCreateJob, canManageJobs, onUnloc
     }
     return [{ match: normalized, normalized }];
   });
-  const existingLotJobs=builder.partNumber&&builder.lot
-    ?Object.values(jobs).filter(j=>j.partNumber===builder.partNumber&&String(j.lot).toLowerCase()===String(builder.lot).toLowerCase())
+  const existingLotJobs=builder.partNumber&&builder.partRevision&&builder.lot
+    ?Object.values(jobs).filter(j=>j.partNumber===builder.partNumber&&j.partRevision===builder.partRevision&&String(j.lot).toLowerCase()===String(builder.lot).toLowerCase())
     :[];
   const existingLotOpMatchers=existingLotJobs.flatMap((j)=>{
     const normalized=normalizeOpNumber(j.operation) || normalizeOpNumber(j.operationId);
@@ -1794,14 +1943,14 @@ function AdminJobs({ parts, jobs, usersById, onCreateJob, canManageJobs, onUnloc
     const defaultOn=builder.lot && !isDuplicateLot;
     ops.forEach(op=>{ nextOps[op]=defaultOn; });
     setBuilder(p=>({...p,ops:nextOps}));
-  },[builder.partNumber,builder.lot,isDuplicateLot,parts]);
+  },[builder.partNumber,builder.partRevision,builder.lot,isDuplicateLot,parts]);
   useEffect(()=>{
     if(isDuplicateLot&&preferredBaseId&&baseId!==preferredBaseId){
       setBaseId(preferredBaseId);
     }
   },[isDuplicateLot,preferredBaseId,baseId]);
   async function handleAdd(){
-    if(!form.jobNumber||!form.partNumber||!form.operation||!form.lot||!form.qty){setErr("All fields required.");return;}
+    if(!form.jobNumber||!form.partNumber||!form.partRevision||!form.operation||!form.lot||!form.qty){setErr("All fields required.");return;}
     if(jobs[form.jobNumber.toUpperCase()]){setErr("Job number already exists.");return;}
     setErr("");setSaving(true);
     try{
@@ -1814,7 +1963,7 @@ function AdminJobs({ parts, jobs, usersById, onCreateJob, canManageJobs, onUnloc
     }
   }
   async function handleBuild(){
-    if(!builder.partNumber||!builder.lot||!builder.qty){setBuildErr("Part, lot, and qty required.");return;}
+    if(!builder.partNumber||!builder.partRevision||!builder.lot||!builder.qty){setBuildErr("Part, revision, lot, and qty required.");return;}
     const opsSelected=Object.keys(builder.ops||{}).filter(k=>builder.ops[k]);
     if(opsSelected.length===0){setBuildErr("Select at least one operation.");return;}
     setBuildErr("");setBuilding(true);
@@ -1832,13 +1981,14 @@ function AdminJobs({ parts, jobs, usersById, onCreateJob, canManageJobs, onUnloc
         await onCreateJob({
           jobNumber,
           partNumber:builder.partNumber,
+          partRevision:builder.partRevision,
           operation:opKey,
           lot:builder.lot,
           qty:parseInt(builder.qty),
           status:"open"
         });
       }
-      setBuilder({partNumber:"",lot:"",qty:"",ops:{}});
+      setBuilder({partNumber:"",partRevision:"",lot:"",qty:"",ops:{}});
       setBaseId(newBaseId());
     }catch(e){
       setBuildErr(e?.message||"Unable to create jobs.");
@@ -1861,17 +2011,26 @@ function AdminJobs({ parts, jobs, usersById, onCreateJob, canManageJobs, onUnloc
           <div className="row3">
             <div className="field"><label>Job Number</label><input value={form.jobNumber} onChange={e=>setForm(p=>({...p,jobNumber:e.target.value.toUpperCase()}))} placeholder="J-10045" style={{fontFamily:"var(--mono)"}}/></div>
             <div className="field"><label>Part Number</label>
-              <select value={form.partNumber} onChange={e=>setForm(p=>({...p,partNumber:e.target.value,operation:""}))}>
+              <select value={form.partNumber} onChange={e=>{
+                const nextPart=e.target.value;
+                const nextRevision=parts[nextPart]?.currentRevision || "";
+                setForm(p=>({...p,partNumber:nextPart,partRevision:nextRevision,operation:""}));
+              }}>
                 <option value="">— Select Part —</option>
-                {Object.keys(parts).map(pn=><option key={pn} value={pn}>{pn} — {parts[pn].description}</option>)}
+                {Object.keys(parts).map(pn=><option key={pn} value={pn}>{pn} — {parts[pn].description}{parts[pn].currentRevision ? ` (Rev ${parts[pn].currentRevision})` : ""}</option>)}
               </select></div>
+            <div className="field"><label>Revision</label>
+              <select value={form.partRevision} onChange={e=>setForm(p=>({...p,partRevision:e.target.value}))} disabled={!form.partNumber}>
+                <option value="">— Select Revision —</option>
+                {(parts[form.partNumber]?.revisions||[]).map(r=><option key={r.revision} value={r.revision}>{r.revision}</option>)}
+              </select></div>
+          </div>
+          <div className="row3 mt1">
             <div className="field"><label>Operation</label>
               <select value={form.operation} onChange={e=>setForm(p=>({...p,operation:e.target.value}))} disabled={!form.partNumber}>
                 <option value="">— Select Op —</option>
                 {partOps.map(([k,op])=><option key={k} value={k}>Op {k} — {op.label}</option>)}
               </select></div>
-          </div>
-          <div className="row2 mt1">
             <div className="field"><label>Lot</label><input value={form.lot} onChange={e=>setForm(p=>({...p,lot:e.target.value}))} placeholder="e.g. Lot C"/></div>
             <div className="field"><label>Qty</label><input type="number" min="1" value={form.qty} onChange={e=>setForm(p=>({...p,qty:e.target.value}))} placeholder="12" style={{fontFamily:"var(--mono)"}}/></div>
           </div>
@@ -1887,11 +2046,22 @@ function AdminJobs({ parts, jobs, usersById, onCreateJob, canManageJobs, onUnloc
         <div className="card-body">
           <div className="row3">
             <div className="field"><label>Part Number</label>
-              <select value={builder.partNumber} onChange={e=>setBuilder(p=>({...p,partNumber:e.target.value}))}>
+              <select value={builder.partNumber} onChange={e=>{
+                const nextPart=e.target.value;
+                const nextRevision=parts[nextPart]?.currentRevision || "";
+                setBuilder(p=>({...p,partNumber:nextPart,partRevision:nextRevision}));
+              }}>
                 <option value="">— Select Part —</option>
-                {Object.keys(parts).map(pn=><option key={pn} value={pn}>{pn} — {parts[pn].description}</option>)}
+                {Object.keys(parts).map(pn=><option key={pn} value={pn}>{pn} — {parts[pn].description}{parts[pn].currentRevision ? ` (Rev ${parts[pn].currentRevision})` : ""}</option>)}
+              </select></div>
+            <div className="field"><label>Revision</label>
+              <select value={builder.partRevision} onChange={e=>setBuilder(p=>({...p,partRevision:e.target.value}))} disabled={!builder.partNumber}>
+                <option value="">— Select Revision —</option>
+                {(parts[builder.partNumber]?.revisions||[]).map(r=><option key={r.revision} value={r.revision}>{r.revision}</option>)}
               </select></div>
             <div className="field"><label>Lot</label><input value={builder.lot} onChange={e=>setBuilder(p=>({...p,lot:e.target.value}))} placeholder="e.g. Lot B"/></div>
+          </div>
+          <div className="row3 mt1">
             <div className="field"><label>Qty</label><input type="number" min="1" value={builder.qty} onChange={e=>setBuilder(p=>({...p,qty:e.target.value}))} placeholder="12" style={{fontFamily:"var(--mono)"}}/></div>
           </div>
           {isDuplicateLot && <div className="text-warn" style={{fontSize:".75rem",marginTop:".5rem"}}>Lot already exists — creating remeasure jobs.</div>}
@@ -1940,12 +2110,13 @@ function AdminJobs({ parts, jobs, usersById, onCreateJob, canManageJobs, onUnloc
       <div className="card" style={{padding:0,overflow:"hidden"}}>
         <div className="card-head"><div className="card-title">All Jobs</div></div>
         <table className="data-table">
-          <thead><tr><th>Job #</th><th>Part</th><th>Operation</th><th>Lot</th><th>Qty</th><th>Status</th></tr></thead>
+          <thead><tr><th>Job #</th><th>Part</th><th>Rev</th><th>Operation</th><th>Lot</th><th>Qty</th><th>Status</th></tr></thead>
           <tbody>
             {Object.values(jobs).sort((a,b)=>b.jobNumber.localeCompare(a.jobNumber)).map(j=>(
               <tr key={j.jobNumber}>
                 <td className="mono accent-text">{j.jobNumber}</td>
                 <td><span className="mono">{j.partNumber}</span> <span className="text-muted">{parts[j.partNumber]?.description}</span></td>
+                <td className="mono">{j.partRevision || "A"}</td>
                 <td>Op {j.operation} — {parts[j.partNumber]?.operations[j.operation]?.label}</td>
                 <td>{j.lot}</td><td className="mono">{j.qty}</td>
                 <td>{sb(j.status)}
@@ -2793,25 +2964,74 @@ function AdminImports({ currentRole, canManageTools, canManageParts, onRefreshDa
   );
 }
 
-function AdminParts({ parts, toolLibrary, onCreatePart, onUpdatePart, onCreateOp, onCreateDim, onUpdateDim, onRemoveDim, onDirtyChange }) {
-  const [newPart,setNewPart]=useState({partNumber:"",description:""});
+function AdminParts({ parts, toolLibrary, onCreatePart, onUpdatePart, onBulkUpdateParts, onCreateOp, onCreateDim, onUpdateDim, onRemoveDim, onDirtyChange }) {
+  const [newPart,setNewPart]=useState({partNumber:"",description:"",revision:"A"});
   const [partErr,setPartErr]=useState("");
   const [apiErr,setApiErr]=useState("");
   const [saving,setSaving]=useState(false);
   const [newOp,setNewOp]=useState({});
+  const [partQuery,setPartQuery]=useState("");
+  const [pageSize,setPageSize]=useState(25);
+  const [page,setPage]=useState(1);
+  const [bulkFind,setBulkFind]=useState("");
+  const [bulkReplace,setBulkReplace]=useState("");
+  const [bulkBusy,setBulkBusy]=useState(false);
+  const [bulkMsg,setBulkMsg]=useState("");
   useEffect(()=>{
     const hasNewPart=!!(newPart.partNumber||newPart.description);
     const hasNewOp=Object.values(newOp).some(v=>v?.opNum||v?.label);
     if(onDirtyChange) onDirtyChange(hasNewPart||hasNewOp);
   },[newPart,newOp,onDirtyChange]);
+  const sortedPartEntries=Object.entries(parts||{}).sort((a,b)=>a[0].localeCompare(b[0]));
+  const query=partQuery.trim().toLowerCase();
+  const filteredPartEntries=sortedPartEntries.filter(([pn,part])=>{
+    if(!query) return true;
+    const hay=[pn,part?.description||"",part?.currentRevision||""].join(" ").toLowerCase();
+    return hay.includes(query);
+  });
+  const totalPages=Math.max(1, Math.ceil(filteredPartEntries.length / pageSize));
+  const safePage=Math.min(page, totalPages);
+  const visiblePartEntries=filteredPartEntries.slice((safePage-1)*pageSize, safePage*pageSize);
+  useEffect(()=>{
+    setPage(1);
+  },[partQuery,pageSize]);
+  useEffect(()=>{
+    if(page>totalPages) setPage(totalPages);
+  },[page,totalPages]);
+  function revisionContext(pn){
+    const part=parts[pn]||{};
+    const current=part.currentRevision || "A";
+    const next=part.nextRevision || nextRevisionCode(current);
+    return { current, next };
+  }
+  function confirmRevisionCommit(pn, impact){
+    const ctx=revisionContext(pn);
+    const msg=[
+      "Revision review required:",
+      `Part ${pn}`,
+      `Current revision: ${ctx.current}`,
+      `Next revision: ${ctx.next}`,
+      `Impact: ${impact}`,
+      "",
+      "Commit this setup change?"
+    ].join("\n");
+    return window.confirm(msg);
+  }
+  function describeDimImpact(field, dimName){
+    const label=dimName || "dimension";
+    if(field==="tools") return `Update allowed tools for ${label}`;
+    if(field==="samplingInterval") return `Update custom sampling interval for ${label}`;
+    return `Update ${field} for ${label}`;
+  }
   async function handleAddPart(){
     const pn=newPart.partNumber.trim().toUpperCase();
-    if(!pn||!newPart.description.trim()){setPartErr("Part number and description required.");return;}
+    const revision=String(newPart.revision||"").trim().toUpperCase();
+    if(!pn||!newPart.description.trim()||!/^[A-Z]+$/.test(revision)){setPartErr("Part number, part name, and revision are required.");return;}
     if(parts[pn]){setPartErr("Part number already exists.");return;}
     setPartErr("");setApiErr("");setSaving(true);
     try{
-      await onCreatePart({partNumber:pn,description:newPart.description.trim()});
-      setNewPart({partNumber:"",description:""});
+      await onCreatePart({partNumber:pn,description:newPart.description.trim(),revision});
+      setNewPart({partNumber:"",description:"",revision:"A"});
     }catch(e){
       setApiErr(e?.message||"Unable to add part.");
     }finally{
@@ -2819,7 +3039,16 @@ function AdminParts({ parts, toolLibrary, onCreatePart, onUpdatePart, onCreateOp
     }
   }
   function updateDescLocal(pn,v){ onUpdatePart(pn,v,false).catch(()=>{}); }
-  function updateDescPersist(pn,v){ onUpdatePart(pn,v,true).catch(e=>setApiErr(e?.message||"Unable to update part.")); }
+  function updateDescPersist(pn,v){
+    const part=parts[pn]||{};
+    const persistedName=part.revisions?.[0]?.partName || part.description || "";
+    if(String(v).trim()===String(persistedName).trim()) return;
+    if(!confirmRevisionCommit(pn, "Update part name")){
+      onUpdatePart(pn,persistedName,false).catch(()=>{});
+      return;
+    }
+    onUpdatePart(pn,v,true).catch(e=>setApiErr(e?.message||"Unable to update part."));
+  }
   async function handleAddOp(pn){
     const o=newOp[pn]||{};
     const opKeyRaw=(o.opNum||"").trim();
@@ -2827,6 +3056,7 @@ function AdminParts({ parts, toolLibrary, onCreatePart, onUpdatePart, onCreateOp
     const opKey=normalizeOpNumber(opKeyRaw);
     if(!opKey){ setApiErr("Operation number must be between 001 and 999."); return; }
     if(parts[pn].operations[opKey]){ setApiErr(`Operation ${opKey} already exists.`); return; }
+    if(!confirmRevisionCommit(pn, `Add operation ${opKey} — ${o.label.trim()}`)) return;
     setApiErr("");
     try{
       await onCreateOp(pn,opKey,o.label.trim());
@@ -2835,10 +3065,12 @@ function AdminParts({ parts, toolLibrary, onCreatePart, onUpdatePart, onCreateOp
       setApiErr(e?.message||"Unable to add operation.");
     }
   }
-  function updateDim(pn,opKey,dimId,field,value,persist){
+  function updateDim(pn,opKey,dimId,field,value,persist,dimName){
+    if(persist && !confirmRevisionCommit(pn, describeDimImpact(field, dimName))) return;
     onUpdateDim(pn,opKey,dimId,field,value,persist).catch(e=>setApiErr(e?.message||"Unable to update dimension."));
   }
   async function addDim(pn,opKey){
+    if(!confirmRevisionCommit(pn, `Add dimension to operation ${opKey}`)) return;
     setApiErr("");
     try{
       await onCreateDim(pn,opKey,{name:"New Dimension",nominal:0.0000,tolPlus:0.0050,tolMinus:0.0050,unit:"in",sampling:"first_last",samplingInterval:null,inputMode:"single",tools:[]});
@@ -2846,7 +3078,8 @@ function AdminParts({ parts, toolLibrary, onCreatePart, onUpdatePart, onCreateOp
       setApiErr(e?.message||"Unable to add dimension.");
     }
   }
-  async function removeDim(pn,opKey,dimId){
+  async function removeDim(pn,opKey,dimId,dimName){
+    if(!confirmRevisionCommit(pn, `Remove dimension ${dimName || dimId} from operation ${opKey}`)) return;
     setApiErr("");
     try{
       await onRemoveDim(pn,opKey,dimId);
@@ -2854,21 +3087,96 @@ function AdminParts({ parts, toolLibrary, onCreatePart, onUpdatePart, onCreateOp
       setApiErr(e?.message||"Unable to remove dimension.");
     }
   }
+  async function handleBulkRename(){
+    const find=bulkFind;
+    if(!find.trim()){ setBulkMsg("Enter text to find."); return; }
+    const esc=find.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const re=new RegExp(esc, "g");
+    const updates=filteredPartEntries
+      .map(([partNumber,part])=>{
+        const nextName=String(part.description||"").replace(re, bulkReplace);
+        if(nextName===part.description) return null;
+        return { id: partNumber, description: nextName };
+      })
+      .filter(Boolean);
+    if(updates.length===0){ setBulkMsg("No filtered parts matched the find text."); return; }
+    if(!window.confirm(`Apply bulk rename to ${updates.length} part(s)?`)) return;
+
+    setBulkMsg("");
+    setBulkBusy(true);
+    try{
+      const result=await onBulkUpdateParts(updates);
+      const updated=result?.updated ?? updates.length;
+      const skipped=result?.skipped ?? 0;
+      const missing=(result?.notFound || []).length;
+      setBulkMsg(`Bulk update complete: ${updated} updated, ${skipped} skipped${missing ? `, ${missing} missing` : ""}.`);
+    }catch(e){
+      setBulkMsg(e?.message || "Bulk update failed.");
+    }finally{
+      setBulkBusy(false);
+    }
+  }
   return (
     <div>
       <div className="card">
         <div className="card-head"><div className="card-title">Add New Part</div></div>
         <div className="card-body">
-          <div className="row2">
+          <div className="row3">
             <div className="field"><label>Part Number</label><input value={newPart.partNumber} onChange={e=>setNewPart(p=>({...p,partNumber:e.target.value.toUpperCase()}))} placeholder="e.g. 5678" style={{fontFamily:"var(--mono)"}}/></div>
             <div className="field"><label>Part Name</label><input value={newPart.description} onChange={e=>setNewPart(p=>({...p,description:e.target.value}))} placeholder="Part name"/></div>
+            <div className="field"><label>Initial Revision</label><input value={newPart.revision} onChange={e=>setNewPart(p=>({...p,revision:e.target.value.toUpperCase().replace(/[^A-Z]/g,"")}))} placeholder="A" style={{fontFamily:"var(--mono)"}}/></div>
           </div>
           {partErr&&<p className="err-text mt1">{partErr}</p>}
           {apiErr&&<p className="err-text mt1">{apiErr}</p>}
           <div className="mt2"><button className="btn btn-primary" disabled={saving} onClick={handleAddPart}>{saving?"Saving…":"+ Add Part"}</button></div>
         </div>
       </div>
-      {Object.entries(parts).map(([pn,part])=>(
+      <div className="card">
+        <div className="card-head"><div className="card-title">Catalog Controls</div></div>
+        <div className="card-body">
+          <div className="row3">
+            <div className="field">
+              <label>Search Parts</label>
+              <input value={partQuery} onChange={e=>setPartQuery(e.target.value)} placeholder="Filter by part number, name, or revision"/>
+            </div>
+            <div className="field">
+              <label>Page Size</label>
+              <select value={String(pageSize)} onChange={e=>setPageSize(Math.max(1, Number(e.target.value)||25))}>
+                <option value="10">10</option>
+                <option value="25">25</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+              </select>
+            </div>
+            <div className="field" style={{alignItems:"flex-end"}}>
+              <div className="text-muted" style={{fontSize:".72rem"}}>
+                Showing {visiblePartEntries.length} of {filteredPartEntries.length} filtered ({sortedPartEntries.length} total)
+              </div>
+            </div>
+          </div>
+          <div className="row3 mt1">
+            <div className="field"><label>Bulk Find</label><input value={bulkFind} onChange={e=>setBulkFind(e.target.value)} placeholder="Find text in part names"/></div>
+            <div className="field"><label>Bulk Replace</label><input value={bulkReplace} onChange={e=>setBulkReplace(e.target.value)} placeholder="Replacement text"/></div>
+            <div className="field" style={{justifyContent:"flex-end"}}>
+              <button className="btn btn-ghost" disabled={bulkBusy} onClick={handleBulkRename}>{bulkBusy ? "Applying…" : "Apply to Filtered Parts"}</button>
+            </div>
+          </div>
+          {bulkMsg && <p className="text-muted mt1" style={{fontSize:".74rem"}}>{bulkMsg}</p>}
+          <div className="gap1 mt1" style={{justifyContent:"flex-end"}}>
+            <button className="btn btn-ghost btn-sm" disabled={safePage<=1} onClick={()=>setPage(p=>Math.max(1,p-1))}>Prev</button>
+            <div className="text-muted" style={{fontSize:".72rem",padding:".35rem .4rem"}}>Page {safePage} / {totalPages}</div>
+            <button className="btn btn-ghost btn-sm" disabled={safePage>=totalPages} onClick={()=>setPage(p=>Math.min(totalPages,p+1))}>Next</button>
+          </div>
+        </div>
+      </div>
+      {filteredPartEntries.length===0 && (
+        <div className="card">
+          <div className="card-body">
+            <div className="text-muted">No parts match the current filter.</div>
+          </div>
+        </div>
+      )}
+      {visiblePartEntries.map(([pn,part])=>(
         <div className="card" key={pn}>
           <div className="card-head">
             <div style={{display:"flex",alignItems:"center",gap:"1rem",flex:1}}>
@@ -2877,9 +3185,29 @@ function AdminParts({ parts, toolLibrary, onCreatePart, onUpdatePart, onCreateOp
                 style={{background:"var(--panel2)",border:"1px solid var(--border2)",color:"var(--text)",fontFamily:"var(--sans)",fontSize:".85rem",padding:".3rem .6rem",borderRadius:"2px",outline:"none",flex:1,maxWidth:"400px",transition:"border-color .15s"}}
                 onFocus={e=>e.target.style.borderColor="var(--accent)"}
                 onBlur={e=>{updateDescPersist(pn,e.target.value);e.target.style.borderColor="var(--border2)";}}/>
+              <div className="text-muted" style={{fontSize:".72rem",whiteSpace:"nowrap"}}>
+                Rev {part.currentRevision||"A"} → {part.nextRevision||nextRevisionCode(part.currentRevision||"A")}
+              </div>
             </div>
           </div>
           <div style={{padding:"1rem 1.25rem"}}>
+            <div className="text-muted" style={{fontSize:".72rem",marginBottom:".6rem"}}>
+              Setup changes require revision review before commit.
+            </div>
+            {Array.isArray(part.revisions) && part.revisions.length>0 && (
+              <details style={{marginBottom:"1rem"}}>
+                <summary style={{cursor:"pointer",fontSize:".74rem",color:"var(--muted)"}}>
+                  Revision History ({part.revisions.length})
+                </summary>
+                <div style={{marginTop:".4rem",display:"grid",gap:".2rem"}}>
+                  {part.revisions.slice(0,10).map((rev)=>(
+                    <div key={rev.revision} className="text-muted" style={{fontSize:".72rem"}}>
+                      Rev {rev.revision} · {rev.changeSummary || "Setup update"} · {fmtTs(rev.createdAt)}
+                    </div>
+                  ))}
+                </div>
+              </details>
+            )}
             {Object.entries(part.operations).map(([opKey,op])=>(
               <div key={opKey} style={{marginBottom:"1.5rem"}}>
                 <div className="section-label">Op {opKey} — {op.label}</div>
@@ -2900,36 +3228,36 @@ function AdminParts({ parts, toolLibrary, onCreatePart, onUpdatePart, onCreateOp
                       {op.dimensions.length===0&&<tr><td colSpan={9} className="empty-state" style={{padding:"1rem",fontSize:".76rem"}}>No dimensions defined.</td></tr>}
                       {op.dimensions.map(d=>(
                         <tr key={d.id}>
-                          <td><input value={d.name} onChange={e=>updateDim(pn,opKey,d.id,"name",e.target.value,false)} onBlur={e=>updateDim(pn,opKey,d.id,"name",e.target.value,true)}/></td>
-                          <td><input type="number" step="0.0001" value={d.nominal} onChange={e=>updateDim(pn,opKey,d.id,"nominal",parseFloat(e.target.value)||0,false)} onBlur={e=>updateDim(pn,opKey,d.id,"nominal",parseFloat(e.target.value)||0,true)} style={{fontFamily:"var(--mono)"}}/></td>
-                          <td><input type="number" step="0.0001" value={d.tolPlus} onChange={e=>updateDim(pn,opKey,d.id,"tolPlus",parseFloat(e.target.value)||0,false)} onBlur={e=>updateDim(pn,opKey,d.id,"tolPlus",parseFloat(e.target.value)||0,true)} style={{fontFamily:"var(--mono)"}}/></td>
-                          <td><input type="number" step="0.0001" value={d.tolMinus} onChange={e=>updateDim(pn,opKey,d.id,"tolMinus",parseFloat(e.target.value)||0,false)} onBlur={e=>updateDim(pn,opKey,d.id,"tolMinus",parseFloat(e.target.value)||0,true)} style={{fontFamily:"var(--mono)"}}/></td>
-                          <td><select value={d.unit} onChange={e=>updateDim(pn,opKey,d.id,"unit",e.target.value,true)}>
+                          <td><input value={d.name} onChange={e=>updateDim(pn,opKey,d.id,"name",e.target.value,false,d.name)} onBlur={e=>updateDim(pn,opKey,d.id,"name",e.target.value,true,d.name)}/></td>
+                          <td><input type="number" step="0.0001" value={d.nominal} onChange={e=>updateDim(pn,opKey,d.id,"nominal",parseFloat(e.target.value)||0,false,d.name)} onBlur={e=>updateDim(pn,opKey,d.id,"nominal",parseFloat(e.target.value)||0,true,d.name)} style={{fontFamily:"var(--mono)"}}/></td>
+                          <td><input type="number" step="0.0001" value={d.tolPlus} onChange={e=>updateDim(pn,opKey,d.id,"tolPlus",parseFloat(e.target.value)||0,false,d.name)} onBlur={e=>updateDim(pn,opKey,d.id,"tolPlus",parseFloat(e.target.value)||0,true,d.name)} style={{fontFamily:"var(--mono)"}}/></td>
+                          <td><input type="number" step="0.0001" value={d.tolMinus} onChange={e=>updateDim(pn,opKey,d.id,"tolMinus",parseFloat(e.target.value)||0,false,d.name)} onBlur={e=>updateDim(pn,opKey,d.id,"tolMinus",parseFloat(e.target.value)||0,true,d.name)} style={{fontFamily:"var(--mono)"}}/></td>
+                          <td><select value={d.unit} onChange={e=>updateDim(pn,opKey,d.id,"unit",e.target.value,true,d.name)}>
                             <option>in</option><option>mm</option><option>Ra</option><option>deg</option>
                           </select></td>
                           <td>
-                            <select value={d.sampling} onChange={e=>updateDim(pn,opKey,d.id,"sampling",e.target.value,true)}>
+                            <select value={d.sampling} onChange={e=>updateDim(pn,opKey,d.id,"sampling",e.target.value,true,d.name)}>
                               {SAMPLING_OPTIONS.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
                             </select>
                             {d.sampling==="custom_interval" && (
                               <input type="number" min="1" step="1" value={d.samplingInterval || 2}
-                                onChange={e=>updateDim(pn,opKey,d.id,"samplingInterval",Math.max(1, Number(e.target.value)||1),false)}
-                                onBlur={e=>updateDim(pn,opKey,d.id,"samplingInterval",Math.max(1, Number(e.target.value)||1),true)}
+                                onChange={e=>updateDim(pn,opKey,d.id,"samplingInterval",Math.max(1, Number(e.target.value)||1),false,d.name)}
+                                onBlur={e=>updateDim(pn,opKey,d.id,"samplingInterval",Math.max(1, Number(e.target.value)||1),true,d.name)}
                                 style={{marginTop:".3rem",fontFamily:"var(--mono)"}}
                                 placeholder="Interval (N)"
                               />
                             )}
                           </td>
-                          <td><select value={d.inputMode||"single"} onChange={e=>updateDim(pn,opKey,d.id,"inputMode",e.target.value,true)}>
+                          <td><select value={d.inputMode||"single"} onChange={e=>updateDim(pn,opKey,d.id,"inputMode",e.target.value,true,d.name)}>
                             <option value="single">Single</option>
                             <option value="range">Min/Max Range</option>
                           </select></td>
                           <td>
                             <ToolSearchPopover toolLibrary={toolLibrary} selectedIds={d.tools}
-                              onAdd={id=>updateDim(pn,opKey,d.id,"tools",[...d.tools,id],true)}
-                              onRemove={id=>updateDim(pn,opKey,d.id,"tools",d.tools.filter(x=>x!==id),true)}/>
+                              onAdd={id=>updateDim(pn,opKey,d.id,"tools",[...d.tools,id],true,d.name)}
+                              onRemove={id=>updateDim(pn,opKey,d.id,"tools",d.tools.filter(x=>x!==id),true,d.name)}/>
                           </td>
-                          <td style={{textAlign:"center"}}><button className="btn btn-danger btn-sm" onClick={()=>removeDim(pn,opKey,d.id)}>✕</button></td>
+                          <td style={{textAlign:"center"}}><button className="btn btn-danger btn-sm" onClick={()=>removeDim(pn,opKey,d.id,d.name)}>✕</button></td>
                         </tr>
                       ))}
                     </tbody>
@@ -2953,7 +3281,7 @@ function AdminParts({ parts, toolLibrary, onCreatePart, onUpdatePart, onCreateOp
   );
 }
 
-function AdminView({ parts, jobs, records, toolLibrary, users, usersById, currentCaps, roleCaps, currentRole, currentUserId, loadRecordDetail, onEditValue, onCreateJob, onCreatePart, onUpdatePart, onCreateOp, onCreateDim, onUpdateDim, onRemoveDim, onCreateTool, onUpdateTool, onCreateUser, onUpdateUser, onRemoveUser, onUpdateRoleCaps, onUnlockJob, onRefreshData }) {
+function AdminView({ parts, jobs, records, toolLibrary, toolLocations, users, usersById, currentCaps, roleCaps, currentRole, currentUserId, loadRecordDetail, onEditValue, onCreateJob, onCreatePart, onUpdatePart, onBulkUpdateParts, onCreateOp, onCreateDim, onUpdateDim, onRemoveDim, onCreateTool, onUpdateTool, onCreateToolLocation, onUpdateToolLocation, onRemoveToolLocation, onCreateUser, onUpdateUser, onRemoveUser, onUpdateRoleCaps, onUnlockJob, onRefreshData }) {
   const [tab,setTab]=useState("jobs");
   const [dirtyByTab,setDirtyByTab]=useState({});
   const hasCap = cap => (currentCaps || []).includes(cap);
@@ -3008,8 +3336,8 @@ function AdminView({ parts, jobs, records, toolLibrary, users, usersById, curren
       {tab==="records"&&canViewRecords&&<AdminRecords records={records} parts={parts} toolLibrary={toolLibrary} usersById={usersById} loadRecordDetail={loadRecordDetail} canEdit={canEdit} onEditValue={onEditValue}/>}
       {tab==="issues"&&canViewIssueReports&&<AdminIssueReports currentRole={currentRole} currentUserId={currentUserId}/>}
       {tab==="imports"&&canViewImports&&<AdminImports currentRole={currentRole} canManageTools={canManageTools} canManageParts={canManageParts} onRefreshData={onRefreshData}/>}
-      {tab==="parts"&&canManageParts&&<AdminParts parts={parts} toolLibrary={toolLibrary} onCreatePart={onCreatePart} onUpdatePart={onUpdatePart} onCreateOp={onCreateOp} onCreateDim={onCreateDim} onUpdateDim={onUpdateDim} onRemoveDim={onRemoveDim} onDirtyChange={dirty=>setDirtyByTab(p=>({...p,parts:dirty}))}/>}
-      {tab==="tools"&&canManageTools&&<AdminTools toolLibrary={toolLibrary} onCreateTool={onCreateTool} onUpdateTool={onUpdateTool}/>}
+      {tab==="parts"&&canManageParts&&<AdminParts parts={parts} toolLibrary={toolLibrary} onCreatePart={onCreatePart} onUpdatePart={onUpdatePart} onBulkUpdateParts={onBulkUpdateParts} onCreateOp={onCreateOp} onCreateDim={onCreateDim} onUpdateDim={onUpdateDim} onRemoveDim={onRemoveDim} onDirtyChange={dirty=>setDirtyByTab(p=>({...p,parts:dirty}))}/>}
+      {tab==="tools"&&canManageTools&&<AdminTools toolLibrary={toolLibrary} toolLocations={toolLocations} onCreateTool={onCreateTool} onUpdateTool={onUpdateTool} onCreateToolLocation={onCreateToolLocation} onUpdateToolLocation={onUpdateToolLocation} onRemoveToolLocation={onRemoveToolLocation}/>}
       {tab==="users"&&canManageUsers&&<AdminUsers users={users} roleCaps={roleCaps} onCreateUser={onCreateUser} onUpdateUser={onUpdateUser} onRemoveUser={onRemoveUser} onDirtyChange={dirty=>setDirtyByTab(p=>({...p,users:dirty}))}/>}
       {tab==="roles"&&canManageRoles&&<AdminRoles roleCaps={roleCaps} onUpdateRoleCaps={onUpdateRoleCaps} onDirtyChange={dirty=>setDirtyByTab(p=>({...p,roles:dirty}))}/>}
     </div>
@@ -3043,6 +3371,7 @@ export default function App() {
   const [jobs,setJobs]=useState(INITIAL_JOBS);
   const [records,setRecords]=useState(INITIAL_RECORDS);
   const [toolLibrary,setToolLibrary]=useState(INITIAL_TOOLS);
+  const [toolLocations,setToolLocations]=useState([]);
   const [opIdToNumber,setOpIdToNumber]=useState({});
   const [roleCaps,setRoleCaps]=useState(DEFAULT_ROLE_CAPS);
   const prevUserRef=useRef("");
@@ -3149,8 +3478,9 @@ export default function App() {
       setDataErr("");
       try{
         const role=currentRole||"Admin";
-        const [toolsList, partsList] = await Promise.all([
+        const [toolsList, toolLocationsList, partsList] = await Promise.all([
           api.tools.list(role),
+          api.toolLocations.list(role),
           api.parts.list(role)
         ]);
         const partDetails = await Promise.all((partsList||[]).map(p=>api.parts.get(p.id, role)));
@@ -3161,6 +3491,7 @@ export default function App() {
         ]);
         if(!active) return;
         setToolLibrary(mapToolLibrary(toolsList));
+        setToolLocations(mapToolLocations(toolLocationsList));
         setParts(partsObj);
         setOpIdToNumber(opMap);
         setJobs(mapJobsFromApi(jobsList, opMap));
@@ -3181,8 +3512,9 @@ export default function App() {
     setDataErr("");
     try{
       const role=currentRole || "Admin";
-      const [toolsList, partsList] = await Promise.all([
+      const [toolsList, toolLocationsList, partsList] = await Promise.all([
         api.tools.list(role),
+        api.toolLocations.list(role),
         api.parts.list(role)
       ]);
       const partDetails = await Promise.all((partsList||[]).map(p=>api.parts.get(p.id, role)));
@@ -3192,6 +3524,7 @@ export default function App() {
         api.records.list({}, role)
       ]);
       setToolLibrary(mapToolLibrary(toolsList));
+      setToolLocations(mapToolLocations(toolLocationsList));
       setParts(partsObj);
       setOpIdToNumber(opMap);
       setJobs(mapJobsFromApi(jobsList, opMap));
@@ -3305,6 +3638,7 @@ export default function App() {
       const created=await api.jobs.create({
         id:job.jobNumber,
         partId:job.partNumber,
+        partRevision:job.partRevision,
         operationId:Number(opId),
         lot:job.lot,
         qty:job.qty,
@@ -3316,14 +3650,40 @@ export default function App() {
   }
   async function handleCreatePart(part){
     const pn=part.partNumber;
+    const normalizedRevision=String(part.revision || "A").trim().toUpperCase();
     if(dataStatus!=="live"){
-      setParts(prev=>({...prev,[pn]:{partNumber:pn,description:part.description,operations:{}}}));
+      setParts(prev=>({...prev,[pn]:{
+        partNumber:pn,
+        description:part.description,
+        currentRevision:normalizedRevision,
+        nextRevision:nextRevisionCode(normalizedRevision),
+        revisions:[{ revision:normalizedRevision, partName:part.description, changeSummary:"Initial setup" }],
+        readOnlyRevision:false,
+        operations:{}
+      }}));
       return;
     }
     return runTransition("Create part", async ()=>{
       if(!canManageParts) throw new Error("Permission required to add parts.");
-      await api.parts.create({id:pn,description:part.description}, currentRole);
-      setParts(prev=>({...prev,[pn]:{partNumber:pn,description:part.description,operations:{}}}));
+      const created=await api.parts.create({id:pn,description:part.description,revision:normalizedRevision}, currentRole);
+      const createdDesc=created?.description || part.description;
+      const createdRev=created?.currentRevision || normalizedRevision;
+      setParts(prev=>({...prev,[pn]:{
+        partNumber:pn,
+        description:createdDesc,
+        currentRevision:createdRev,
+        nextRevision:created?.nextRevision || nextRevisionCode(createdRev),
+        revisions:[{
+          revision:createdRev,
+          revisionIndex:revisionCodeToIndex(createdRev) || 1,
+          partName:createdDesc,
+          changeSummary:"Initial part setup",
+          changedFields:["part.description"],
+          createdByRole:currentRole
+        }],
+        readOnlyRevision:false,
+        operations:{}
+      }}));
     });
   }
   async function handleUpdatePart(partNumber, description, persist){
@@ -3333,6 +3693,29 @@ export default function App() {
     return runTransition("Update part", async ()=>{
       if(!canManageParts) throw new Error("Permission required to update parts.");
       await api.parts.update(partNumber, {description}, currentRole);
+      await reloadLiveData();
+    });
+  }
+  async function handleBulkUpdateParts(updates){
+    if(!Array.isArray(updates) || updates.length===0) return { ok:true, updated:0, skipped:0, notFound:[] };
+    if(dataStatus!=="live"){
+      setParts(prev=>{
+        const next={...prev};
+        for(const u of updates){
+          const id=String(u?.id||"").trim();
+          const description=String(u?.description||"").trim();
+          if(!id || !description || !next[id]) continue;
+          next[id]={...next[id],description};
+        }
+        return next;
+      });
+      return { ok:true, updated:updates.length, skipped:0, notFound:[] };
+    }
+    return runTransition("Bulk update parts", async ()=>{
+      if(!canManageParts) throw new Error("Permission required to update parts.");
+      const result=await api.parts.bulkUpdate({ updates }, currentRole);
+      await reloadLiveData();
+      return result;
     });
   }
   async function handleCreateOp(partNumber, opNumber, label){
@@ -3353,19 +3736,8 @@ export default function App() {
     }
     return runTransition("Create operation", async ()=>{
       if(!canManageParts) throw new Error("Permission required to add operations.");
-      const created=await api.operations.create({partId:partNumber,opNumber:normalizedOp,label}, currentRole);
-      const createdOp=normalizeOpNumber(created.op_number ?? created.opNumber ?? normalizedOp) || normalizedOp;
-      setParts(prev=>({
-        ...prev,
-        [partNumber]:{
-          ...prev[partNumber],
-          operations:{
-            ...prev[partNumber].operations,
-            [createdOp]:{ id:String(created.id), label:created.label, dimensions:[] }
-          }
-        }
-      }));
-      setOpIdToNumber(prev=>({...prev,[String(created.id)]:createdOp}));
+      await api.operations.create({partId:partNumber,opNumber:normalizedOp,label}, currentRole);
+      await reloadLiveData();
     });
   }
   async function handleCreateDim(partNumber, opNumber, dim){
@@ -3387,7 +3759,7 @@ export default function App() {
     }
     return runTransition("Create dimension", async ()=>{
       if(!canManageParts) throw new Error("Permission required to add dimensions.");
-      const created=await api.dimensions.create({
+      await api.dimensions.create({
         operationId:Number(op.id),
         name:dim.name,
         nominal:dim.nominal,
@@ -3399,17 +3771,7 @@ export default function App() {
         inputMode:dim.inputMode || "single",
         toolIds:dim.tools
       }, currentRole);
-      const newDim={id:String(created.id),name:created.name,nominal:created.nominal,tolPlus:created.tol_plus ?? created.tolPlus,tolMinus:created.tol_minus ?? created.tolMinus,unit:created.unit,sampling:created.sampling,samplingInterval:created.sampling_interval ?? created.samplingInterval ?? null,inputMode:created.input_mode ?? created.inputMode ?? dim.inputMode ?? "single",tools:dim.tools};
-      setParts(prev=>({
-        ...prev,
-        [partNumber]:{
-          ...prev[partNumber],
-          operations:{
-            ...prev[partNumber].operations,
-            [opNumber]:{...prev[partNumber].operations[opNumber],dimensions:[...prev[partNumber].operations[opNumber].dimensions,newDim]}
-          }
-        }
-      }));
+      await reloadLiveData();
     });
   }
   async function handleUpdateDim(partNumber, opNumber, dimId, field, value, persist){
@@ -3458,6 +3820,7 @@ export default function App() {
         inputMode:dim.inputMode || "single",
         toolIds:dim.tools
       }, currentRole);
+      await reloadLiveData();
     });
   }
   async function handleRemoveDim(partNumber, opNumber, dimId){
@@ -3477,16 +3840,7 @@ export default function App() {
     return runTransition("Remove dimension", async ()=>{
       if(!canManageParts) throw new Error("Permission required to remove dimensions.");
       await api.dimensions.remove(dimId, currentRole);
-      setParts(prev=>({
-        ...prev,
-        [partNumber]:{
-          ...prev[partNumber],
-          operations:{
-            ...prev[partNumber].operations,
-            [opNumber]:{...prev[partNumber].operations[opNumber],dimensions:prev[partNumber].operations[opNumber].dimensions.filter(d=>d.id!==dimId)}
-          }
-        }
-      }));
+      await reloadLiveData();
     });
   }
   async function handleCreateUser(user){
@@ -3526,12 +3880,33 @@ export default function App() {
   async function handleCreateTool(tool){
     if(dataStatus!=="live"){
       const id="t"+uid();
-      setToolLibrary(prev=>({...prev,[id]:{id,name:tool.name,type:tool.type,itNum:tool.itNum,size:tool.size||"",active:tool.active!==false,visible:tool.visible!==false}}));
+      setToolLibrary(prev=>({...prev,[id]:{
+        id,
+        name:tool.name,
+        type:tool.type,
+        itNum:tool.itNum,
+        size:tool.size||"",
+        calibrationDueDate:tool.calibrationDueDate || "",
+        currentLocationId:tool.currentLocationId || null,
+        homeLocationId:tool.homeLocationId || null,
+        active:tool.active!==false,
+        visible:tool.visible!==false
+      }}));
       return;
     }
     return runTransition("Create tool", async ()=>{
       if(!canManageTools) throw new Error("Permission required to add tools.");
-      const created=await api.tools.create({name:tool.name,type:tool.type,itNum:tool.itNum,size:tool.size,active:tool.active!==false,visible:tool.visible!==false}, currentRole);
+      const created=await api.tools.create({
+        name:tool.name,
+        type:tool.type,
+        itNum:tool.itNum,
+        size:tool.size,
+        calibrationDueDate:tool.calibrationDueDate || null,
+        currentLocationId:tool.currentLocationId || null,
+        homeLocationId:tool.homeLocationId || null,
+        active:tool.active!==false,
+        visible:tool.visible!==false
+      }, currentRole);
       const id=String(created.id);
       setToolLibrary(prev=>({...prev,[id]:{
         id,
@@ -3539,6 +3914,13 @@ export default function App() {
         type:created.type,
         itNum:created.it_num ?? created.itNum,
         size:created.size ?? "",
+        calibrationDueDate:created.calibration_due_date ?? created.calibrationDueDate ?? "",
+        currentLocationId:created.current_location_id ?? created.currentLocationId ?? null,
+        currentLocationName:created.current_location_name ?? created.currentLocationName ?? "",
+        currentLocationType:created.current_location_type ?? created.currentLocationType ?? "",
+        homeLocationId:created.home_location_id ?? created.homeLocationId ?? null,
+        homeLocationName:created.home_location_name ?? created.homeLocationName ?? "",
+        homeLocationType:created.home_location_type ?? created.homeLocationType ?? "",
         active:created.active ?? true,
         visible:created.visible ?? true
       }}));
@@ -3563,10 +3945,66 @@ export default function App() {
           type:updated.type,
           itNum:updated.it_num ?? updated.itNum,
           size:updated.size ?? "",
+          calibrationDueDate:updated.calibration_due_date ?? updated.calibrationDueDate ?? "",
+          currentLocationId:updated.current_location_id ?? updated.currentLocationId ?? null,
+          currentLocationName:updated.current_location_name ?? updated.currentLocationName ?? "",
+          currentLocationType:updated.current_location_type ?? updated.currentLocationType ?? "",
+          homeLocationId:updated.home_location_id ?? updated.homeLocationId ?? null,
+          homeLocationName:updated.home_location_name ?? updated.homeLocationName ?? "",
+          homeLocationType:updated.home_location_type ?? updated.homeLocationType ?? "",
           active:updated.active ?? true,
           visible:updated.visible ?? true
         }
       }));
+    });
+  }
+  async function handleCreateToolLocation(location){
+    if(dataStatus!=="live"){
+      const id=Date.now();
+      setToolLocations(prev=>[...prev,{ id, name:location.name, locationType:location.locationType }].sort((a,b)=>a.name.localeCompare(b.name)));
+      return;
+    }
+    return runTransition("Create tool location", async ()=>{
+      if(!canManageTools) throw new Error("Permission required to manage tool locations.");
+      const created=await api.toolLocations.create(location, currentRole);
+      setToolLocations(prev=>[...prev,{ id:Number(created.id), name:created.name, locationType:created.location_type ?? created.locationType }].sort((a,b)=>a.name.localeCompare(b.name)));
+    });
+  }
+  async function handleUpdateToolLocation(id, patch){
+    if(dataStatus!=="live"){
+      setToolLocations(prev=>prev.map(loc=>String(loc.id)===String(id)?{...loc,...patch}:loc).sort((a,b)=>a.name.localeCompare(b.name)));
+      return;
+    }
+    return runTransition("Update tool location", async ()=>{
+      if(!canManageTools) throw new Error("Permission required to manage tool locations.");
+      const updated=await api.toolLocations.update(id, patch, currentRole);
+      setToolLocations(prev=>prev.map(loc=>String(loc.id)===String(id)?{
+        id:Number(updated.id),
+        name:updated.name,
+        locationType:updated.location_type ?? updated.locationType
+      }:loc).sort((a,b)=>a.name.localeCompare(b.name)));
+    });
+  }
+  async function handleRemoveToolLocation(id){
+    if(dataStatus!=="live"){
+      setToolLocations(prev=>prev.filter(loc=>String(loc.id)!==String(id)));
+      setToolLibrary(prev=>{
+        const next={...prev};
+        Object.keys(next).forEach((toolId)=>{
+          const tool=next[toolId];
+          if(String(tool.currentLocationId)===String(id) || String(tool.homeLocationId)===String(id)){
+            next[toolId]={...tool,currentLocationId:null,currentLocationName:"",homeLocationId:null,homeLocationName:""};
+          }
+        });
+        return next;
+      });
+      return;
+    }
+    return runTransition("Remove tool location", async ()=>{
+      if(!canManageTools) throw new Error("Permission required to manage tool locations.");
+      await api.toolLocations.remove(id, currentRole);
+      setToolLocations(prev=>prev.filter(loc=>String(loc.id)!==String(id)));
+      await reloadLiveData();
     });
   }
   async function handleUpdateRoleCaps(role, capabilities){
@@ -3664,7 +4102,7 @@ export default function App() {
             <AdminRecords records={records} parts={parts} toolLibrary={toolLibrary} usersById={usersById} loadRecordDetail={loadRecordDetail} canEdit={canEditRecords} onEditValue={handleEditRecordValue}/>
           )}
           {view==="admin" && (
-            <AdminView parts={parts} jobs={jobs} records={records} toolLibrary={toolLibrary} users={users} usersById={usersById} currentCaps={currentCaps} roleCaps={roleCaps} currentRole={currentRole} currentUserId={currentUserId} loadRecordDetail={loadRecordDetail} onEditValue={handleEditRecordValue} onCreateJob={handleCreateJob} onCreatePart={handleCreatePart} onUpdatePart={handleUpdatePart} onCreateOp={handleCreateOp} onCreateDim={handleCreateDim} onUpdateDim={handleUpdateDim} onRemoveDim={handleRemoveDim} onCreateTool={handleCreateTool} onUpdateTool={handleUpdateTool} onCreateUser={handleCreateUser} onUpdateUser={handleUpdateUser} onRemoveUser={handleRemoveUser} onUpdateRoleCaps={handleUpdateRoleCaps} onUnlockJob={handleUnlockJob} onRefreshData={reloadLiveData}/>
+            <AdminView parts={parts} jobs={jobs} records={records} toolLibrary={toolLibrary} toolLocations={toolLocations} users={users} usersById={usersById} currentCaps={currentCaps} roleCaps={roleCaps} currentRole={currentRole} currentUserId={currentUserId} loadRecordDetail={loadRecordDetail} onEditValue={handleEditRecordValue} onCreateJob={handleCreateJob} onCreatePart={handleCreatePart} onUpdatePart={handleUpdatePart} onBulkUpdateParts={handleBulkUpdateParts} onCreateOp={handleCreateOp} onCreateDim={handleCreateDim} onUpdateDim={handleUpdateDim} onRemoveDim={handleRemoveDim} onCreateTool={handleCreateTool} onUpdateTool={handleUpdateTool} onCreateToolLocation={handleCreateToolLocation} onUpdateToolLocation={handleUpdateToolLocation} onRemoveToolLocation={handleRemoveToolLocation} onCreateUser={handleCreateUser} onUpdateUser={handleUpdateUser} onRemoveUser={handleRemoveUser} onUpdateRoleCaps={handleUpdateRoleCaps} onUnlockJob={handleUnlockJob} onRefreshData={reloadLiveData}/>
           )}
         </div>
       </>

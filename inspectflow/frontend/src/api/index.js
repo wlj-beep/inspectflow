@@ -13,10 +13,17 @@ export const api = {
     update: (id, payload, role) => apiFetch(`/api/tools/${id}`, { method: "PUT", body: payload, role }),
     remove: (id, role) => apiFetch(`/api/tools/${id}`, { method: "DELETE", role })
   },
+  toolLocations: {
+    list: (role) => apiFetch("/api/tool-locations", { role }),
+    create: (payload, role) => apiFetch("/api/tool-locations", { method: "POST", body: payload, role }),
+    update: (id, payload, role) => apiFetch(`/api/tool-locations/${id}`, { method: "PUT", body: payload, role }),
+    remove: (id, role) => apiFetch(`/api/tool-locations/${id}`, { method: "DELETE", role })
+  },
   parts: {
     list: (role) => apiFetch("/api/parts", { role }),
     get: (id, role) => apiFetch(`/api/parts/${id}`, { role }),
     create: (payload, role) => apiFetch("/api/parts", { method: "POST", body: payload, role }),
+    bulkUpdate: (payload, role) => apiFetch("/api/parts/bulk-update", { method: "POST", body: payload, role }),
     update: (id, payload, role) => apiFetch(`/api/parts/${id}`, { method: "PUT", body: payload, role }),
     remove: (id, role) => apiFetch(`/api/parts/${id}`, { method: "DELETE", role })
   },

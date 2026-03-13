@@ -8,6 +8,10 @@ function nextJobId(prefix) {
   return `${prefix}-${crypto.randomUUID().slice(0, 8)}`;
 }
 
+function nextPartId(prefix = "P-REV") {
+  return `${prefix}-${crypto.randomUUID().slice(0, 6).toUpperCase()}`;
+}
+
 async function getOperationId(partId, opNumber) {
   const { rows } = await query(
     "SELECT id FROM operations WHERE part_id=$1 AND op_number=$2 LIMIT 1",
@@ -16,11 +20,11 @@ async function getOperationId(partId, opNumber) {
   return rows[0]?.id;
 }
 
-async function createJob({ id, partId, operationId, lot = "Lot T", qty = 5, status = "open", role = "Supervisor" }) {
+async function createJob({ id, partId, partRevision = "A", operationId, lot = "Lot T", qty = 5, status = "open", role = "Supervisor" }) {
   return request(app)
     .post("/api/jobs")
     .set("x-user-role", role)
-    .send({ id, partId, operationId, lot, qty, status });
+    .send({ id, partId, partRevision, operationId, lot, qty, status });
 }
 
 async function getFirstDimensionId(operationId) {
@@ -265,6 +269,7 @@ describe("Backlog validation hardening", () => {
       .set("x-user-role", "Supervisor")
       .send({
         partId: "1234",
+        partRevision: "A",
         operationId: op30,
         lot: "Lot SUP-2",
         qty: 7,
@@ -576,6 +581,196 @@ describe("Backlog validation hardening", () => {
       });
     expect(completed.status).toBe(200);
     expect(completed.body).toMatchObject({ id: issueId, status: "completed" });
+  });
+
+  it("creates setup revisions on setup-critical changes and exposes historical lookup", async () => {
+    const partId = nextPartId();
+
+    const createdPart = await request(app)
+      .post("/api/parts")
+      .set("x-user-role", "Admin")
+      .send({ id: partId, description: "Revision Test Part", revision: "A" });
+    expect(createdPart.status).toBe(201);
+
+    const createdOp = await request(app)
+      .post("/api/operations")
+      .set("x-user-role", "Admin")
+      .send({ partId, opNumber: "010", label: "Revision Op" });
+    expect(createdOp.status).toBe(201);
+    const operationId = createdOp.body.id;
+
+    const createdDim = await request(app)
+      .post("/api/dimensions")
+      .set("x-user-role", "Admin")
+      .send({
+        operationId,
+        name: "Revision Diameter",
+        nominal: 1.0,
+        tolPlus: 0.01,
+        tolMinus: 0.01,
+        unit: "in",
+        sampling: "100pct",
+        inputMode: "single",
+        toolIds: []
+      });
+    expect(createdDim.status).toBe(201);
+
+    const beforeUpdate = await request(app)
+      .get(`/api/parts/${encodeURIComponent(partId)}`)
+      .set("x-user-role", "Admin");
+    expect(beforeUpdate.status).toBe(200);
+    const beforeRevision = beforeUpdate.body.currentRevision;
+    expect(beforeRevision).toBeTruthy();
+
+    const targetOp = beforeUpdate.body.operations.find((op) => String(op.opNumber) === "010");
+    expect(targetOp).toBeTruthy();
+    const targetDim = targetOp.dimensions.find((d) => d.name === "Revision Diameter");
+    expect(targetDim).toBeTruthy();
+    const originalTolPlus = Number(targetDim.tolPlus ?? targetDim.tol_plus);
+
+    const updatedDim = await request(app)
+      .put(`/api/dimensions/${targetDim.id}`)
+      .set("x-user-role", "Admin")
+      .send({
+        name: targetDim.name,
+        nominal: Number(targetDim.nominal),
+        tolPlus: originalTolPlus + 0.002,
+        tolMinus: Number(targetDim.tolMinus ?? targetDim.tol_minus),
+        unit: targetDim.unit,
+        sampling: targetDim.sampling,
+        samplingInterval: targetDim.samplingInterval ?? targetDim.sampling_interval ?? null,
+        inputMode: targetDim.inputMode ?? targetDim.input_mode ?? "single",
+        toolIds: targetDim.toolIds || []
+      });
+    expect(updatedDim.status).toBe(200);
+
+    const afterUpdate = await request(app)
+      .get(`/api/parts/${encodeURIComponent(partId)}`)
+      .set("x-user-role", "Admin");
+    expect(afterUpdate.status).toBe(200);
+    expect(afterUpdate.body.currentRevision).toBeTruthy();
+    expect(afterUpdate.body.currentRevision).not.toBe(beforeRevision);
+    expect(Array.isArray(afterUpdate.body.revisions)).toBe(true);
+    expect(afterUpdate.body.revisions.length).toBeGreaterThanOrEqual(2);
+
+    const historical = await request(app)
+      .get(`/api/parts/${encodeURIComponent(partId)}?revision=${beforeRevision}`)
+      .set("x-user-role", "Admin");
+    expect(historical.status).toBe(200);
+    expect(historical.body).toMatchObject({ selectedRevision: beforeRevision, readOnlyRevision: true });
+    const historicalOp = historical.body.operations.find((op) => String(op.opNumber) === "010");
+    expect(historicalOp).toBeTruthy();
+    const historicalDim = historicalOp.dimensions.find((d) => d.name === "Revision Diameter");
+    expect(historicalDim).toBeTruthy();
+    expect(Number(historicalDim.tolPlus ?? historicalDim.tol_plus)).toBeCloseTo(originalTolPlus, 6);
+  });
+
+  it("requires explicit revision input for part and job creation", async () => {
+    const missingPartRevision = await request(app)
+      .post("/api/parts")
+      .set("x-user-role", "Admin")
+      .send({ id: nextPartId("P-NOREV"), description: "No Revision Part" });
+    expect(missingPartRevision.status).toBe(400);
+    expect(missingPartRevision.body).toMatchObject({ error: "revision_required" });
+
+    const op20 = await getOperationId("1234", "20");
+    expect(op20).toBeTruthy();
+    const invalidJobRevision = await request(app)
+      .post("/api/jobs")
+      .set("x-user-role", "Supervisor")
+      .send({
+        id: nextJobId("J-REV"),
+        partId: "1234",
+        partRevision: "ZZZZ",
+        operationId: op20,
+        lot: "Lot Rev",
+        qty: 3,
+        status: "open"
+      });
+    expect(invalidJobRevision.status).toBe(400);
+    expect(invalidJobRevision.body).toMatchObject({ error: "part_revision_not_found" });
+  });
+
+  it("supports bulk part-name updates for filtered mass-management workflows", async () => {
+    const partId = nextPartId("P-BULK");
+    const createdPart = await request(app)
+      .post("/api/parts")
+      .set("x-user-role", "Admin")
+      .send({ id: partId, description: "Bulk Old Name", revision: "A" });
+    expect(createdPart.status).toBe(201);
+
+    const bulkUpdate = await request(app)
+      .post("/api/parts/bulk-update")
+      .set("x-user-role", "Admin")
+      .send({
+        updates: [{ id: partId, description: "Bulk New Name" }]
+      });
+    expect(bulkUpdate.status).toBe(200);
+    expect(bulkUpdate.body).toMatchObject({ ok: true, updated: 1 });
+
+    const partAfter = await request(app)
+      .get(`/api/parts/${encodeURIComponent(partId)}`)
+      .set("x-user-role", "Admin");
+    expect(partAfter.status).toBe(200);
+    expect(partAfter.body).toMatchObject({ description: "Bulk New Name" });
+    expect(Array.isArray(partAfter.body.revisions)).toBe(true);
+    expect(partAfter.body.revisions.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("tracks tool calibration and location with admin-managed location master data", async () => {
+    const suffix = crypto.randomUUID().slice(0, 6);
+    const homeName = `Home ${suffix}`;
+    const currentName = `Current ${suffix}`;
+
+    const createdHome = await request(app)
+      .post("/api/tool-locations")
+      .set("x-user-role", "Admin")
+      .send({ name: homeName, locationType: "machine" });
+    expect(createdHome.status).toBe(201);
+
+    const createdCurrent = await request(app)
+      .post("/api/tool-locations")
+      .set("x-user-role", "Admin")
+      .send({ name: currentName, locationType: "out_for_calibration" });
+    expect(createdCurrent.status).toBe(201);
+
+    const toolId = await getToolIdByName("Outside Micrometer");
+    expect(toolId).toBeTruthy();
+
+    const updatedTool = await request(app)
+      .put(`/api/tools/${toolId}`)
+      .set("x-user-role", "Admin")
+      .send({
+        calibrationDueDate: "2026-12-31",
+        currentLocationId: createdCurrent.body.id,
+        homeLocationId: createdHome.body.id
+      });
+    expect(updatedTool.status).toBe(200);
+    expect(updatedTool.body.id).toBe(toolId);
+    expect(String(updatedTool.body.calibration_due_date || "")).toContain("2026-12-31");
+    expect(updatedTool.body.current_location_id).toBe(createdCurrent.body.id);
+    expect(updatedTool.body.home_location_id).toBe(createdHome.body.id);
+
+    const blockedDelete = await request(app)
+      .delete(`/api/tool-locations/${createdCurrent.body.id}`)
+      .set("x-user-role", "Admin");
+    expect(blockedDelete.status).toBe(409);
+    expect(blockedDelete.body).toMatchObject({ error: "location_in_use" });
+
+    const clearedTool = await request(app)
+      .put(`/api/tools/${toolId}`)
+      .set("x-user-role", "Admin")
+      .send({
+        currentLocationId: null,
+        homeLocationId: null
+      });
+    expect(clearedTool.status).toBe(200);
+
+    const deletedCurrent = await request(app)
+      .delete(`/api/tool-locations/${createdCurrent.body.id}`)
+      .set("x-user-role", "Admin");
+    expect(deletedCurrent.status).toBe(200);
+    expect(deletedCurrent.body).toMatchObject({ ok: true });
   });
 
   it("imports tools from CSV payload", async () => {

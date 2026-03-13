@@ -15,6 +15,10 @@ This checklist validates the MVP requirements and is intended for manual executi
   - Missing-piece reason requirements (`Scrapped`, `Other`, `Unable to Measure`).
   - Supervisor edit audit-log integrity and CSV export verification.
   - Role capability read/write persistence checks.
+  - Part setup revision progression/history (`A..Z`, `AA..`) and historical revision lookup via API.
+  - Part/job revision-required workflow validation and part+revision enforcement for job create/update APIs.
+  - Bulk part-name update workflow (`/api/parts/bulk-update`) and large-catalog filtering controls in Part Setup.
+  - Tool calibration/location tracking with admin-managed location master (`/api/tool-locations`) and location-in-use safeguards.
 
 ## Setup
 1. Start Postgres.
@@ -87,6 +91,27 @@ This checklist validates the MVP requirements and is intended for manual executi
 13. Auto-timeout
    - Start a job entry and remain idle for 20 minutes.
    - Verify auto-save to draft and lock release.
+
+14. Revision-controlled setup edits
+   - As Admin, open `Part / Op Setup` and edit a setup-critical field (part name, operation label/number, dimension spec, or allowed tools).
+   - Verify revision review confirmation appears before commit and shows current→next revision.
+   - Verify part detail reflects incremented revision code after save.
+   - Open a prior revision via API (`/api/parts/:id?revision=<code>`) and verify historical setup values are preserved.
+
+15. Part/job revision input enforcement
+   - In `Part / Op Setup`, verify creating a new part requires an initial revision entry.
+   - In `Job Management`, verify creating a job requires selecting part revision.
+   - Submit job create/update with an unknown part revision via API and verify it is rejected (`part_revision_not_found`).
+
+16. Large-catalog setup controls and bulk updates
+   - In `Part / Op Setup`, verify search filter and pagination reduce rendered part cards for large datasets.
+   - Use bulk find/replace to apply name updates across filtered parts and verify summary results.
+   - Verify updated parts receive new setup revisions and remain editable via normal per-part controls.
+
+17. Tool calibration and location tracking
+   - In `Tool Library`, create location master entries across machine/user/job/vendor/out-for-calibration types.
+   - Create/update a tool with calibration due date, current location, and home location.
+   - Verify deleting an in-use location is blocked (`location_in_use`), then clear tool references and verify delete succeeds.
 
 ## Notes
 - If any test fails, capture the exact steps, user role, and any error message.

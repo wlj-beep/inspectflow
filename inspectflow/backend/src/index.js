@@ -13,6 +13,7 @@ import rolesRouter from "./routes/roles.js";
 import sessionsRouter from "./routes/sessions.js";
 import issuesRouter from "./routes/issues.js";
 import importsRouter from "./routes/imports.js";
+import toolLocationsRouter from "./routes/toolLocations.js";
 
 dotenv.config();
 
@@ -36,6 +37,7 @@ app.use("/api/roles", rolesRouter);
 app.use("/api/sessions", sessionsRouter);
 app.use("/api/issues", issuesRouter);
 app.use("/api/imports", importsRouter);
+app.use("/api/tool-locations", toolLocationsRouter);
 
 app.use((err, req, res, next) => {
   console.error(err);

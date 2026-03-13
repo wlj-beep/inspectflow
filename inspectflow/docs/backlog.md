@@ -16,36 +16,17 @@ Completed from active queue:
 - `BL-003` implemented.
 - `BL-004` implemented.
 - `BL-005` implemented.
+- `BL-006` implemented.
+- `BL-007` implemented.
+- `BL-008` implemented.
 - `BL-009` implemented.
-
-### BL-006 (P2) Revision-Controlled Part Setup
-- Implement revision-controlled part setups with progression `A-Z`, then `AA-ZZ`, and onward.
-- Trigger new setup revisions when setup-critical fields change.
-- Preserve and expose historical revisions for audit and lookup.
-- In admin editing flows, show revision impact/next revision and require review before commit.
-
-### BL-007 (P2) Part and Job Revision Inputs and Enforcement
-- Add part-level revision as a first-class concept across lifecycle flows.
-- Require revision input when creating parts and creating jobs.
-- Enforce jobs can only be created for existing part+revision combinations.
-- Support continued production against older revisions when needed.
-- Rename part creation field label from `Part Description` to `Part Name`.
-
-### BL-008 (P2) Part Setup Scalability
-- Improve part setup UX for large catalogs (1000+ parts), including browse/search/filter/edit performance.
-- Add bulk-management paths (for example import/upload and structured mass update workflows).
-
-### BL-009 (P3) Users/Permissions UX Synchronization
-- Make user-page permission descriptions realtime and derived from current role capability configuration.
-- Keep summaries concise while reflecting capability changes immediately.
-
-### BL-010 (P3) Tool Calibration and Location Tracking
-- Add tool calibration expiration date.
-- Add tool current location tracking (machine, user, job, vendor, out for calibration).
-- Add tool home-location tracking.
-- Add admin-managed location master data for valid location options.
+- `BL-010` implemented.
 
 ## Recently Completed
+- BL-010: Added tool calibration due-date tracking, current/home location assignment, and admin-managed location master CRUD with Tool Library UI integration.
+- BL-008: Added large-catalog Part Setup controls (search/filter/pagination) and a structured bulk part-name update workflow/API for mass updates.
+- BL-007: Added required revision inputs for part/job creation, persisted job revision code, and enforced part+revision validation in job APIs and admin job flows.
+- BL-006: Added revision-controlled setup snapshots with automatic progression (`A..Z`, `AA..` onward), revision history lookup, CSV/setup change-triggered revision capture, and admin revision-review confirmations before commit.
 - BL-001: Added explicit loading/success/failure transition states for create/update flows and deployment-gated UI transition tests.
 - BL-002: Added multi-tool-per-dimension capture (same-type and mixed-type) in operator flow, persistence, and record detail/export rendering.
 - BL-003: Updated regenerated lot-family logic to reuse original base prefix and apply a consistent incremented run index across sibling operations.

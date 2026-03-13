@@ -15,6 +15,20 @@ const ADMIN_CAPS = [
 const DEFAULT_PART_DETAIL = {
   id: "1234",
   description: "Hydraulic Cylinder Body",
+  currentRevision: "A",
+  selectedRevision: "A",
+  nextRevision: "B",
+  revisions: [
+    {
+      revision: "A",
+      revisionIndex: 1,
+      partName: "Hydraulic Cylinder Body",
+      changeSummary: "Initial setup baseline",
+      changedFields: [],
+      createdByRole: "Admin",
+      createdAt: "2026-03-13T00:00:00.000Z"
+    }
+  ],
   operations: [
     { id: 10, opNumber: "10", label: "Rough Turn", dimensions: [] },
     { id: 20, opNumber: "20", label: "Bore & Finish", dimensions: [] },
@@ -33,6 +47,9 @@ async function mockApi(page, { createPartMode = "success", createPartDelayMs = 0
       return route.fulfill({ status: 200, json: [{ id: 1, name: "Admin User", role: "Admin", active: true }] });
     }
     if (method === "GET" && path === "/api/tools") {
+      return route.fulfill({ status: 200, json: [] });
+    }
+    if (method === "GET" && path === "/api/tool-locations") {
       return route.fulfill({ status: 200, json: [] });
     }
     if (method === "GET" && path === "/api/parts") {
@@ -132,9 +149,10 @@ test("shows loading and success transitions during part creation", async ({ page
   await page.getByRole("button", { name: "Admin" }).click();
   await page.getByRole("button", { name: "Part / Op Setup" }).click();
 
-  await page.getByPlaceholder("e.g. 5678").fill("5678");
-  await page.getByPlaceholder("Part name").fill("Transition Widget");
-  await page.getByRole("button", { name: /add part/i }).click();
+  const addPartCard = page.locator(".card").filter({ hasText: "Add New Part" });
+  await addPartCard.getByPlaceholder("e.g. 5678").fill("5678");
+  await addPartCard.getByPlaceholder("Part name").fill("Transition Widget");
+  await addPartCard.getByRole("button", { name: /add part/i }).click();
 
   const banner = page.getByTestId("transition-banner");
   await expect(banner).toContainText("Create part…");
@@ -149,9 +167,10 @@ test("shows failure transition when part creation fails", async ({ page }) => {
   await page.getByRole("button", { name: "Admin" }).click();
   await page.getByRole("button", { name: "Part / Op Setup" }).click();
 
-  await page.getByPlaceholder("e.g. 5678").fill("5678");
-  await page.getByPlaceholder("Part name").fill("Will Fail");
-  await page.getByRole("button", { name: /add part/i }).click();
+  const addPartCard = page.locator(".card").filter({ hasText: "Add New Part" });
+  await addPartCard.getByPlaceholder("e.g. 5678").fill("5678");
+  await addPartCard.getByPlaceholder("Part name").fill("Will Fail");
+  await addPartCard.getByRole("button", { name: /add part/i }).click();
 
   const banner = page.getByTestId("transition-banner");
   await expect(banner).toContainText("Create part failed. create_part_failed");
