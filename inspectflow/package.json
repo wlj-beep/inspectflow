@@ -1,0 +1,15 @@
+{
+  "name": "inspectflow",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -n backend,frontend -c blue,green \"npm run dev --prefix backend\" \"npm run dev --prefix frontend\"",
+    "test": "npm run test:api && npm run test:ui",
+    "test:api": "npm run test --prefix backend",
+    "test:ui": "npm run test:ui --prefix frontend",
+    "db:test:setup": "npm run db:test:setup --prefix backend"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.1"
+  }
+}

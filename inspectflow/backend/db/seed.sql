@@ -1,0 +1,156 @@
+-- Seed placeholder data for local development
+
+INSERT INTO users (name, role, active) VALUES
+  ('J. Morris','Operator',true),
+  ('R. Tatum','Operator',true),
+  ('Q. Nguyen','Quality',true),
+  ('D. Kowalski','Supervisor',true),
+  ('S. Patel','Operator',true),
+  ('L. Chen','Operator',true),
+  ('M. Okafor','Operator',true),
+  ('T. Brennan','Operator',true),
+  ('A. Vasquez','Operator',true),
+  ('S. Admin','Admin',true)
+ON CONFLICT DO NOTHING;
+
+INSERT INTO role_capabilities (role, capability) VALUES
+  ('Operator','view_operator'),
+  ('Operator','submit_records'),
+  ('Operator','view_records'),
+  ('Quality','view_admin'),
+  ('Quality','view_jobs'),
+  ('Quality','view_records'),
+  ('Quality','edit_records'),
+  ('Supervisor','view_admin'),
+  ('Supervisor','view_jobs'),
+  ('Supervisor','manage_jobs'),
+  ('Supervisor','view_records'),
+  ('Supervisor','edit_records'),
+  ('Admin','view_admin'),
+  ('Admin','view_jobs'),
+  ('Admin','manage_jobs'),
+  ('Admin','view_records'),
+  ('Admin','edit_records'),
+  ('Admin','manage_parts'),
+  ('Admin','manage_tools'),
+  ('Admin','manage_users'),
+  ('Admin','manage_roles')
+ON CONFLICT DO NOTHING;
+
+INSERT INTO tools (name, type, it_num, size) VALUES
+  ('Outside Micrometer','Variable','IT-0042','0-6 in'),
+  ('Vernier Caliper','Variable','IT-0018','0-12 in'),
+  ('Bore Gauge','Variable','IT-0031','0.5-1.0 in'),
+  ('Inside Micrometer','Variable','IT-0029','0.5-1.0 in'),
+  ('Depth Micrometer','Variable','IT-0055','0-6 in'),
+  ('Height Gauge','Variable','IT-0011','0-18 in'),
+  ('Profilometer','Variable','IT-0063','Ra'),
+  ('CMM','Variable','IT-0001','Full'),
+  ('Plug Gauge','Go/No-Go','IT-0074','0.625 in'),
+  ('Thread Gauge','Go/No-Go','IT-0082','1/2-13'),
+  ('Ring Gauge','Go/No-Go','IT-0091','0.500 in'),
+  ('Snap Gauge','Go/No-Go','IT-0090','0.250 in'),
+  ('Surface Comparator','Attribute','IT-0044','32 Ra'),
+  ('Optical Comparator','Attribute','IT-0038','10x')
+ON CONFLICT DO NOTHING;
+
+INSERT INTO parts (id, description) VALUES
+  ('1234','Hydraulic Cylinder Body')
+ON CONFLICT DO NOTHING;
+
+INSERT INTO operations (part_id, op_number, label) VALUES
+  ('1234','10','Rough Turn'),
+  ('1234','20','Bore & Finish'),
+  ('1234','30','Thread & Final')
+ON CONFLICT DO NOTHING;
+
+-- Dimensions
+INSERT INTO dimensions (operation_id, name, nominal, tol_plus, tol_minus, unit, sampling)
+SELECT o.id, 'Outer Diameter', 1.0000, 0.0050, 0.0050, 'in', 'first_last'
+FROM operations o WHERE o.part_id='1234' AND o.op_number='10'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO dimensions (operation_id, name, nominal, tol_plus, tol_minus, unit, sampling)
+SELECT o.id, 'Overall Length', 2.5000, 0.0100, 0.0100, 'in', 'first_last'
+FROM operations o WHERE o.part_id='1234' AND o.op_number='10'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO dimensions (operation_id, name, nominal, tol_plus, tol_minus, unit, sampling)
+SELECT o.id, 'Bore Diameter', 0.6250, 0.0030, 0.0000, 'in', '100pct'
+FROM operations o WHERE o.part_id='1234' AND o.op_number='20'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO dimensions (operation_id, name, nominal, tol_plus, tol_minus, unit, sampling)
+SELECT o.id, 'Surface Finish', 32.0, 8.0, 8.0, 'Ra', 'first_last'
+FROM operations o WHERE o.part_id='1234' AND o.op_number='20'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO dimensions (operation_id, name, nominal, tol_plus, tol_minus, unit, sampling)
+SELECT o.id, 'Thread Pitch Dia', 0.5000, 0.0020, 0.0020, 'in', '100pct'
+FROM operations o WHERE o.part_id='1234' AND o.op_number='30'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO dimensions (operation_id, name, nominal, tol_plus, tol_minus, unit, sampling)
+SELECT o.id, 'Chamfer Depth', 0.0620, 0.0050, 0.0050, 'in', 'first_last'
+FROM operations o WHERE o.part_id='1234' AND o.op_number='30'
+ON CONFLICT DO NOTHING;
+
+-- Dimension tools (by name lookup)
+INSERT INTO dimension_tools (dimension_id, tool_id)
+SELECT d.id, t.id
+FROM dimensions d
+JOIN tools t ON t.name IN ('Outside Micrometer','Vernier Caliper','CMM')
+WHERE d.name='Outer Diameter'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO dimension_tools (dimension_id, tool_id)
+SELECT d.id, t.id
+FROM dimensions d
+JOIN tools t ON t.name IN ('Vernier Caliper','Height Gauge')
+WHERE d.name='Overall Length'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO dimension_tools (dimension_id, tool_id)
+SELECT d.id, t.id
+FROM dimensions d
+JOIN tools t ON t.name IN ('Bore Gauge','Inside Micrometer','Plug Gauge','CMM')
+WHERE d.name='Bore Diameter'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO dimension_tools (dimension_id, tool_id)
+SELECT d.id, t.id
+FROM dimensions d
+JOIN tools t ON t.name IN ('Profilometer','Surface Comparator')
+WHERE d.name='Surface Finish'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO dimension_tools (dimension_id, tool_id)
+SELECT d.id, t.id
+FROM dimensions d
+JOIN tools t ON t.name IN ('Thread Gauge','CMM','Optical Comparator')
+WHERE d.name='Thread Pitch Dia'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO dimension_tools (dimension_id, tool_id)
+SELECT d.id, t.id
+FROM dimensions d
+JOIN tools t ON t.name IN ('Depth Micrometer','Vernier Caliper')
+WHERE d.name='Chamfer Depth'
+ON CONFLICT DO NOTHING;
+
+-- Jobs
+INSERT INTO jobs (id, part_id, operation_id, lot, qty, status)
+SELECT 'J-10041','1234', o.id, 'Lot A', 8, 'closed' FROM operations o WHERE o.part_id='1234' AND o.op_number='10'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO jobs (id, part_id, operation_id, lot, qty, status)
+SELECT 'J-10042','1234', o.id, 'Lot A', 12, 'open' FROM operations o WHERE o.part_id='1234' AND o.op_number='20'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO jobs (id, part_id, operation_id, lot, qty, status)
+SELECT 'J-10043','1234', o.id, 'Lot A', 12, 'open' FROM operations o WHERE o.part_id='1234' AND o.op_number='30'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO jobs (id, part_id, operation_id, lot, qty, status)
+SELECT 'J-10044','1234', o.id, 'Lot B', 5, 'draft' FROM operations o WHERE o.part_id='1234' AND o.op_number='10'
+ON CONFLICT DO NOTHING;
