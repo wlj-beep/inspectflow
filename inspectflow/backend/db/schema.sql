@@ -12,14 +12,38 @@ CREATE TABLE IF NOT EXISTS tools (
   name TEXT NOT NULL UNIQUE,
   type TEXT NOT NULL CHECK (type IN ('Variable','Go/No-Go','Attribute')),
   it_num TEXT NOT NULL,
+  calibration_due_date DATE,
+  current_location_id INTEGER,
+  home_location_id INTEGER,
   size TEXT,
   active BOOLEAN NOT NULL DEFAULT TRUE,
   visible BOOLEAN NOT NULL DEFAULT TRUE
 );
 
+CREATE TABLE IF NOT EXISTS tool_locations (
+  id SERIAL PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  location_type TEXT NOT NULL CHECK (location_type IN ('machine','user','job','vendor','out_for_calibration'))
+);
+
 CREATE TABLE IF NOT EXISTS parts (
   id TEXT PRIMARY KEY,
   description TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS part_setup_revisions (
+  id SERIAL PRIMARY KEY,
+  part_id TEXT NOT NULL REFERENCES parts(id) ON DELETE CASCADE,
+  revision_code TEXT NOT NULL,
+  revision_index INTEGER NOT NULL,
+  part_name TEXT NOT NULL,
+  snapshot JSONB NOT NULL,
+  change_summary TEXT NOT NULL,
+  changed_fields TEXT[] NOT NULL DEFAULT '{}'::TEXT[],
+  created_by_role TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (part_id, revision_code),
+  UNIQUE (part_id, revision_index)
 );
 
 CREATE TABLE IF NOT EXISTS operations (
@@ -53,6 +77,7 @@ CREATE TABLE IF NOT EXISTS dimension_tools (
 CREATE TABLE IF NOT EXISTS jobs (
   id TEXT PRIMARY KEY,
   part_id TEXT NOT NULL REFERENCES parts(id),
+  part_revision_code TEXT NOT NULL DEFAULT 'A',
   operation_id INTEGER NOT NULL REFERENCES operations(id),
   lot TEXT NOT NULL,
   qty INTEGER NOT NULL,
@@ -156,6 +181,13 @@ CREATE TABLE IF NOT EXISTS issue_reports (
 ALTER TABLE tools ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE tools ADD COLUMN IF NOT EXISTS visible BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE tools ADD COLUMN IF NOT EXISTS size TEXT;
+ALTER TABLE tools ADD COLUMN IF NOT EXISTS calibration_due_date DATE;
+ALTER TABLE tools ADD COLUMN IF NOT EXISTS current_location_id INTEGER;
+ALTER TABLE tools ADD COLUMN IF NOT EXISTS home_location_id INTEGER;
+ALTER TABLE tools DROP CONSTRAINT IF EXISTS tools_current_location_id_fkey;
+ALTER TABLE tools ADD CONSTRAINT tools_current_location_id_fkey FOREIGN KEY (current_location_id) REFERENCES tool_locations(id);
+ALTER TABLE tools DROP CONSTRAINT IF EXISTS tools_home_location_id_fkey;
+ALTER TABLE tools ADD CONSTRAINT tools_home_location_id_fkey FOREIGN KEY (home_location_id) REFERENCES tool_locations(id);
 ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
 ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('Operator','Quality','Supervisor','Admin'));
 
@@ -184,3 +216,9 @@ ALTER TABLE dimensions DROP CONSTRAINT IF EXISTS dimensions_input_mode_check;
 ALTER TABLE dimensions ADD CONSTRAINT dimensions_input_mode_check CHECK (input_mode IN ('single','range'));
 ALTER TABLE record_tools DROP CONSTRAINT IF EXISTS record_tools_pkey;
 ALTER TABLE record_tools ADD CONSTRAINT record_tools_pkey PRIMARY KEY (record_id, dimension_id, tool_id);
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS part_revision_code TEXT NOT NULL DEFAULT 'A';
+
+CREATE INDEX IF NOT EXISTS idx_part_setup_revisions_part_latest
+ON part_setup_revisions (part_id, revision_index DESC);
+CREATE INDEX IF NOT EXISTS idx_tool_locations_type
+ON tool_locations (location_type);

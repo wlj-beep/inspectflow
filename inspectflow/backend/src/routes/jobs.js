@@ -1,17 +1,37 @@
 import { Router } from "express";
 import { query, transaction } from "../db.js";
 import { getRoleCaps, requireAnyCapability, requireCapability } from "../middleware/requireCapability.js";
+import { ensurePartSetupBaselineRevision, getPartRevisionByCode } from "../revisions.js";
 
 const router = Router();
 
+function normalizePartRevision(value) {
+  const normalized = String(value || "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z]/g, "");
+  return normalized || null;
+}
+
+function requestRole(req) {
+  return String(req.header("x-user-role") || "").trim() || null;
+}
+
+async function validatePartRevision(client, partId, revisionCode, role) {
+  await ensurePartSetupBaselineRevision(client, { partId, changedByRole: role });
+  const revision = await getPartRevisionByCode(client, partId, revisionCode);
+  return !!revision;
+}
+
 router.get("/", requireAnyCapability(["view_operator", "view_jobs", "manage_jobs", "view_admin"]), async (req, res, next) => {
   try {
-    const { status, partId, operationId } = req.query;
+    const { status, partId, operationId, partRevision } = req.query;
     const filters = [];
     const params = [];
     if (status) { params.push(status); filters.push(`status=$${params.length}`); }
     if (partId) { params.push(partId); filters.push(`part_id=$${params.length}`); }
     if (operationId) { params.push(operationId); filters.push(`operation_id=$${params.length}`); }
+    if (partRevision) { params.push(normalizePartRevision(partRevision)); filters.push(`part_revision_code=$${params.length}`); }
     const where = filters.length ? `WHERE ${filters.join(" AND ")}` : "";
 
     const { rows } = await query(
@@ -37,30 +57,46 @@ router.get("/:id", requireAnyCapability(["view_operator", "view_jobs", "manage_j
 
 router.post("/", requireCapability("manage_jobs"), async (req, res, next) => {
   try {
-    const { id, partId, operationId, lot, qty, status = "open" } = req.body;
+    const { id, partId, partRevision, partRevisionCode, revision, operationId, lot, qty, status = "open" } = req.body;
     const trimmedId = String(id || "").trim();
     const trimmedPart = String(partId || "").trim();
+    const trimmedRevision = normalizePartRevision(partRevision || partRevisionCode || revision);
     const trimmedLot = String(lot || "").trim();
     const qtyNum = Number(qty);
-    if (!trimmedId || !trimmedPart || !operationId || !trimmedLot || Number.isNaN(qtyNum) || qtyNum <= 0) {
+    if (!trimmedId || !trimmedPart || !trimmedRevision || !operationId || !trimmedLot || Number.isNaN(qtyNum) || qtyNum <= 0) {
       return res.status(400).json({ error: "required_fields_missing" });
     }
     if (!["open", "closed", "draft", "incomplete"].includes(status)) {
       return res.status(400).json({ error: "invalid_status" });
     }
-    const opRes = await query(
-      "SELECT id FROM operations WHERE id=$1 AND part_id=$2",
-      [operationId, trimmedPart]
-    );
-    if (!opRes.rows[0]) {
+
+    const role = requestRole(req);
+    const created = await transaction(async (client) => {
+      const hasRevision = await validatePartRevision(client, trimmedPart, trimmedRevision, role);
+      if (!hasRevision) return { error: "part_revision_not_found" };
+
+      const opRes = await client.query(
+        "SELECT id FROM operations WHERE id=$1 AND part_id=$2",
+        [operationId, trimmedPart]
+      );
+      if (!opRes.rows[0]) {
+        return { error: "operation_part_mismatch" };
+      }
+      const rowsRes = await client.query(
+        `INSERT INTO jobs (id, part_id, part_revision_code, operation_id, lot, qty, status)
+         VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+        [trimmedId, trimmedPart, trimmedRevision, operationId, trimmedLot, qtyNum, status]
+      );
+      return rowsRes.rows[0];
+    });
+
+    if (created?.error === "part_revision_not_found") {
+      return res.status(400).json({ error: "part_revision_not_found" });
+    }
+    if (created?.error === "operation_part_mismatch") {
       return res.status(400).json({ error: "operation_part_mismatch" });
     }
-    const { rows } = await query(
-      `INSERT INTO jobs (id, part_id, operation_id, lot, qty, status)
-       VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-      [trimmedId, trimmedPart, operationId, trimmedLot, qtyNum, status]
-    );
-    res.status(201).json(rows[0]);
+    res.status(201).json(created);
   } catch (err) {
     next(err);
   }
@@ -69,29 +105,47 @@ router.post("/", requireCapability("manage_jobs"), async (req, res, next) => {
 router.put("/:id", requireCapability("manage_jobs"), async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { partId, operationId, lot, qty, status } = req.body;
+    const { partId, partRevision, partRevisionCode, revision, operationId, lot, qty, status } = req.body;
     const trimmedPart = String(partId || "").trim();
+    const trimmedRevision = normalizePartRevision(partRevision || partRevisionCode || revision);
     const trimmedLot = String(lot || "").trim();
     const qtyNum = Number(qty);
-    if (!trimmedPart || !operationId || !trimmedLot || Number.isNaN(qtyNum) || qtyNum <= 0 || !status) {
+    if (!trimmedPart || !trimmedRevision || !operationId || !trimmedLot || Number.isNaN(qtyNum) || qtyNum <= 0 || !status) {
       return res.status(400).json({ error: "required_fields_missing" });
     }
     if (!["open", "closed", "draft", "incomplete"].includes(status)) {
       return res.status(400).json({ error: "invalid_status" });
     }
-    const opRes = await query(
-      "SELECT id FROM operations WHERE id=$1 AND part_id=$2",
-      [operationId, trimmedPart]
-    );
-    if (!opRes.rows[0]) {
+
+    const role = requestRole(req);
+    const updated = await transaction(async (client) => {
+      const hasRevision = await validatePartRevision(client, trimmedPart, trimmedRevision, role);
+      if (!hasRevision) return { error: "part_revision_not_found" };
+
+      const opRes = await client.query(
+        "SELECT id FROM operations WHERE id=$1 AND part_id=$2",
+        [operationId, trimmedPart]
+      );
+      if (!opRes.rows[0]) {
+        return { error: "operation_part_mismatch" };
+      }
+      const rowsRes = await client.query(
+        `UPDATE jobs SET part_id=$1, part_revision_code=$2, operation_id=$3, lot=$4, qty=$5, status=$6
+         WHERE id=$7 RETURNING *`,
+        [trimmedPart, trimmedRevision, operationId, trimmedLot, qtyNum, status, id]
+      );
+      if (!rowsRes.rows[0]) return { error: "not_found" };
+      return rowsRes.rows[0];
+    });
+
+    if (updated?.error === "part_revision_not_found") {
+      return res.status(400).json({ error: "part_revision_not_found" });
+    }
+    if (updated?.error === "operation_part_mismatch") {
       return res.status(400).json({ error: "operation_part_mismatch" });
     }
-    const { rows } = await query(
-      `UPDATE jobs SET part_id=$1, operation_id=$2, lot=$3, qty=$4, status=$5 WHERE id=$6 RETURNING *`,
-      [trimmedPart, operationId, trimmedLot, qtyNum, status, id]
-    );
-    if (!rows[0]) return res.status(404).json({ error: "not_found" });
-    res.json(rows[0]);
+    if (updated?.error === "not_found") return res.status(404).json({ error: "not_found" });
+    res.json(updated);
   } catch (err) {
     next(err);
   }

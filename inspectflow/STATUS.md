@@ -13,10 +13,7 @@ Canonical global execution queue for active backlog work.
 
 | Rank | Item ID | Priority | Status | Owner | Updated | Work Item |
 | --- | --- | --- | --- | --- | --- | --- |
-| 1 | BL-006 | P2 | Queued |  | 2026-03-13T09:00:00-04:00 | Revision-controlled part setup model with revision progression and approval flow. |
-| 2 | BL-007 | P2 | Queued |  | 2026-03-13T09:00:00-04:00 | Part+revision lifecycle enforcement for part creation and job creation workflows. |
-| 3 | BL-008 | P2 | Queued |  | 2026-03-13T09:00:00-04:00 | Large-catalog part setup UX and bulk-management workflows. |
-| 4 | BL-010 | P3 | Queued |  | 2026-03-13T09:00:00-04:00 | Tool calibration expiration and tool location/home-location tracking with location master data. |
+| - | - | - | Idle |  | 2026-03-13T11:35:00-04:00 | Active queue clear: BL-006, BL-007, BL-008, and BL-010 completed. |
 
 ## Handoff Notes
 
@@ -27,3 +24,7 @@ Canonical global execution queue for active backlog work.
 | 2026-03-13 | BL-004 | @owner | @codex | Claimed after completing BL-003. |
 | 2026-03-13 | BL-005 | @owner | @codex | Claimed after completing BL-004. |
 | 2026-03-13 | BL-009 | @owner | @codex | Completed via live role-capability summaries on Users page. |
+| 2026-03-13 | BL-006 | @codex | @owner | Completed revision-controlled setup history, revision progression, and admin revision review gating. |
+| 2026-03-13 | BL-007 | @codex | @owner | Completed part/job revision-required flows and job part+revision API enforcement. |
+| 2026-03-13 | BL-008 | @codex | @owner | Completed catalog-scale Part Setup filtering/pagination and structured bulk part-name update workflow. |
+| 2026-03-13 | BL-010 | @codex | @owner | Completed tool calibration due-date + current/home location tracking with admin-managed location master data. |

@@ -54,6 +54,23 @@ INSERT INTO tools (name, type, it_num, size) VALUES
   ('Optical Comparator','Attribute','IT-0038','10x')
 ON CONFLICT DO NOTHING;
 
+INSERT INTO tool_locations (name, location_type) VALUES
+  ('Machine Cell A','machine'),
+  ('Machine Cell B','machine'),
+  ('QC Lab Crib','machine'),
+  ('Vendor: CalLab','vendor'),
+  ('Out for Calibration','out_for_calibration'),
+  ('User: J. Morris','user'),
+  ('Job: J-10042','job')
+ON CONFLICT DO NOTHING;
+
+UPDATE tools
+SET
+  calibration_due_date = '2026-06-30',
+  home_location_id = (SELECT id FROM tool_locations WHERE name='QC Lab Crib'),
+  current_location_id = (SELECT id FROM tool_locations WHERE name='Machine Cell A')
+WHERE name IN ('Outside Micrometer','Vernier Caliper','Bore Gauge');
+
 INSERT INTO parts (id, description) VALUES
   ('1234','Hydraulic Cylinder Body')
 ON CONFLICT DO NOTHING;

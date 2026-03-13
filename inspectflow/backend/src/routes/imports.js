@@ -1,6 +1,10 @@
 import { Router } from "express";
 import { query, transaction } from "../db.js";
 import { requireCapability } from "../middleware/requireCapability.js";
+import {
+  createPartSetupRevision,
+  ensurePartSetupBaselineRevision
+} from "../revisions.js";
 
 const router = Router();
 
@@ -8,6 +12,18 @@ const VALID_TOOL_TYPES = ["Variable", "Go/No-Go", "Attribute"];
 const VALID_UNITS = ["in", "mm", "Ra", "deg"];
 const VALID_SAMPLING = ["first_last", "first_middle_last", "every_5", "every_10", "100pct", "custom_interval"];
 const VALID_INPUT_MODE = ["single", "range"];
+
+function normalizeOperationNumber(value) {
+  const raw = String(value ?? "").trim();
+  if (!/^\d{1,3}$/.test(raw)) return null;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 1 || n > 999) return null;
+  return String(n).padStart(3, "0");
+}
+
+function requestRole(req) {
+  return String(req.header("x-user-role") || "").trim() || null;
+}
 
 function canonicalHeader(header) {
   return String(header || "")
@@ -157,12 +173,15 @@ router.post("/part-dimensions/csv", requireCapability("manage_parts"), async (re
     let partsUpserted = 0;
     let operationsUpserted = 0;
     let dimensionsUpserted = 0;
+    const role = requestRole(req);
 
     await transaction(async (client) => {
+      const touchedParts = new Map();
       for (const row of rows) {
         const partId = firstValue(row, ["part_id", "part_number"]).trim();
         const partDescription = firstValue(row, ["part_name", "part_description", "description"]).trim() || partId;
-        const opNumber = firstValue(row, ["op_number", "operation", "operation_number"]).trim();
+        const opNumberRaw = firstValue(row, ["op_number", "operation", "operation_number"]).trim();
+        const opNumber = normalizeOperationNumber(opNumberRaw);
         const opLabel = firstValue(row, ["op_label", "operation_label"]).trim() || `Operation ${opNumber}`;
         const dimName = firstValue(row, ["dimension_name", "name"]).trim();
         const nominal = Number(firstValue(row, ["nominal"]));
@@ -186,6 +205,10 @@ router.post("/part-dimensions/csv", requireCapability("manage_parts"), async (re
         }
 
         const existingPart = await client.query("SELECT id FROM parts WHERE id=$1", [partId]);
+        const isNewPart = !existingPart.rows[0];
+        if (!isNewPart) {
+          await ensurePartSetupBaselineRevision(client, { partId, changedByRole: role });
+        }
         await client.query(
           `INSERT INTO parts (id, description)
            VALUES ($1,$2)
@@ -193,6 +216,10 @@ router.post("/part-dimensions/csv", requireCapability("manage_parts"), async (re
           [partId, partDescription]
         );
         if (!existingPart.rows[0]) partsUpserted += 1;
+        if (!touchedParts.has(partId)) {
+          touchedParts.set(partId, { isNewPart, rowCount: 0 });
+        }
+        touchedParts.get(partId).rowCount += 1;
 
         const existingOp = await client.query(
           "SELECT id FROM operations WHERE part_id=$1 AND op_number=$2",
@@ -259,6 +286,16 @@ router.post("/part-dimensions/csv", requireCapability("manage_parts"), async (re
             );
           }
         }
+      }
+
+      for (const [partId, info] of touchedParts.entries()) {
+        await createPartSetupRevision(client, {
+          partId,
+          changeSummary: `Applied part-dimensions CSV import (${info.rowCount} row${info.rowCount === 1 ? "" : "s"})`,
+          changedFields: ["imports.part_dimensions_csv"],
+          changedByRole: role,
+          createInitialIfMissing: info.isNewPart
+        });
       }
     });
 
