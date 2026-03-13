@@ -1,6 +1,6 @@
 # InspectFlow
 
-Production MVP scaffold (on‑prem web app).
+Production MVP scaffold (on‑prem web app)..
 
 ## Structure
 - `frontend/` React UI (Vite-compatible scaffold)
