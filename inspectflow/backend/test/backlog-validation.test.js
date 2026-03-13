@@ -333,6 +333,62 @@ describe("Backlog validation hardening", () => {
     expect(unableToMeasure.body).toMatchObject({ job_id: jobId, status: "incomplete" });
   });
 
+  it("supports first/middle/last and custom-interval sampling definitions", async () => {
+    const op20 = await getOperationId("1234", "20");
+    expect(op20).toBeTruthy();
+    const name = `Sampling Dim ${crypto.randomUUID().slice(0, 6)}`;
+
+    const created = await request(app)
+      .post("/api/dimensions")
+      .set("x-user-role", "Admin")
+      .send({
+        operationId: op20,
+        name,
+        nominal: 1.0,
+        tolPlus: 0.01,
+        tolMinus: 0.01,
+        unit: "in",
+        sampling: "first_middle_last",
+        inputMode: "single",
+        toolIds: []
+      });
+    expect(created.status).toBe(201);
+    expect(created.body).toMatchObject({ sampling: "first_middle_last" });
+
+    const invalidCustom = await request(app)
+      .put(`/api/dimensions/${created.body.id}`)
+      .set("x-user-role", "Admin")
+      .send({
+        name,
+        nominal: 1.0,
+        tolPlus: 0.01,
+        tolMinus: 0.01,
+        unit: "in",
+        sampling: "custom_interval",
+        inputMode: "single",
+        toolIds: []
+      });
+    expect(invalidCustom.status).toBe(400);
+    expect(invalidCustom.body).toMatchObject({ error: "invalid_sampling_interval" });
+
+    const validCustom = await request(app)
+      .put(`/api/dimensions/${created.body.id}`)
+      .set("x-user-role", "Admin")
+      .send({
+        name,
+        nominal: 1.0,
+        tolPlus: 0.01,
+        tolMinus: 0.01,
+        unit: "in",
+        sampling: "custom_interval",
+        samplingInterval: 3,
+        inputMode: "single",
+        toolIds: []
+      });
+    expect(validCustom.status).toBe(200);
+    expect(validCustom.body).toMatchObject({ sampling: "custom_interval", sampling_interval: 3 });
+  });
+
   it("records supervisor edits in audit log and exports edited CSV values", async () => {
     const op20 = await getOperationId("1234", "20");
     expect(op20).toBeTruthy();
@@ -520,5 +576,51 @@ describe("Backlog validation hardening", () => {
       });
     expect(completed.status).toBe(200);
     expect(completed.body).toMatchObject({ id: issueId, status: "completed" });
+  });
+
+  it("imports tools from CSV payload", async () => {
+    const suffix = crypto.randomUUID().slice(0, 6);
+    const toolName = `Import Tool ${suffix}`;
+    const csv = [
+      "name,type,it_num,size,active,visible",
+      `${toolName},Variable,IT-IMP-${suffix},0-4 in,true,true`
+    ].join("\n");
+
+    const res = await request(app)
+      .post("/api/imports/tools/csv")
+      .set("x-user-role", "Admin")
+      .send({ csvText: csv });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ ok: true, inserted: 1 });
+
+    const check = await query("SELECT id FROM tools WHERE name=$1", [toolName]);
+    expect(check.rows[0]).toBeTruthy();
+  });
+
+  it("imports part dimensions from CSV payload with custom interval sampling", async () => {
+    const partId = `IMP-${crypto.randomUUID().slice(0, 6).toUpperCase()}`;
+    const csv = [
+      "part_id,part_name,op_number,op_label,dimension_name,nominal,tol_plus,tol_minus,unit,sampling,sampling_interval,input_mode,tool_it_nums",
+      `${partId},Imported Part,010,Rough Turn,Imported Diameter,1.0000,0.0050,0.0050,in,custom_interval,3,single,IT-0042`
+    ].join("\n");
+
+    const res = await request(app)
+      .post("/api/imports/part-dimensions/csv")
+      .set("x-user-role", "Admin")
+      .send({ csvText: csv });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ ok: true, totalRows: 1 });
+
+    const opRes = await query(
+      "SELECT id FROM operations WHERE part_id=$1 AND op_number='010' LIMIT 1",
+      [partId]
+    );
+    expect(opRes.rows[0]).toBeTruthy();
+    const dimRes = await query(
+      "SELECT sampling, sampling_interval FROM dimensions WHERE operation_id=$1 AND name='Imported Diameter' LIMIT 1",
+      [opRes.rows[0].id]
+    );
+    expect(dimRes.rows[0]?.sampling).toBe("custom_interval");
+    expect(Number(dimRes.rows[0]?.sampling_interval)).toBe(3);
   });
 });

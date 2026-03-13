@@ -10,28 +10,12 @@
 
 ## Active Backlog Items (ID Indexed)
 
-### BL-001 (P0) UX Quality Hardening and Transition Stability
-- Establish and enforce a UX-first quality bar across views and workflows.
-- Eliminate white-screen transitions during create/update flows with explicit loading, success, and failure states.
-- Add deployment-gated tests that cover loading and transition behavior to prevent blank-screen regressions.
-
-### BL-002 (P0) Multi-Tool Measurement Handling per Dimension
-- Support multiple IT numbers of the same tool type for a single dimension.
-- Support mixed tool types for a single dimension (for example, partial hard-gage and partial variable measurement).
-- Support multiple variable tools for one dimension while preserving existing validation integrity.
-
-### BL-003 (P1) Regenerated Job-Family Numbering Consistency
-- Complete duplicate/regenerated job logic so regenerated families reuse the original base job prefix.
-- Ensure run index increments consistently across sibling operation jobs.
-- Preserve pattern: initial run `base + operation + 01`; regenerated run `base + operation + 02`, etc.
-
-### BL-004 (P1) Operation Number Range Normalization
-- Support operation numbers from `001` to `999` consistently in setup, job creation, and job-number generation logic.
-- Normalize validation and formatting rules across API and UI flows.
-
-### BL-005 (P1) Inspection Snapshot and Historical Correctness
-- Snapshot setup-critical values at job start (nominal, tolerances, sampling, and related setup metadata).
-- Preserve historical inspection correctness when setup definitions are edited later.
+Completed from active queue:
+- `BL-001` implemented.
+- `BL-002` implemented.
+- `BL-003` implemented.
+- `BL-004` implemented.
+- `BL-005` implemented.
 
 ### BL-006 (P2) Revision-Controlled Part Setup
 - Implement revision-controlled part setups with progression `A-Z`, then `AA-ZZ`, and onward.
@@ -61,6 +45,11 @@
 - Add admin-managed location master data for valid location options.
 
 ## Recently Completed
+- BL-001: Added explicit loading/success/failure transition states for create/update flows and deployment-gated UI transition tests.
+- BL-002: Added multi-tool-per-dimension capture (same-type and mixed-type) in operator flow, persistence, and record detail/export rendering.
+- BL-003: Updated regenerated lot-family logic to reuse original base prefix and apply a consistent incremented run index across sibling operations.
+- BL-004: Normalized operation number handling to `001`-`999` across setup validation and job-number generation paths.
+- BL-005: Added setup-critical dimension snapshots on record persistence and switched record detail/export to snapshot-backed dimension metadata.
 - Added quality role support and role descriptions on Users page.
 - Switched Users page to single `Save All` with unsaved-changes warning.
 - Added role capability editor (Admin can modify what each role can access/do).

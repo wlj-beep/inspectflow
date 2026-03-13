@@ -74,5 +74,10 @@ export const api = {
     },
     create: (payload, role) => apiFetch("/api/issues", { method: "POST", body: payload, role }),
     complete: (id, payload, role) => apiFetch(`/api/issues/${id}/complete`, { method: "PUT", body: payload, role })
+  },
+  imports: {
+    templates: (role) => apiFetch("/api/imports/templates", { role }),
+    toolsCsv: (csvText, role) => apiFetch("/api/imports/tools/csv", { method: "POST", body: { csvText }, role }),
+    partDimensionsCsv: (csvText, role) => apiFetch("/api/imports/part-dimensions/csv", { method: "POST", body: { csvText }, role })
   }
 };

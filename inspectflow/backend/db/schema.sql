@@ -38,7 +38,8 @@ CREATE TABLE IF NOT EXISTS dimensions (
   tol_plus NUMERIC NOT NULL,
   tol_minus NUMERIC NOT NULL,
   unit TEXT NOT NULL CHECK (unit IN ('in','mm','Ra','deg')),
-  sampling TEXT NOT NULL CHECK (sampling IN ('first_last','every_5','every_10','100pct')),
+  sampling TEXT NOT NULL CHECK (sampling IN ('first_last','first_middle_last','every_5','every_10','100pct','custom_interval')),
+  sampling_interval INTEGER CHECK (sampling_interval IS NULL OR sampling_interval > 0),
   input_mode TEXT NOT NULL DEFAULT 'single' CHECK (input_mode IN ('single','range')),
   UNIQUE (operation_id, name)
 );
@@ -83,12 +84,26 @@ CREATE TABLE IF NOT EXISTS record_values (
   PRIMARY KEY (record_id, dimension_id, piece_number)
 );
 
+CREATE TABLE IF NOT EXISTS record_dimension_snapshots (
+  record_id INTEGER NOT NULL REFERENCES records(id),
+  dimension_id INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  nominal NUMERIC NOT NULL,
+  tol_plus NUMERIC NOT NULL,
+  tol_minus NUMERIC NOT NULL,
+  unit TEXT NOT NULL,
+  sampling TEXT NOT NULL,
+  sampling_interval INTEGER,
+  input_mode TEXT NOT NULL DEFAULT 'single' CHECK (input_mode IN ('single','range')),
+  PRIMARY KEY (record_id, dimension_id)
+);
+
 CREATE TABLE IF NOT EXISTS record_tools (
   record_id INTEGER NOT NULL REFERENCES records(id),
   dimension_id INTEGER NOT NULL REFERENCES dimensions(id),
   tool_id INTEGER NOT NULL REFERENCES tools(id),
   it_num TEXT NOT NULL,
-  PRIMARY KEY (record_id, dimension_id)
+  PRIMARY KEY (record_id, dimension_id, tool_id)
 );
 
 CREATE TABLE IF NOT EXISTS missing_pieces (
@@ -159,6 +174,13 @@ CREATE TABLE IF NOT EXISTS user_sessions (
 
 ALTER TABLE missing_pieces DROP CONSTRAINT IF EXISTS missing_pieces_reason_check;
 ALTER TABLE missing_pieces ADD CONSTRAINT missing_pieces_reason_check CHECK (reason IN ('Scrapped','Lost','Damaged','Other','Unable to Measure'));
+ALTER TABLE dimensions ADD COLUMN IF NOT EXISTS sampling_interval INTEGER;
+ALTER TABLE dimensions DROP CONSTRAINT IF EXISTS dimensions_sampling_interval_check;
+ALTER TABLE dimensions ADD CONSTRAINT dimensions_sampling_interval_check CHECK (sampling_interval IS NULL OR sampling_interval > 0);
+ALTER TABLE dimensions DROP CONSTRAINT IF EXISTS dimensions_sampling_check;
+ALTER TABLE dimensions ADD CONSTRAINT dimensions_sampling_check CHECK (sampling IN ('first_last','first_middle_last','every_5','every_10','100pct','custom_interval'));
 ALTER TABLE dimensions ADD COLUMN IF NOT EXISTS input_mode TEXT NOT NULL DEFAULT 'single';
 ALTER TABLE dimensions DROP CONSTRAINT IF EXISTS dimensions_input_mode_check;
 ALTER TABLE dimensions ADD CONSTRAINT dimensions_input_mode_check CHECK (input_mode IN ('single','range'));
+ALTER TABLE record_tools DROP CONSTRAINT IF EXISTS record_tools_pkey;
+ALTER TABLE record_tools ADD CONSTRAINT record_tools_pkey PRIMARY KEY (record_id, dimension_id, tool_id);

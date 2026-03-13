@@ -11,5 +11,7 @@
 - Agent Roles: `agent-roles.md`
 - Coordination Plan: `coordination-plan.md`
 - Backlog: `backlog.md`
+- Integration Strategy: `integration-strategy.md`
+- Import Templates: `templates/`
 - Backup Plan: `backup-plan.md`
 - Test Plan: `test-plan.md`

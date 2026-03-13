@@ -1,0 +1,4 @@
+name,type,it_num,size,active,visible
+Outside Micrometer,Variable,IT-0042,0-6 in,true,true
+Plug Gauge,Go/No-Go,IT-0074,0.625 in,true,true
+Surface Comparator,Attribute,IT-0044,32 Ra,true,true

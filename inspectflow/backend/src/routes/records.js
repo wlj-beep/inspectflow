@@ -124,10 +124,19 @@ router.get("/:id", requireCapability("view_records"), async (req, res, next) => 
     const record = recRes.rows[0];
     if (!record) return res.status(404).json({ error: "not_found" });
 
-    const dimsRes = await query(
-      "SELECT * FROM dimensions WHERE operation_id=$1 ORDER BY id ASC",
-      [record.operation_id]
+    const dimsSnapshotRes = await query(
+      `SELECT dimension_id AS id, name, nominal, tol_plus, tol_minus, unit, sampling, sampling_interval, input_mode
+       FROM record_dimension_snapshots
+       WHERE record_id=$1
+       ORDER BY dimension_id ASC`,
+      [id]
     );
+    const dimsRes = dimsSnapshotRes.rows.length
+      ? dimsSnapshotRes
+      : await query(
+          "SELECT * FROM dimensions WHERE operation_id=$1 ORDER BY id ASC",
+          [record.operation_id]
+        );
     const valuesRes = await query(
       "SELECT * FROM record_values WHERE record_id=$1 ORDER BY piece_number ASC",
       [id]
@@ -136,7 +145,8 @@ router.get("/:id", requireCapability("view_records"), async (req, res, next) => 
       `SELECT rt.record_id, rt.dimension_id, rt.tool_id, rt.it_num, t.name AS tool_name, t.type AS tool_type
        FROM record_tools rt
        JOIN tools t ON t.id = rt.tool_id
-       WHERE rt.record_id=$1`,
+       WHERE rt.record_id=$1
+       ORDER BY rt.dimension_id ASC, rt.tool_id ASC`,
       [id]
     );
     const missingRes = await query(
@@ -169,9 +179,11 @@ router.get("/:id/export", requireCapability("view_records"), async (req, res, ne
     if (!record) return res.status(404).json({ error: "not_found" });
 
     const { rows } = await query(
-      `SELECT rv.record_id, rv.dimension_id, d.name AS dimension_name, rv.piece_number, rv.value, rv.is_oot
+      `SELECT rv.record_id, rv.dimension_id, COALESCE(rds.name, d.name) AS dimension_name, rv.piece_number, rv.value, rv.is_oot
        FROM record_values rv
-       JOIN dimensions d ON d.id = rv.dimension_id
+       LEFT JOIN record_dimension_snapshots rds
+         ON rds.record_id = rv.record_id AND rds.dimension_id = rv.dimension_id
+       LEFT JOIN dimensions d ON d.id = rv.dimension_id
        WHERE rv.record_id=$1
        ORDER BY rv.piece_number ASC, rv.dimension_id ASC`,
       [id]
@@ -293,6 +305,33 @@ router.post("/", requireCapability("submit_records"), async (req, res, next) => 
       );
       const record = recRes.rows[0];
 
+      const snapshotRes = await client.query(
+        `SELECT id, name, nominal, tol_plus, tol_minus, unit, sampling, sampling_interval, input_mode
+         FROM dimensions
+         WHERE operation_id=$1
+         ORDER BY id ASC`,
+        [operationId]
+      );
+      for (const d of snapshotRes.rows) {
+        await client.query(
+          `INSERT INTO record_dimension_snapshots
+             (record_id, dimension_id, name, nominal, tol_plus, tol_minus, unit, sampling, sampling_interval, input_mode)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+          [
+            record.id,
+            Number(d.id),
+            d.name,
+            d.nominal,
+            d.tol_plus,
+            d.tol_minus,
+            d.unit,
+            d.sampling,
+            d.sampling_interval ?? null,
+            d.input_mode || "single"
+          ]
+        );
+      }
+
       for (const v of values) {
         await client.query(
           `INSERT INTO record_values (record_id, dimension_id, piece_number, value, is_oot)
@@ -358,12 +397,21 @@ router.put("/:id/value", requireCapability("edit_records"), async (req, res, nex
       if (!prev) return { error: "not_found" };
 
       const dimCtxRes = await client.query(
-        `SELECT d.nominal, d.tol_plus, d.tol_minus, d.input_mode, t.type AS tool_type
+        `SELECT COALESCE(rds.nominal, d.nominal) AS nominal,
+                COALESCE(rds.tol_plus, d.tol_plus) AS tol_plus,
+                COALESCE(rds.tol_minus, d.tol_minus) AS tol_minus,
+                COALESCE(rds.input_mode, d.input_mode) AS input_mode,
+                COALESCE(BOOL_OR(t.type='Go/No-Go'), false) AS has_gng
          FROM dimensions d
          JOIN records r ON r.id=$1 AND r.operation_id=d.operation_id
+         LEFT JOIN record_dimension_snapshots rds ON rds.record_id=r.id AND rds.dimension_id=d.id
          LEFT JOIN record_tools rt ON rt.record_id=r.id AND rt.dimension_id=d.id
          LEFT JOIN tools t ON t.id=rt.tool_id
-         WHERE d.id=$2`,
+         WHERE d.id=$2
+         GROUP BY COALESCE(rds.nominal, d.nominal),
+                  COALESCE(rds.tol_plus, d.tol_plus),
+                  COALESCE(rds.tol_minus, d.tol_minus),
+                  COALESCE(rds.input_mode, d.input_mode)`,
         [id, dimIdNum]
       );
       const dimCtx = dimCtxRes.rows[0];
@@ -371,7 +419,7 @@ router.put("/:id/value", requireCapability("edit_records"), async (req, res, nex
 
       let normalizedValue = String(value).trim();
       let nextIsOot = false;
-      if (dimCtx.tool_type === "Go/No-Go") {
+      if (dimCtx.has_gng) {
         normalizedValue = normalizedValue.toUpperCase();
         if (!["PASS", "FAIL"].includes(normalizedValue)) {
           return { error: "invalid_value_for_mode" };

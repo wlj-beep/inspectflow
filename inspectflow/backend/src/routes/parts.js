@@ -34,7 +34,7 @@ router.get("/:id", requireAnyCapability(["view_operator", "view_admin", "view_re
     let dimsByOp = {};
     if (opIds.length) {
       const dimsRes = await query(
-        `SELECT d.id, d.operation_id, d.name, d.nominal, d.tol_plus, d.tol_minus, d.unit, d.sampling
+        `SELECT d.id, d.operation_id, d.name, d.nominal, d.tol_plus, d.tol_minus, d.unit, d.sampling, d.sampling_interval, d.input_mode
          FROM dimensions d WHERE d.operation_id = ANY($1) ORDER BY d.id ASC`,
         [opIds]
       );
@@ -74,6 +74,8 @@ router.get("/:id", requireAnyCapability(["view_operator", "view_admin", "view_re
           tolMinus: d.tol_minus,
           unit: d.unit,
           sampling: d.sampling,
+          samplingInterval: d.sampling_interval,
+          inputMode: d.input_mode,
           toolIds,
           tools: toolIds.map((tid) => toolMap[tid]).filter(Boolean)
         };
