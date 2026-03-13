@@ -137,6 +137,18 @@ const INITIAL_RECORDS = [
     missingPieces:{}, oot:true, status:"complete",
     comment:"Piece 5 Outer Diameter reads 1.0055 — exceeds +.0050 tolerance by 0.0005. Reviewed with supervisor D. Kowalski. Piece accepted per engineering disposition ENG-2026-031. No corrective action required at this time." },
 ];
+const INITIAL_USERS = [
+  { id:1, name:"J. Morris", role:"Operator", active:true },
+  { id:2, name:"R. Tatum", role:"Operator", active:true },
+  { id:3, name:"Q. Nguyen", role:"Quality", active:true },
+  { id:4, name:"D. Kowalski", role:"Supervisor", active:true },
+  { id:5, name:"S. Patel", role:"Operator", active:true },
+  { id:6, name:"L. Chen", role:"Operator", active:true },
+  { id:7, name:"M. Okafor", role:"Operator", active:true },
+  { id:8, name:"T. Brennan", role:"Operator", active:true },
+  { id:9, name:"A. Vasquez", role:"Operator", active:true },
+  { id:10, name:"S. Admin", role:"Admin", active:true }
+];
 
 function isOOT(value,tolPlus,tolMinus,nominal){
   if(value===undefined||value===null||value==="") return null;
@@ -3412,15 +3424,24 @@ export default function App() {
     api.users.list(currentRole || "Operator")
       .then(rows=>{
         if(!active)return;
-        setUsers(rows);
-        if(!currentUserId&&rows.length){
-          setCurrentUserId(String(rows[0].id));
-          setCurrentRole(rows[0].role);
+        const localUsers = Array.isArray(rows) && rows.length ? rows : INITIAL_USERS;
+        setUsers(localUsers);
+        if(!currentUserId && localUsers.length){
+          setCurrentUserId(String(localUsers[0].id));
+          setCurrentRole(localUsers[0].role);
+        }
+        if(!Array.isArray(rows) || rows.length===0){
+          setUserLoadErr("Live user list unavailable - using local demo users.");
         }
       })
       .catch(()=>{
         if(!active)return;
-        setUserLoadErr("User list unavailable — using local list.");
+        setUsers(INITIAL_USERS);
+        if(!currentUserId && INITIAL_USERS.length){
+          setCurrentUserId(String(INITIAL_USERS[0].id));
+          setCurrentRole(INITIAL_USERS[0].role);
+        }
+        setUserLoadErr("Live user list unavailable - using local demo users.");
       });
     return ()=>{active=false;};
   },[]);
