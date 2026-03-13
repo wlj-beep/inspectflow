@@ -1,1 +1,17 @@
 .DS_Store
+
+# Node / package artifacts
+node_modules/
+inspectflow/**/node_modules/
+inspectflow/.npm-cache/
+npm-debug.log*
+
+# Test/build outputs
+inspectflow/frontend/test-results/
+inspectflow/frontend/playwright-report/
+inspectflow/**/coverage/
+inspectflow/**/dist/
+
+# Local env files
+inspectflow/**/.env
+inspectflow/**/.env.local
