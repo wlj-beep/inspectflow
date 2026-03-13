@@ -4,9 +4,11 @@ import { api } from "../api/index.js";
 const TOOL_TYPES = ["Variable","Go/No-Go","Attribute"];
 const SAMPLING_OPTIONS = [
   { value:"first_last", label:"First & Last" },
+  { value:"first_middle_last", label:"First, Middle, Last" },
   { value:"every_5",   label:"Every 5th"    },
   { value:"every_10",  label:"Every 10th"   },
   { value:"100pct",    label:"100%"          },
+  { value:"custom_interval", label:"Custom Every Nth" }
 ];
 const CAPABILITY_DEFS = [
   { key:"view_operator", label:"Operator View", desc:"Access measurement entry" },
@@ -50,16 +52,33 @@ const ISSUE_CATEGORIES = [
   { value:"sampling_issue", label:"Sampling-plan issue" },
   { value:"other", label:"Other" }
 ];
-function getSamplePieces(plan,qty){
+function getSamplePieces(plan,qty,samplingInterval){
   if(qty<=0) return [];
   switch(plan){
     case "first_last": return qty===1?[1]:[1,qty];
+    case "first_middle_last": {
+      const middle=Math.floor((qty+1)/2);
+      return Array.from(new Set([1,middle,qty])).sort((a,b)=>a-b);
+    }
     case "every_5":  { const p=[]; for(let i=1;i<=qty;i+=5)p.push(i); if(p[p.length-1]!==qty)p.push(qty); return p; }
     case "every_10": { const p=[]; for(let i=1;i<=qty;i+=10)p.push(i); if(p[p.length-1]!==qty)p.push(qty); return p; }
+    case "custom_interval": {
+      const n=Math.max(1, Number(samplingInterval)||1);
+      const p=[];
+      for(let i=1;i<=qty;i+=n) p.push(i);
+      if(p[p.length-1]!==qty) p.push(qty);
+      return p;
+    }
     default: return Array.from({length:qty},(_,i)=>i+1);
   }
 }
-function samplingLabel(v){ return SAMPLING_OPTIONS.find(o=>o.value===v)?.label??v; }
+function samplingLabel(v,samplingInterval){
+  if(v==="custom_interval"){
+    const n=Math.max(1, Number(samplingInterval)||1);
+    return `Every ${n}${n===1?"st":n===2?"nd":n===3?"rd":"th"}`;
+  }
+  return SAMPLING_OPTIONS.find(o=>o.value===v)?.label??v;
+}
 const MISSING_REASONS = ["Scrapped","Lost","Damaged","Unable to Measure","Other"];
 const OPERATOR_NAMES  = ["J. Morris","R. Tatum","D. Kowalski","S. Patel","L. Chen","M. Okafor","T. Brennan","A. Vasquez"];
 
@@ -84,15 +103,15 @@ const INITIAL_PARTS = {
   "1234":{
     partNumber:"1234", description:"Hydraulic Cylinder Body",
     operations:{
-      "10":{ label:"Rough Turn", dimensions:[
+      "010":{ label:"Rough Turn", dimensions:[
         { id:"d1", name:"Outer Diameter", nominal:1.0000, tolPlus:0.0050, tolMinus:0.0050, unit:"in", sampling:"first_last", tools:["t01","t02","t08"] },
         { id:"d2", name:"Overall Length",  nominal:2.5000, tolPlus:0.0100, tolMinus:0.0100, unit:"in", sampling:"first_last", tools:["t02","t06"] },
       ]},
-      "20":{ label:"Bore & Finish", dimensions:[
+      "020":{ label:"Bore & Finish", dimensions:[
         { id:"d3", name:"Bore Diameter",  nominal:0.6250, tolPlus:0.0030, tolMinus:0.0000, unit:"in", sampling:"100pct",    tools:["t03","t04","t09","t08"] },
         { id:"d4", name:"Surface Finish", nominal:32.0,   tolPlus:8.0,    tolMinus:8.0,    unit:"Ra", sampling:"first_last", tools:["t07","t13"] },
       ]},
-      "30":{ label:"Thread & Final", dimensions:[
+      "030":{ label:"Thread & Final", dimensions:[
         { id:"d5", name:"Thread Pitch Dia", nominal:0.5000, tolPlus:0.0020, tolMinus:0.0020, unit:"in", sampling:"100pct",    tools:["t10","t08","t14"] },
         { id:"d6", name:"Chamfer Depth",    nominal:0.0620, tolPlus:0.0050, tolMinus:0.0050, unit:"in", sampling:"first_last", tools:["t05","t02"] },
       ]},
@@ -100,13 +119,13 @@ const INITIAL_PARTS = {
   },
 };
 const INITIAL_JOBS = {
-  "J-10041":{ jobNumber:"J-10041", partNumber:"1234", operation:"10", lot:"Lot A", qty:8,  status:"closed" },
-  "J-10042":{ jobNumber:"J-10042", partNumber:"1234", operation:"20", lot:"Lot A", qty:12, status:"open"   },
-  "J-10043":{ jobNumber:"J-10043", partNumber:"1234", operation:"30", lot:"Lot A", qty:12, status:"open"   },
-  "J-10044":{ jobNumber:"J-10044", partNumber:"1234", operation:"10", lot:"Lot B", qty:5,  status:"draft"  },
+  "J-10041":{ jobNumber:"J-10041", partNumber:"1234", operation:"010", lot:"Lot A", qty:8,  status:"closed" },
+  "J-10042":{ jobNumber:"J-10042", partNumber:"1234", operation:"020", lot:"Lot A", qty:12, status:"open"   },
+  "J-10043":{ jobNumber:"J-10043", partNumber:"1234", operation:"030", lot:"Lot A", qty:12, status:"open"   },
+  "J-10044":{ jobNumber:"J-10044", partNumber:"1234", operation:"010", lot:"Lot B", qty:5,  status:"draft"  },
 };
 const INITIAL_RECORDS = [
-  { id:"r001", jobNumber:"J-10041", partNumber:"1234", operation:"10", lot:"Lot A", qty:8,
+  { id:"r001", jobNumber:"J-10041", partNumber:"1234", operation:"010", lot:"Lot A", qty:8,
     timestamp:"2026-03-07 06:42", operator:"J. Morris",
     values:{
       d1_1:"1.0021", d1_2:"1.0018", d1_3:"0.9998", d1_4:"1.0003",
@@ -209,6 +228,13 @@ function fmtTs(ts){
   if(isNaN(d)) return String(ts).slice(0,16).replace("T"," ");
   return d.toISOString().slice(0,16).replace("T"," ");
 }
+function normalizeOpNumber(value){
+  const raw=String(value ?? "").trim();
+  if(!/^\d{1,3}$/.test(raw)) return null;
+  const n=Number(raw);
+  if(!Number.isInteger(n) || n < 1 || n > 999) return null;
+  return String(n).padStart(3,"0");
+}
 function isToolSelectable(t){
   if(!t) return false;
   return t.active !== false && t.visible !== false;
@@ -237,7 +263,8 @@ function buildPartsFromApi(partDetails){
   for(const part of partDetails||[]){
     const opsObj={};
     for(const op of part.operations||[]){
-      opIdToNumber[String(op.id)]=String(op.opNumber);
+      const normalizedOp=normalizeOpNumber(op.opNumber) || String(op.opNumber);
+      opIdToNumber[String(op.id)]=normalizedOp;
       const dims=(op.dimensions||[]).map(d=>({
         id:String(d.id),
         name:d.name,
@@ -246,10 +273,11 @@ function buildPartsFromApi(partDetails){
         tolMinus:Number(d.tolMinus ?? d.tol_minus),
         unit:d.unit,
         sampling:d.sampling,
+        samplingInterval:Number(d.samplingInterval ?? d.sampling_interval) || null,
         inputMode:d.input_mode ?? d.inputMode ?? "single",
         tools:(d.toolIds||d.tools?.map(t=>t.id)||[]).map(id=>String(id))
       }));
-      opsObj[String(op.opNumber)]={ id:String(op.id), label:op.label, dimensions:dims };
+      opsObj[normalizedOp]={ id:String(op.id), label:op.label, dimensions:dims };
     }
     partsObj[part.id]={ partNumber:part.id, description:part.description, operations:opsObj };
   }
@@ -259,7 +287,8 @@ function buildPartsFromApi(partDetails){
 function mapJobsFromApi(apiJobs, opIdToNumber){
   const out={};
   for(const j of apiJobs||[]){
-    const opNum=opIdToNumber[String(j.operation_id)]||String(j.operation_id);
+    const rawOp=opIdToNumber[String(j.operation_id)]||String(j.operation_id);
+    const opNum=normalizeOpNumber(rawOp) || String(rawOp);
     out[j.id]={
       jobNumber:j.id,
       partNumber:j.part_id,
@@ -302,7 +331,14 @@ function mapRecordDetailFromApi(r, opIdToNumber, usersById){
   }
   const tools={};
   for(const t of r.tools||[]){
-    tools[String(t.dimension_id)]={ toolId:String(t.tool_id), itNum:t.it_num };
+    const dimId=String(t.dimension_id);
+    if(!tools[dimId]) tools[dimId]=[];
+    tools[dimId].push({
+      toolId:String(t.tool_id),
+      itNum:t.it_num,
+      toolName:t.tool_name,
+      toolType:t.tool_type
+    });
   }
   const missingPieces={};
   for(const m of r.missingPieces||[]){
@@ -389,6 +425,11 @@ html,body{background:var(--bg);color:var(--text);font-family:var(--sans);min-hei
 .nav-btn{background:none;border:none;cursor:pointer;font-family:var(--cond);font-size:.82rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);padding:.4rem 1.1rem;border-bottom:2px solid transparent;margin-bottom:-2px;transition:color .15s,border-color .15s}
 .nav-btn:hover{color:var(--text)}.nav-btn.active{color:var(--accent2);border-bottom-color:var(--accent2)}
 .page{padding:1.75rem;max-width:1100px;margin:0 auto}
+.transition-banner{display:flex;align-items:center;gap:.55rem;padding:.55rem .8rem;margin:0 auto 1rem;border:1px solid var(--border2);border-left-width:3px;border-radius:3px;font-size:.78rem}
+.transition-banner .transition-label{font-family:var(--cond);font-size:.66rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase}
+.transition-loading{background:#0d1f2e;border-color:#1e4a6e;color:var(--info)}
+.transition-success{background:#0b2318;border-color:#1a5c38;color:var(--ok)}
+.transition-error{background:#2a0d0d;border-color:#6b2020;color:var(--warn)}
 .card{background:var(--surface);border:1px solid var(--border);border-radius:3px;margin-bottom:1rem}
 .card-head{padding:.65rem 1.25rem;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:var(--panel);border-radius:3px 3px 0 0}
 .card-title{font-family:var(--cond);font-size:.72rem;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
@@ -752,16 +793,41 @@ function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, currentUser
   function togglePf(key, value){
     setValues(p=>({...p,[key]:p[key]===value?"":value}));
   }
+  function normalizeToolRows(raw){
+    const rows=Array.isArray(raw) ? raw : (raw ? [raw] : []);
+    const normalized=rows
+      .map(r=>({
+        toolName:r?.toolName||"",
+        toolId:r?.toolId?String(r.toolId):"",
+        itNum:r?.itNum?String(r.itNum).toUpperCase():""
+      }))
+      .filter(r=>r.toolName||r.toolId||r.itNum);
+    return normalized.length ? normalized : [{ toolName:"", toolId:"", itNum:"" }];
+  }
+  function getToolRows(dimId){
+    return normalizeToolRows(toolSel?.[dimId]);
+  }
+  function setToolRows(dimId, updater){
+    setToolSel(prev=>{
+      const current=normalizeToolRows(prev?.[dimId]);
+      const nextRows=normalizeToolRows(typeof updater==="function" ? updater(current) : updater);
+      return { ...prev, [dimId]: nextRows };
+    });
+  }
+  function getActiveToolRows(dimId){
+    return normalizeToolRows(toolSel?.[dimId]).filter(r=>r.toolName||r.toolId||r.itNum);
+  }
 
   const allPieces=dims.length>0
-    ?[...new Set(dims.flatMap(d=>getSamplePieces(d.sampling,currentJob.qty)))].sort((a,b)=>a-b):[];
+    ?[...new Set(dims.flatMap(d=>getSamplePieces(d.sampling,currentJob.qty,d.samplingInterval)))].sort((a,b)=>a-b):[];
 
   function isGaugeMode(dimId){
-    const tid=toolSel[dimId]?.toolId;
-    return !!(tid&&toolLibrary[tid]?.type==="Go/No-Go");
+    const rows=getActiveToolRows(dimId);
+    return rows.some(row=>row.toolId && toolLibrary[row.toolId]?.type==="Go/No-Go");
   }
   function cellRequired(dimId,pNum){
-    const inPlan=getSamplePieces(dims.find(d=>d.id===dimId)?.sampling,currentJob.qty).includes(pNum);
+    const sourceDim=dims.find(d=>d.id===dimId);
+    const inPlan=getSamplePieces(sourceDim?.sampling,currentJob.qty,sourceDim?.samplingInterval).includes(pNum);
     if(inPlan)return true;
     const key=`${dimId}_${pNum}`;
     return !!(unlocked[key]&&(values[key]||"")!=="");
@@ -774,7 +840,7 @@ function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, currentUser
   }):[];
   const ootList=dims.flatMap(dim=>{
     if(isGaugeMode(dim.id))return [];
-    return getSamplePieces(dim.sampling,currentJob.qty)
+    return getSamplePieces(dim.sampling,currentJob.qty,dim.samplingInterval)
       .filter(p=>!missing[p]&&isOOT(values[`${dim.id}_${p}`],dim.tolPlus,dim.tolMinus,dim.nominal)===true)
       .map(p=>({dim,piece:p}));
   });
@@ -782,7 +848,11 @@ function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, currentUser
   const toolRequiredDims=dims.filter(d=>{
     return Object.keys(values).some(k=>k.startsWith(`${d.id}_`)&&(values[k]!==""&&values[k]!==undefined));
   });
-  const toolsReady=toolRequiredDims.every(d=>toolSel[d.id]?.toolId&&toolSel[d.id]?.itNum);
+  const toolsReady=toolRequiredDims.every(d=>{
+    const rows=getActiveToolRows(d.id);
+    if(rows.length===0) return false;
+    return rows.every(r=>r.toolId&&r.itNum);
+  });
   const canFull=toolsReady&&incompletePieces.length===0&&!(hasOOT&&!comment.trim());
   const canPartial=toolsReady&&incompletePieces.length>0;
 
@@ -807,15 +877,24 @@ function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, currentUser
     const ts={};
     parts[job.partNumber]?.operations[job.operation]?.dimensions.forEach(d=>{
       const saved=dd?.toolSel?.[d.id];
-      if(saved){
+      if(Array.isArray(saved)){
+        ts[d.id]=normalizeToolRows(saved.map(row=>{
+          const t=row?.toolId?toolLibrary[row.toolId]:null;
+          return {
+            toolName:row?.toolName||t?.name||"",
+            toolId:row?.toolId||"",
+            itNum:row?.itNum||t?.itNum||""
+          };
+        }));
+      }else if(saved){
         const t=saved.toolId?toolLibrary[saved.toolId]:null;
-        ts[d.id]={
+        ts[d.id]=normalizeToolRows([{
           toolName:saved.toolName||t?.name||"",
           toolId:saved.toolId||"",
           itNum:saved.itNum||t?.itNum||""
-        };
+        }]);
       }else{
-        ts[d.id]={ toolName:"", toolId:"", itNum:"" };
+        ts[d.id]=[{ toolName:"", toolId:"", itNum:"" }];
       }
     });
     setCurrentJob(job);setValues(dd?.values||{});setToolSel(ts);
@@ -1015,55 +1094,65 @@ function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, currentUser
                 ))}
               </tr>
               <tr className="hrow">
-                <td className="rl">Tool</td>
+                <td className="rl">Tools / IT #</td>
                 {dims.map(d=>{
                   const allowedTools=d.tools.map(tid=>toolLibrary[tid]).filter(isToolSelectable);
                   const toolNames=[...new Set(allowedTools.map(t=>t.name))];
-                  const selectedName=toolSel[d.id]?.toolName||"";
+                  const rows=getToolRows(d.id);
                   return (
                     <td key={d.id} data-dim-id={d.id} className="dc hdr-cell" style={{verticalAlign:"top"}}>
-                      <select className="hdr-inp" value={selectedName}
-                        onChange={e=>{const name=e.target.value;setToolSel(p=>({...p,[d.id]:{...p[d.id],toolName:name,toolId:"",itNum:""}}));}}>
-                        <option value="">— Select Tool —</option>
-                        {toolNames.map(name=><option key={name} value={name}>{name}</option>)}
-                      </select>
-                    </td>
-                  );
-                })}
-              </tr>
-              <tr className="hrow">
-                <td className="rl">IT #</td>
-                {dims.map(d=>{
-                  const allowedTools=d.tools.map(tid=>toolLibrary[tid]).filter(isToolSelectable);
-                  const selectedName=toolSel[d.id]?.toolName||"";
-                  const itOptions=selectedName?allowedTools.filter(t=>t.name===selectedName):allowedTools;
-                  const itListId=`itlist_${d.id}`;
-                  const currentIt=(toolSel[d.id]?.itNum||"").toUpperCase();
-                  const match=allowedTools.find(t=>String(t.itNum).toUpperCase()===currentIt);
-                  const invalid=currentIt && !match;
-                  return (
-                    <td key={d.id} data-dim-id={d.id} className="dc hdr-cell">
-                      <input className="hdr-inp mf" list={itListId} value={currentIt}
-                        placeholder={selectedName ? "Type or select IT #" : "Type IT # or choose tool first"}
-                        onChange={e=>{
-                          const v=e.target.value.toUpperCase();
-                          const t=allowedTools.find(x=>String(x.itNum).toUpperCase()===v);
-                          setToolSel(p=>({...p,[d.id]:{...p[d.id],toolName:t?.name||p[d.id]?.toolName||"",toolId:t?.id||"",itNum:v}}));
-                        }}
-                        onBlur={()=>{
-                          if(!currentIt){
-                            setToolSel(p=>({...p,[d.id]:{...p[d.id],toolId:"",itNum:""}}));
-                            return;
-                          }
-                          if(match){
-                            setToolSel(p=>({...p,[d.id]:{...p[d.id],toolName:match.name,toolId:match.id,itNum:match.itNum}}));
-                          }
-                        }}
-                      />
-                      <datalist id={itListId}>
-                        {itOptions.map(t=><option key={t.id} value={t.itNum}>{t.itNum}</option>)}
-                      </datalist>
-                      {invalid && <div className="text-warn" style={{fontSize:".65rem",marginTop:".2rem"}}>IT # not found for selected tool</div>}
+                      <div style={{display:"flex",flexDirection:"column",gap:".35rem"}}>
+                        {rows.map((row,rowIdx)=>{
+                          const selectedName=row.toolName||"";
+                          const itOptions=selectedName?allowedTools.filter(t=>t.name===selectedName):allowedTools;
+                          const itListId=`itlist_${d.id}_${rowIdx}`;
+                          const currentIt=(row.itNum||"").toUpperCase();
+                          const match=allowedTools.find(t=>String(t.itNum).toUpperCase()===currentIt);
+                          const invalid=currentIt && !match;
+                          return (
+                            <div key={`${d.id}_${rowIdx}`} style={{display:"grid",gridTemplateColumns:"1fr 1fr auto auto",gap:".3rem",alignItems:"start"}}>
+                              <select className="hdr-inp" value={selectedName}
+                                onChange={e=>{
+                                  const name=e.target.value;
+                                  setToolRows(d.id, prev=>prev.map((r,i)=>i===rowIdx?{...r,toolName:name,toolId:"",itNum:""}:r));
+                                }}>
+                                <option value="">— Select Tool —</option>
+                                {toolNames.map(name=><option key={name} value={name}>{name}</option>)}
+                              </select>
+                              <div>
+                                <input className="hdr-inp mf" list={itListId} value={currentIt}
+                                  placeholder={selectedName ? "Type or select IT #" : "Type IT #"}
+                                  onChange={e=>{
+                                    const v=e.target.value.toUpperCase();
+                                    const t=allowedTools.find(x=>String(x.itNum).toUpperCase()===v);
+                                    setToolRows(d.id, prev=>prev.map((r,i)=>i===rowIdx?{...r,toolName:t?.name||r.toolName||"",toolId:t?.id||"",itNum:v}:r));
+                                  }}
+                                  onBlur={()=>{
+                                    if(!currentIt){
+                                      setToolRows(d.id, prev=>prev.map((r,i)=>i===rowIdx?{...r,toolId:"",itNum:""}:r));
+                                      return;
+                                    }
+                                    if(match){
+                                      setToolRows(d.id, prev=>prev.map((r,i)=>i===rowIdx?{...r,toolName:match.name,toolId:match.id,itNum:match.itNum}:r));
+                                    }
+                                  }}
+                                />
+                                <datalist id={itListId}>
+                                  {itOptions.map(t=><option key={t.id} value={t.itNum}>{t.itNum}</option>)}
+                                </datalist>
+                                {invalid && <div className="text-warn" style={{fontSize:".65rem",marginTop:".2rem"}}>IT # not found for selected tool</div>}
+                              </div>
+                              <button className="btn btn-ghost btn-xs" type="button"
+                                onClick={()=>setToolRows(d.id, prev=>[...prev,{toolName:"",toolId:"",itNum:""}])}>+</button>
+                              <button className="btn btn-danger btn-xs" type="button" disabled={rows.length===1}
+                                onClick={()=>setToolRows(d.id, prev=>{
+                                  const next=prev.filter((_,i)=>i!==rowIdx);
+                                  return next.length?next:[{toolName:"",toolId:"",itNum:""}];
+                                })}>−</button>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </td>
                   );
                 })}
@@ -1072,7 +1161,7 @@ function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, currentUser
                 <td className="rl">Sampling</td>
                 {dims.map(d=>(
                   <td key={d.id} data-dim-id={d.id} className="dc tag-cell">
-                    <span className="sample-tag">{samplingLabel(d.sampling)}</span>
+                    <span className="sample-tag">{samplingLabel(d.sampling,d.samplingInterval)}</span>
                     {isGaugeMode(d.id)&&<span className="gauge-tag">Go/No-Go</span>}
                     {(d.inputMode||"single")==="range" && !isGaugeMode(d.id) && <span className="range-tag">Range</span>}
                   </td>
@@ -1092,7 +1181,7 @@ function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, currentUser
                     </td>
                     {dims.map(dim=>{
                       const key=`${dim.id}_${pNum}`;
-                      const inPlan=getSamplePieces(dim.sampling,currentJob.qty).includes(pNum);
+                      const inPlan=getSamplePieces(dim.sampling,currentJob.qty,dim.samplingInterval).includes(pNum);
                       const isUnlocked=!!unlocked[key];
                       const hasVal=isValueComplete(dim,values[key]);
                       const gaugeMode=isGaugeMode(dim.id);
@@ -1393,7 +1482,7 @@ function AdminTools({ toolLibrary, onCreateTool, onUpdateTool }) {
   );
 }
 
-function AdminUsers({ users, onCreateUser, onUpdateUser, onRemoveUser, onDirtyChange }) {
+function AdminUsers({ users, roleCaps, onCreateUser, onUpdateUser, onRemoveUser, onDirtyChange }) {
   const [form,setForm]=useState({name:"",role:"Operator",active:true});
   const [err,setErr]=useState("");
   const [apiErr,setApiErr]=useState("");
@@ -1455,6 +1544,23 @@ function AdminUsers({ users, onCreateUser, onUpdateUser, onRemoveUser, onDirtyCh
   useEffect(()=>{
     if(onDirtyChange) onDirtyChange(Object.keys(edits).length>0);
   },[edits,onDirtyChange]);
+  const orderedRoles=["Operator","Quality","Supervisor","Admin"];
+  function roleSummary(role){
+    const caps=(roleCaps?.[role]||[]).slice();
+    if(!caps.length) return "No permissions assigned.";
+    const labels=caps
+      .map(cap=>CAPABILITY_DEFS.find(c=>c.key===cap)?.label || cap.replace(/_/g," "))
+      .sort((a,b)=>a.localeCompare(b));
+    const viewCount=caps.filter(c=>c.startsWith("view_")).length;
+    const manageCount=caps.filter(c=>c.startsWith("manage_")).length;
+    const highlights=[
+      viewCount ? `${viewCount} view` : "",
+      manageCount ? `${manageCount} manage` : "",
+      caps.includes("submit_records") ? "submit records" : "",
+      caps.includes("edit_records") ? "edit records" : ""
+    ].filter(Boolean).join(" · ");
+    return `${highlights ? `${highlights} | ` : ""}${labels.join(", ")}`;
+  }
   return (
     <div>
       <div className="card">
@@ -1516,12 +1622,13 @@ function AdminUsers({ users, onCreateUser, onUpdateUser, onRemoveUser, onDirtyCh
           </tbody>
         </table>
         <div className="card-body" style={{paddingTop:".75rem"}}>
-          <div className="section-label" style={{marginBottom:".35rem"}}>Role Definitions</div>
+          <div className="section-label" style={{marginBottom:".35rem"}}>Role Permissions (Live)</div>
           <div className="text-muted" style={{fontSize:".78rem",lineHeight:1.5}}>
-            <div><strong style={{color:"var(--text)"}}>Operator</strong>: Enter measurements, submit jobs, save drafts.</div>
-            <div><strong style={{color:"var(--text)"}}>Quality</strong>: Access Jobs/Records, review and edit measurements with audit log.</div>
-            <div><strong style={{color:"var(--text)"}}>Supervisor</strong>: All Quality permissions plus create/manage jobs.</div>
-            <div><strong style={{color:"var(--text)"}}>Admin</strong>: Full system configuration (users, parts, tools, roles).</div>
+            {orderedRoles.map(role=>(
+              <div key={role}>
+                <strong style={{color:"var(--text)"}}>{role}</strong>: {roleSummary(role)}
+              </div>
+            ))}
           </div>
         </div>
       </div>
@@ -1596,6 +1703,43 @@ function AdminRoles({ roleCaps, onUpdateRoleCaps, onDirtyChange }) {
 }
 
 function AdminJobs({ parts, jobs, usersById, onCreateJob, canManageJobs, onUnlockJob }) {
+  function newBaseId(){
+    return String(Math.floor(Date.now()/1000)%1000000).padStart(6,"0");
+  }
+  function parseFamilyJobNumber(jobNumber, opMatchers=[]){
+    const s=String(jobNumber||"").trim().toUpperCase();
+    const run=s.slice(-2);
+    if(!/^\d{2}$/.test(run) || s.length <= 2) return null;
+    const head=s.slice(0,-2);
+    const sortedMatchers=[...(opMatchers||[])].sort((a,b)=>b.match.length-a.match.length);
+    for(const matcher of sortedMatchers){
+      if(!head.endsWith(matcher.match)) continue;
+      const baseId=head.slice(0,-matcher.match.length);
+      if(!baseId) continue;
+      return {
+        baseId,
+        operationCode:matcher.normalized,
+        runIndex:Number(run)
+      };
+    }
+    const match3=head.match(/^(.+)(\d{3})$/);
+    const match2=head.match(/^(.+)(\d{2})$/);
+    let m=null;
+    if(match3 && match3[2].startsWith("0")){
+      m=match3;
+    }else if(match2){
+      m=match2;
+    }else{
+      m=match3;
+    }
+    if(!m) return null;
+    const normalizedOp=normalizeOpNumber(m[2]);
+    return {
+      baseId:m[1],
+      operationCode:normalizedOp || m[2],
+      runIndex:Number(run)
+    };
+  }
   const empty={jobNumber:"",partNumber:"",operation:"",lot:"",qty:""};
   const [form,setForm]=useState(empty);
   const [err,setErr]=useState("");
@@ -1603,13 +1747,46 @@ function AdminJobs({ parts, jobs, usersById, onCreateJob, canManageJobs, onUnloc
   const [buildErr,setBuildErr]=useState("");
   const [building,setBuilding]=useState(false);
   const [builder,setBuilder]=useState({partNumber:"",lot:"",qty:"",ops:{}});
-  const [baseId,setBaseId]=useState(()=>String(Math.floor(Date.now()/1000)%1000000).padStart(6,"0"));
+  const [baseId,setBaseId]=useState(()=>newBaseId());
   const partOps=form.partNumber&&parts[form.partNumber]?Object.entries(parts[form.partNumber].operations):[];
   const builderOps=builder.partNumber&&parts[builder.partNumber]?Object.entries(parts[builder.partNumber].operations):[];
+  const builderOpMatchers=builderOps.flatMap(([opKey])=>{
+    const normalized=normalizeOpNumber(opKey) || String(opKey);
+    const short=String(Number(normalized));
+    if(short && short !== normalized){
+      return [{ match: normalized, normalized }, { match: short, normalized }];
+    }
+    return [{ match: normalized, normalized }];
+  });
   const existingLotJobs=builder.partNumber&&builder.lot
     ?Object.values(jobs).filter(j=>j.partNumber===builder.partNumber&&String(j.lot).toLowerCase()===String(builder.lot).toLowerCase())
     :[];
+  const existingLotOpMatchers=existingLotJobs.flatMap((j)=>{
+    const normalized=normalizeOpNumber(j.operation) || normalizeOpNumber(j.operationId);
+    if(!normalized) return [];
+    const short=String(Number(normalized));
+    if(short && short !== normalized){
+      return [{ match: normalized, normalized }, { match: short, normalized }];
+    }
+    return [{ match: normalized, normalized }];
+  });
+  const familyOpMatchers=[...builderOpMatchers, ...existingLotOpMatchers].filter((m, idx, arr)=>{
+    return arr.findIndex(x=>x.match===m.match && x.normalized===m.normalized)===idx;
+  });
+  const existingLotMeta=existingLotJobs
+    .map(j=>parseFamilyJobNumber(j.jobNumber, familyOpMatchers))
+    .filter(Boolean);
   const isDuplicateLot=existingLotJobs.length>0;
+  const preferredBaseId=(()=>{
+    if(existingLotMeta.length===0) return "";
+    const byBase={};
+    existingLotMeta.forEach(m=>{ byBase[m.baseId]=(byBase[m.baseId]||0)+1; });
+    return Object.entries(byBase).sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0]))[0][0];
+  })();
+  const nextFamilyRunIndex=existingLotMeta.length
+    ?Math.max(...existingLotMeta.map(m=>Number(m.runIndex)||0))+1
+    :1;
+  const effectiveBaseId=(isDuplicateLot&&preferredBaseId)?preferredBaseId:baseId;
   useEffect(()=>{
     if(!builder.partNumber) return;
     const ops=Object.keys(parts[builder.partNumber]?.operations||{});
@@ -1618,6 +1795,11 @@ function AdminJobs({ parts, jobs, usersById, onCreateJob, canManageJobs, onUnloc
     ops.forEach(op=>{ nextOps[op]=defaultOn; });
     setBuilder(p=>({...p,ops:nextOps}));
   },[builder.partNumber,builder.lot,isDuplicateLot,parts]);
+  useEffect(()=>{
+    if(isDuplicateLot&&preferredBaseId&&baseId!==preferredBaseId){
+      setBaseId(preferredBaseId);
+    }
+  },[isDuplicateLot,preferredBaseId,baseId]);
   async function handleAdd(){
     if(!form.jobNumber||!form.partNumber||!form.operation||!form.lot||!form.qty){setErr("All fields required.");return;}
     if(jobs[form.jobNumber.toUpperCase()]){setErr("Job number already exists.");return;}
@@ -1637,9 +1819,13 @@ function AdminJobs({ parts, jobs, usersById, onCreateJob, canManageJobs, onUnloc
     if(opsSelected.length===0){setBuildErr("Select at least one operation.");return;}
     setBuildErr("");setBuilding(true);
     try{
+      const runIndex=isDuplicateLot ? nextFamilyRunIndex : 1;
       for(const opKey of opsSelected){
-        const remeasureIndex=existingLotJobs.filter(j=>String(j.operation)===String(opKey)).length+1;
-        const jobNumber=`${baseId}${String(opKey).padStart(2,"0")}${String(remeasureIndex).padStart(2,"0")}`;
+        const remeasureIndex=isDuplicateLot
+          ? runIndex
+          : existingLotJobs.filter(j=>(normalizeOpNumber(j.operation)||String(j.operation))===(normalizeOpNumber(opKey)||String(opKey))).length+1;
+        const opCode=normalizeOpNumber(opKey) || String(opKey).padStart(3,"0");
+        const jobNumber=`${effectiveBaseId}${opCode}${String(remeasureIndex).padStart(2,"0")}`;
         if(jobs[jobNumber]){
           throw new Error(`Job number ${jobNumber} already exists. Generate a new base ID.`);
         }
@@ -1653,7 +1839,7 @@ function AdminJobs({ parts, jobs, usersById, onCreateJob, canManageJobs, onUnloc
         });
       }
       setBuilder({partNumber:"",lot:"",qty:"",ops:{}});
-      setBaseId(String(Math.floor(Date.now()/1000)%1000000).padStart(6,"0"));
+      setBaseId(newBaseId());
     }catch(e){
       setBuildErr(e?.message||"Unable to create jobs.");
     }finally{
@@ -1709,11 +1895,16 @@ function AdminJobs({ parts, jobs, usersById, onCreateJob, canManageJobs, onUnloc
             <div className="field"><label>Qty</label><input type="number" min="1" value={builder.qty} onChange={e=>setBuilder(p=>({...p,qty:e.target.value}))} placeholder="12" style={{fontFamily:"var(--mono)"}}/></div>
           </div>
           {isDuplicateLot && <div className="text-warn" style={{fontSize:".75rem",marginTop:".5rem"}}>Lot already exists — creating remeasure jobs.</div>}
+          {isDuplicateLot && preferredBaseId && (
+            <div className="text-muted" style={{fontSize:".74rem",marginTop:".3rem"}}>
+              Reusing base job prefix <span className="mono">{preferredBaseId}</span> with run index <span className="mono">{String(nextFamilyRunIndex).padStart(2,"0")}</span> for this regenerated family.
+            </div>
+          )}
           <div className="row2 mt1">
             <div className="field"><label>Base Job ID</label>
               <div style={{display:"flex",gap:".5rem",alignItems:"center"}}>
-                <input value={baseId} readOnly style={{fontFamily:"var(--mono)"}}/>
-                <button className="btn btn-ghost btn-sm" onClick={()=>setBaseId(String(Math.floor(Date.now()/1000)%1000000).padStart(6,"0"))}>Regenerate</button>
+                <input value={effectiveBaseId} readOnly style={{fontFamily:"var(--mono)"}}/>
+                <button className="btn btn-ghost btn-sm" disabled={isDuplicateLot&&!!preferredBaseId} onClick={()=>setBaseId(newBaseId())}>Regenerate</button>
               </div>
             </div>
             <div className="field" style={{alignItems:"flex-end"}}>
@@ -1727,8 +1918,11 @@ function AdminJobs({ parts, jobs, usersById, onCreateJob, canManageJobs, onUnloc
           <div className="row3">
             {builderOps.length===0 && <div className="text-muted">Select a part to choose operations.</div>}
             {builderOps.map(([opKey,op])=>{
-              const remeasureIndex=existingLotJobs.filter(j=>String(j.operation)===String(opKey)).length+1;
-              const jobNumber=`${baseId}${String(opKey).padStart(2,"0")}${String(remeasureIndex).padStart(2,"0")}`;
+              const remeasureIndex=isDuplicateLot
+                ? nextFamilyRunIndex
+                : existingLotJobs.filter(j=>(normalizeOpNumber(j.operation)||String(j.operation))===(normalizeOpNumber(opKey)||String(opKey))).length+1;
+              const opCode=normalizeOpNumber(opKey) || String(opKey).padStart(3,"0");
+              const jobNumber=`${effectiveBaseId}${opCode}${String(remeasureIndex).padStart(2,"0")}`;
               return (
                 <label key={opKey} style={{display:"flex",alignItems:"center",gap:".5rem",fontSize:".85rem"}}>
                   <input type="checkbox" checked={!!builder.ops?.[opKey]} onChange={e=>setBuilder(p=>({...p,ops:{...p.ops,[opKey]:e.target.checked}}))}/>
@@ -1786,7 +1980,11 @@ function RecordDetailModal({ record, parts, toolLibrary, usersById, canEdit, onE
   const opData = part?.operations[localRecord.operation];
   const dims   = opData?.dimensions ?? [];
   const editDim = editTarget ? dims.find(d=>String(d.id)===String(editTarget.dimensionId)) : null;
-  const editToolSel = editTarget ? localRecord.tools?.[String(editTarget.dimensionId)] : null;
+  const editToolSel = editTarget
+    ? (Array.isArray(localRecord.tools?.[String(editTarget.dimensionId)])
+      ? localRecord.tools[String(editTarget.dimensionId)][0]
+      : localRecord.tools?.[String(editTarget.dimensionId)])
+    : null;
   const editTool = editToolSel ? toolLibrary[editToolSel.toolId] : null;
   const editMode = editTool?.type==="Go/No-Go" ? "gauge" : ((editDim?.inputMode||"single")==="range" ? "range" : "single");
   const [editRangeMin,editRangeMax] = splitRangeValue(editValue);
@@ -1798,7 +1996,7 @@ function RecordDetailModal({ record, parts, toolLibrary, usersById, canEdit, onE
   }
   const operatorName = getOperatorName(localRecord, usersById);
   const allPieces = dims.length > 0
-    ? [...new Set(dims.flatMap(d => getSamplePieces(d.sampling, localRecord.qty)))].sort((a,b)=>a-b)
+    ? [...new Set(dims.flatMap(d => getSamplePieces(d.sampling, localRecord.qty, d.samplingInterval)))].sort((a,b)=>a-b)
     : [];
   const resultBadge = localRecord.status==="incomplete"
     ? <span className="badge badge-incomplete">Incomplete</span>
@@ -1898,16 +2096,28 @@ function RecordDetailModal({ record, parts, toolLibrary, usersById, canEdit, onE
             <thead><tr><th>Dimension</th><th>Specification</th><th>Sampling</th><th>Tool</th><th>Type</th><th>IT #</th></tr></thead>
             <tbody>
               {dims.map(d => {
-                const ts  = localRecord.tools?.[d.id];
-                const tl  = toolLibrary[ts?.toolId];
+                const selectionsRaw = localRecord.tools?.[String(d.id)];
+                const selections = Array.isArray(selectionsRaw) ? selectionsRaw : (selectionsRaw ? [selectionsRaw] : []);
+                const mapped = selections.map(ts=>{
+                  const tl = toolLibrary?.[ts?.toolId];
+                  return {
+                    name: tl?.name || ts?.toolName || "—",
+                    type: tl?.type || ts?.toolType || "",
+                    itNum: ts?.itNum || ""
+                  };
+                });
+                const names = mapped.length ? mapped.map(m=>m.name).join(", ") : "—";
+                const types = mapped.length ? [...new Set(mapped.map(m=>m.type).filter(Boolean))] : [];
+                const typeLabel = types.length===0 ? "—" : types.length===1 ? types[0] : "Mixed";
+                const itNums = mapped.length ? mapped.map(m=>m.itNum).filter(Boolean).join(", ") : "—";
                 return (
                   <tr key={d.id}>
                     <td style={{fontWeight:600}}>{d.name}</td>
                     <td style={{fontFamily:"var(--mono)",fontSize:".78rem",color:"var(--muted)"}}>{fmtSpec(d)}</td>
-                    <td><span className="sample-tag">{samplingLabel(d.sampling)}</span></td>
-                    <td>{tl?.name ?? <span style={{color:"var(--muted)"}}>—</span>}</td>
-                    <td>{tl ? <TypeBadge type={tl.type}/> : "—"}</td>
-                    <td style={{fontFamily:"var(--mono)",fontSize:".78rem"}}>{ts?.itNum ?? "—"}</td>
+                    <td><span className="sample-tag">{samplingLabel(d.sampling,d.samplingInterval)}</span></td>
+                    <td>{names}</td>
+                    <td>{typeLabel==="Mixed" ? <span className="badge badge-pend">Mixed</span> : (typeLabel==="—" ? "—" : <TypeBadge type={typeLabel}/>)}</td>
+                    <td style={{fontFamily:"var(--mono)",fontSize:".78rem"}}>{itNums}</td>
                   </tr>
                 );
               })}
@@ -1919,7 +2129,7 @@ function RecordDetailModal({ record, parts, toolLibrary, usersById, canEdit, onE
               <thead>
                 <tr>
                   <th style={{minWidth:"60px"}}>Piece</th>
-                  {dims.map(d=><th key={d.id}>{d.name}<div style={{fontFamily:"var(--mono)",fontSize:".6rem",color:"var(--border2)",fontWeight:400,marginTop:".1rem"}}>{fmtSpec(d)}</div><div style={{fontFamily:"var(--mono)",fontSize:".58rem",color:"var(--info)",fontWeight:500,marginTop:".15rem"}}>{samplingLabel(d.sampling)}</div></th>)}
+                  {dims.map(d=><th key={d.id}>{d.name}<div style={{fontFamily:"var(--mono)",fontSize:".6rem",color:"var(--border2)",fontWeight:400,marginTop:".1rem"}}>{fmtSpec(d)}</div><div style={{fontFamily:"var(--mono)",fontSize:".58rem",color:"var(--info)",fontWeight:500,marginTop:".15rem"}}>{samplingLabel(d.sampling,d.samplingInterval)}</div></th>)}
                 </tr>
               </thead>
               <tbody>
@@ -1933,7 +2143,7 @@ function RecordDetailModal({ record, parts, toolLibrary, usersById, canEdit, onE
                       </td>
                       {dims.map(d => {
                         if(mp) return <td key={d.id} className="val-na">—</td>;
-                        const inPlan = getSamplePieces(d.sampling, localRecord.qty).includes(pNum);
+                        const inPlan = getSamplePieces(d.sampling, localRecord.qty, d.samplingInterval).includes(pNum);
                         const v = localRecord.values?.[`${d.id}_${pNum}`];
                         if(!inPlan && (v===undefined||v==="")) {
                           return <td key={d.id} className="val-na">n/a</td>;
@@ -2169,8 +2379,10 @@ function AdminRecords({ records, parts, toolLibrary, usersById, loadRecordDetail
         for(const [key,val] of Object.entries(detail.values||{})){
           const [dimId,pieceStr]=key.split("_");
           const d=dimMap.get(String(dimId));
-          const ts=toolMap?.[String(dimId)];
-          const tl=toolLibrary?.[ts?.toolId];
+          const toolRowsRaw=toolMap?.[String(dimId)];
+          const toolRows=Array.isArray(toolRowsRaw) ? toolRowsRaw : (toolRowsRaw ? [toolRowsRaw] : []);
+          const toolNames=toolRows.map(ts=>toolLibrary?.[ts?.toolId]?.name || ts?.toolName || "").filter(Boolean).join(" | ");
+          const itNums=toolRows.map(ts=>ts?.itNum || "").filter(Boolean).join(" | ");
           const oot=isOOT(val,d?.tolPlus??0,d?.tolMinus??0,d?.nominal??0);
           const editKey=`dim:${dimId}|piece:${pieceStr}`;
           const edits=auditByField.get(editKey) || [];
@@ -2183,11 +2395,11 @@ function AdminRecords({ records, parts, toolLibrary, usersById, loadRecordDetail
             detail.qty,
             pieceStr,
             d?.name||`Dim ${dimId}`,
-            d?.sampling ? samplingLabel(d.sampling) : "",
+            d?.sampling ? samplingLabel(d.sampling,d?.samplingInterval) : "",
             val,
             oot===true?"Yes":oot===false?"No":"",
-            tl?.name||"",
-            ts?.itNum||"",
+            toolNames,
+            itNums,
             getOperatorName(detail, usersById),
             detail.timestamp,
             detail.status,
@@ -2432,6 +2644,155 @@ function AdminIssueReports({ currentRole, currentUserId }) {
   );
 }
 
+function AdminImports({ currentRole, canManageTools, canManageParts, onRefreshData }) {
+  const [templates,setTemplates]=useState(null);
+  const [loadingTemplates,setLoadingTemplates]=useState(false);
+  const [toolsCsv,setToolsCsv]=useState("");
+  const [partDimsCsv,setPartDimsCsv]=useState("");
+  const [running,setRunning]=useState("");
+  const [err,setErr]=useState("");
+  const [result,setResult]=useState("");
+  const [activeUploadTarget,setActiveUploadTarget]=useState("tools");
+  const fileInputRef=useRef(null);
+
+  useEffect(()=>{
+    let active=true;
+    async function loadTemplates(){
+      setLoadingTemplates(true);
+      try{
+        const rows=await api.imports.templates(currentRole || "Admin");
+        if(!active) return;
+        setTemplates(rows);
+      }catch{
+        if(!active) return;
+      }finally{
+        if(active) setLoadingTemplates(false);
+      }
+    }
+    loadTemplates();
+    return ()=>{ active=false; };
+  },[currentRole]);
+
+  function buildTemplateCsv(kind){
+    const headers=kind==="tools" ? (templates?.tools?.headers || []) : (templates?.partDimensions?.headers || []);
+    if(!headers.length) return "";
+    const sampleRow=kind==="tools"
+      ? ["Outside Micrometer","Variable","IT-1001","0-4 in","true","true"]
+      : ["1234","Hydraulic Cylinder Body","010","Rough Turn","Outer Diameter","1.0000","0.0050","0.0050","in","first_middle_last","","single","IT-0042|IT-0018"];
+    return `${headers.join(",")}\n${sampleRow.slice(0, headers.length).join(",")}`;
+  }
+
+  function downloadTemplate(kind){
+    const csv=buildTemplateCsv(kind);
+    if(!csv){
+      setErr("Template headers are not available.");
+      return;
+    }
+    const blob=new Blob([csv],{type:"text/csv"});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");
+    a.href=url;
+    a.download=kind==="tools" ? "tools-import-template.csv" : "part-dimensions-import-template.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function runImport(kind){
+    if(running) return;
+    const csvText=(kind==="tools" ? toolsCsv : partDimsCsv).trim();
+    if(!csvText){
+      setErr("Paste CSV text or upload a CSV file first.");
+      return;
+    }
+    setErr("");
+    setResult("");
+    setRunning(kind);
+    try{
+      const response=kind==="tools"
+        ?await api.imports.toolsCsv(csvText, currentRole || "Admin")
+        :await api.imports.partDimensionsCsv(csvText, currentRole || "Admin");
+      setResult(JSON.stringify(response, null, 2));
+      if(onRefreshData) await onRefreshData();
+    }catch(e){
+      setErr(e?.message || "Import failed.");
+    }finally{
+      setRunning("");
+    }
+  }
+
+  function triggerUpload(target){
+    setActiveUploadTarget(target);
+    if(fileInputRef.current) fileInputRef.current.click();
+  }
+
+  function handleCsvUpload(e){
+    const file=e.target.files?.[0];
+    if(!file) return;
+    const reader=new FileReader();
+    reader.onload=()=>{
+      const text=String(reader.result || "");
+      if(activeUploadTarget==="tools") setToolsCsv(text);
+      else setPartDimsCsv(text);
+    };
+    reader.readAsText(file);
+    e.target.value="";
+  }
+
+  return (
+    <div className="stack1">
+      <input ref={fileInputRef} type="file" accept=".csv,text/csv" style={{display:"none"}} onChange={handleCsvUpload}/>
+      <div className="card">
+        <div className="card-head">
+          <div className="card-title">Data Imports</div>
+          <div className="text-muted" style={{fontSize:".72rem"}}>
+            {loadingTemplates ? "Loading templates…" : "Use templates to import tools and part dimensions via CSV."}
+          </div>
+        </div>
+        <div className="card-body">
+          {err && <div className="err-text">{err}</div>}
+          {result && (
+            <pre style={{margin:0,padding:".7rem",background:"var(--bg-soft)",border:"1px solid var(--border)",borderRadius:"10px",fontSize:".72rem",overflowX:"auto"}}>{result}</pre>
+          )}
+          <div className="row2 mt1">
+            <div className="card" style={{margin:0}}>
+              <div className="card-head"><div className="card-title">Tools CSV Import</div></div>
+              <div className="card-body">
+                <p className="text-muted" style={{marginTop:0,fontSize:".74rem"}}>Upsert tools by name, IT #, type, and visibility fields.</p>
+                <textarea value={toolsCsv} onChange={e=>setToolsCsv(e.target.value)} rows={8} placeholder="Paste tools CSV here…" style={{fontFamily:"var(--mono)",fontSize:".72rem"}}/>
+                <div className="gap1 mt1">
+                  <button className="btn btn-ghost btn-sm" onClick={()=>downloadTemplate("tools")}>Download Template</button>
+                  <button className="btn btn-ghost btn-sm" onClick={()=>setToolsCsv(buildTemplateCsv("tools"))}>Load Sample</button>
+                  <button className="btn btn-ghost btn-sm" onClick={()=>triggerUpload("tools")}>Upload CSV</button>
+                  <button className="btn btn-primary btn-sm" disabled={!canManageTools || running==="tools"} onClick={()=>runImport("tools")}>
+                    {running==="tools" ? "Importing…" : "Run Tool Import"}
+                  </button>
+                </div>
+                {!canManageTools && <div className="text-muted" style={{fontSize:".72rem",marginTop:".4rem"}}>Permission required: `manage_tools`.</div>}
+              </div>
+            </div>
+            <div className="card" style={{margin:0}}>
+              <div className="card-head"><div className="card-title">Part Dimensions CSV Import</div></div>
+              <div className="card-body">
+                <p className="text-muted" style={{marginTop:0,fontSize:".74rem"}}>Upsert part, operation, and dimension definitions including sampling plan and input mode.</p>
+                <textarea value={partDimsCsv} onChange={e=>setPartDimsCsv(e.target.value)} rows={8} placeholder="Paste part dimensions CSV here…" style={{fontFamily:"var(--mono)",fontSize:".72rem"}}/>
+                <div className="gap1 mt1">
+                  <button className="btn btn-ghost btn-sm" onClick={()=>downloadTemplate("partDimensions")}>Download Template</button>
+                  <button className="btn btn-ghost btn-sm" onClick={()=>setPartDimsCsv(buildTemplateCsv("partDimensions"))}>Load Sample</button>
+                  <button className="btn btn-ghost btn-sm" onClick={()=>triggerUpload("partDimensions")}>Upload CSV</button>
+                  <button className="btn btn-primary btn-sm" disabled={!canManageParts || running==="partDimensions"} onClick={()=>runImport("partDimensions")}>
+                    {running==="partDimensions" ? "Importing…" : "Run Part Import"}
+                  </button>
+                </div>
+                {!canManageParts && <div className="text-muted" style={{fontSize:".72rem",marginTop:".4rem"}}>Permission required: `manage_parts`.</div>}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AdminParts({ parts, toolLibrary, onCreatePart, onUpdatePart, onCreateOp, onCreateDim, onUpdateDim, onRemoveDim, onDirtyChange }) {
   const [newPart,setNewPart]=useState({partNumber:"",description:""});
   const [partErr,setPartErr]=useState("");
@@ -2460,9 +2821,12 @@ function AdminParts({ parts, toolLibrary, onCreatePart, onUpdatePart, onCreateOp
   function updateDescLocal(pn,v){ onUpdatePart(pn,v,false).catch(()=>{}); }
   function updateDescPersist(pn,v){ onUpdatePart(pn,v,true).catch(e=>setApiErr(e?.message||"Unable to update part.")); }
   async function handleAddOp(pn){
-    const o=newOp[pn]||{};const opKey=(o.opNum||"").trim();
-    if(!opKey||!o.label?.trim())return;
-    if(parts[pn].operations[opKey])return;
+    const o=newOp[pn]||{};
+    const opKeyRaw=(o.opNum||"").trim();
+    if(!opKeyRaw||!o.label?.trim())return;
+    const opKey=normalizeOpNumber(opKeyRaw);
+    if(!opKey){ setApiErr("Operation number must be between 001 and 999."); return; }
+    if(parts[pn].operations[opKey]){ setApiErr(`Operation ${opKey} already exists.`); return; }
     setApiErr("");
     try{
       await onCreateOp(pn,opKey,o.label.trim());
@@ -2477,7 +2841,7 @@ function AdminParts({ parts, toolLibrary, onCreatePart, onUpdatePart, onCreateOp
   async function addDim(pn,opKey){
     setApiErr("");
     try{
-      await onCreateDim(pn,opKey,{name:"New Dimension",nominal:0.0000,tolPlus:0.0050,tolMinus:0.0050,unit:"in",sampling:"first_last",inputMode:"single",tools:[]});
+      await onCreateDim(pn,opKey,{name:"New Dimension",nominal:0.0000,tolPlus:0.0050,tolMinus:0.0050,unit:"in",sampling:"first_last",samplingInterval:null,inputMode:"single",tools:[]});
     }catch(e){
       setApiErr(e?.message||"Unable to add dimension.");
     }
@@ -2497,7 +2861,7 @@ function AdminParts({ parts, toolLibrary, onCreatePart, onUpdatePart, onCreateOp
         <div className="card-body">
           <div className="row2">
             <div className="field"><label>Part Number</label><input value={newPart.partNumber} onChange={e=>setNewPart(p=>({...p,partNumber:e.target.value.toUpperCase()}))} placeholder="e.g. 5678" style={{fontFamily:"var(--mono)"}}/></div>
-            <div className="field"><label>Description</label><input value={newPart.description} onChange={e=>setNewPart(p=>({...p,description:e.target.value}))} placeholder="Part description"/></div>
+            <div className="field"><label>Part Name</label><input value={newPart.description} onChange={e=>setNewPart(p=>({...p,description:e.target.value}))} placeholder="Part name"/></div>
           </div>
           {partErr&&<p className="err-text mt1">{partErr}</p>}
           {apiErr&&<p className="err-text mt1">{apiErr}</p>}
@@ -2527,7 +2891,7 @@ function AdminParts({ parts, toolLibrary, onCreatePart, onUpdatePart, onCreateOp
                       <th style={{width:"82px"}}>Tol +</th>
                       <th style={{width:"82px"}}>Tol −</th>
                       <th style={{width:"60px"}}>Unit</th>
-                      <th style={{width:"120px"}}>Sampling</th>
+                      <th style={{width:"180px"}}>Sampling</th>
                       <th style={{width:"120px"}}>Input Mode</th>
                       <th style={{minWidth:"220px"}}>Allowed Tools</th>
                       <th style={{width:"40px"}}></th>
@@ -2543,9 +2907,19 @@ function AdminParts({ parts, toolLibrary, onCreatePart, onUpdatePart, onCreateOp
                           <td><select value={d.unit} onChange={e=>updateDim(pn,opKey,d.id,"unit",e.target.value,true)}>
                             <option>in</option><option>mm</option><option>Ra</option><option>deg</option>
                           </select></td>
-                          <td><select value={d.sampling} onChange={e=>updateDim(pn,opKey,d.id,"sampling",e.target.value,true)}>
-                            {SAMPLING_OPTIONS.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
-                          </select></td>
+                          <td>
+                            <select value={d.sampling} onChange={e=>updateDim(pn,opKey,d.id,"sampling",e.target.value,true)}>
+                              {SAMPLING_OPTIONS.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
+                            </select>
+                            {d.sampling==="custom_interval" && (
+                              <input type="number" min="1" step="1" value={d.samplingInterval || 2}
+                                onChange={e=>updateDim(pn,opKey,d.id,"samplingInterval",Math.max(1, Number(e.target.value)||1),false)}
+                                onBlur={e=>updateDim(pn,opKey,d.id,"samplingInterval",Math.max(1, Number(e.target.value)||1),true)}
+                                style={{marginTop:".3rem",fontFamily:"var(--mono)"}}
+                                placeholder="Interval (N)"
+                              />
+                            )}
+                          </td>
                           <td><select value={d.inputMode||"single"} onChange={e=>updateDim(pn,opKey,d.id,"inputMode",e.target.value,true)}>
                             <option value="single">Single</option>
                             <option value="range">Min/Max Range</option>
@@ -2567,7 +2941,7 @@ function AdminParts({ parts, toolLibrary, onCreatePart, onUpdatePart, onCreateOp
             <div style={{borderTop:"1px solid var(--border)",paddingTop:"1rem",marginTop:".5rem"}}>
               <div className="section-label" style={{color:"var(--muted)"}}>Add Operation</div>
               <div className="row3" style={{gap:".75rem"}}>
-                <div className="field"><label>Op Number</label><input value={newOp[pn]?.opNum||""} onChange={e=>setNewOp(p=>({...p,[pn]:{...p[pn],opNum:e.target.value}}))} placeholder="e.g. 40" style={{fontFamily:"var(--mono)"}}/></div>
+                <div className="field"><label>Op Number</label><input value={newOp[pn]?.opNum||""} onChange={e=>setNewOp(p=>({...p,[pn]:{...p[pn],opNum:e.target.value}}))} placeholder="e.g. 040" style={{fontFamily:"var(--mono)"}}/></div>
                 <div className="field"><label>Op Label</label><input value={newOp[pn]?.label||""} onChange={e=>setNewOp(p=>({...p,[pn]:{...p[pn],label:e.target.value}}))} placeholder="e.g. Final Inspection"/></div>
                 <div className="field" style={{justifyContent:"flex-end"}}><button className="btn btn-ghost" onClick={()=>handleAddOp(pn)}>+ Add Operation</button></div>
               </div>
@@ -2579,7 +2953,7 @@ function AdminParts({ parts, toolLibrary, onCreatePart, onUpdatePart, onCreateOp
   );
 }
 
-function AdminView({ parts, jobs, records, toolLibrary, users, usersById, currentCaps, roleCaps, currentRole, currentUserId, loadRecordDetail, onEditValue, onCreateJob, onCreatePart, onUpdatePart, onCreateOp, onCreateDim, onUpdateDim, onRemoveDim, onCreateTool, onUpdateTool, onCreateUser, onUpdateUser, onRemoveUser, onUpdateRoleCaps, onUnlockJob }) {
+function AdminView({ parts, jobs, records, toolLibrary, users, usersById, currentCaps, roleCaps, currentRole, currentUserId, loadRecordDetail, onEditValue, onCreateJob, onCreatePart, onUpdatePart, onCreateOp, onCreateDim, onUpdateDim, onRemoveDim, onCreateTool, onUpdateTool, onCreateUser, onUpdateUser, onRemoveUser, onUpdateRoleCaps, onUnlockJob, onRefreshData }) {
   const [tab,setTab]=useState("jobs");
   const [dirtyByTab,setDirtyByTab]=useState({});
   const hasCap = cap => (currentCaps || []).includes(cap);
@@ -2593,6 +2967,7 @@ function AdminView({ parts, jobs, records, toolLibrary, users, usersById, curren
   const canManageJobs=hasCap("manage_jobs");
   const canViewAdmin=hasCap("view_admin");
   const canViewIssueReports=hasCap("view_admin");
+  const canViewImports=canManageParts || canManageTools;
   useEffect(()=>{
     if(!canViewAdmin) setTab("jobs");
     if(!canManageUsers && tab==="users") setTab("jobs");
@@ -2600,7 +2975,8 @@ function AdminView({ parts, jobs, records, toolLibrary, users, usersById, curren
     if(!canManageTools && tab==="tools") setTab("jobs");
     if(!canManageRoles && tab==="roles") setTab("jobs");
     if(!canViewIssueReports && tab==="issues") setTab("jobs");
-  },[canViewAdmin,canManageUsers,canManageParts,canManageTools,canManageRoles,canViewIssueReports,tab]);
+    if(!canViewImports && tab==="imports") setTab("jobs");
+  },[canViewAdmin,canManageUsers,canManageParts,canManageTools,canManageRoles,canViewIssueReports,canViewImports,tab]);
   useEffect(()=>{
     const dirty=!!dirtyByTab[tab];
     const handler=e=>{
@@ -2622,6 +2998,7 @@ function AdminView({ parts, jobs, records, toolLibrary, users, usersById, curren
         {canViewJobs && <button className={`sub-tab ${tab==="jobs"?"active":""}`} onClick={()=>setTabSafe("jobs")}>Job Management</button>}
         {canViewRecords && <button className={`sub-tab ${tab==="records"?"active":""}`} onClick={()=>setTabSafe("records")}>Inspection Records</button>}
         {canViewIssueReports && <button className={`sub-tab ${tab==="issues"?"active":""}`} onClick={()=>setTabSafe("issues")}>Issue Reports</button>}
+        {canViewImports && <button className={`sub-tab ${tab==="imports"?"active":""}`} onClick={()=>setTabSafe("imports")}>Data Imports</button>}
         {canManageParts && <button className={`sub-tab ${tab==="parts"?"active":""}`} onClick={()=>setTabSafe("parts")}>Part / Op Setup</button>}
         {canManageTools && <button className={`sub-tab ${tab==="tools"?"active":""}`} onClick={()=>setTabSafe("tools")}>Tool Library</button>}
         {canManageUsers && <button className={`sub-tab ${tab==="users"?"active":""}`} onClick={()=>setTabSafe("users")}>Users</button>}
@@ -2630,10 +3007,25 @@ function AdminView({ parts, jobs, records, toolLibrary, users, usersById, curren
       {tab==="jobs"&&canViewJobs&&<AdminJobs parts={parts} jobs={jobs} usersById={usersById} onCreateJob={onCreateJob} canManageJobs={canManageJobs} onUnlockJob={onUnlockJob}/>}
       {tab==="records"&&canViewRecords&&<AdminRecords records={records} parts={parts} toolLibrary={toolLibrary} usersById={usersById} loadRecordDetail={loadRecordDetail} canEdit={canEdit} onEditValue={onEditValue}/>}
       {tab==="issues"&&canViewIssueReports&&<AdminIssueReports currentRole={currentRole} currentUserId={currentUserId}/>}
+      {tab==="imports"&&canViewImports&&<AdminImports currentRole={currentRole} canManageTools={canManageTools} canManageParts={canManageParts} onRefreshData={onRefreshData}/>}
       {tab==="parts"&&canManageParts&&<AdminParts parts={parts} toolLibrary={toolLibrary} onCreatePart={onCreatePart} onUpdatePart={onUpdatePart} onCreateOp={onCreateOp} onCreateDim={onCreateDim} onUpdateDim={onUpdateDim} onRemoveDim={onRemoveDim} onDirtyChange={dirty=>setDirtyByTab(p=>({...p,parts:dirty}))}/>}
       {tab==="tools"&&canManageTools&&<AdminTools toolLibrary={toolLibrary} onCreateTool={onCreateTool} onUpdateTool={onUpdateTool}/>}
-      {tab==="users"&&canManageUsers&&<AdminUsers users={users} onCreateUser={onCreateUser} onUpdateUser={onUpdateUser} onRemoveUser={onRemoveUser} onDirtyChange={dirty=>setDirtyByTab(p=>({...p,users:dirty}))}/>}
+      {tab==="users"&&canManageUsers&&<AdminUsers users={users} roleCaps={roleCaps} onCreateUser={onCreateUser} onUpdateUser={onUpdateUser} onRemoveUser={onRemoveUser} onDirtyChange={dirty=>setDirtyByTab(p=>({...p,users:dirty}))}/>}
       {tab==="roles"&&canManageRoles&&<AdminRoles roleCaps={roleCaps} onUpdateRoleCaps={onUpdateRoleCaps} onDirtyChange={dirty=>setDirtyByTab(p=>({...p,roles:dirty}))}/>}
+    </div>
+  );
+}
+
+function TransitionBanner({ state }) {
+  if(!state || state.status==="idle") return null;
+  const toneClass=state.status==="loading" ? "transition-loading" : state.status==="success" ? "transition-success" : "transition-error";
+  const label=state.status==="loading" ? "Working" : state.status==="success" ? "Done" : "Error";
+  const role=state.status==="error" ? "alert" : "status";
+  const live=state.status==="error" ? "assertive" : "polite";
+  return (
+    <div className={`transition-banner ${toneClass}`} role={role} aria-live={live} data-testid="transition-banner">
+      <span className="transition-label">{label}</span>
+      <span>{state.message}</span>
     </div>
   );
 }
@@ -2654,6 +3046,37 @@ export default function App() {
   const [opIdToNumber,setOpIdToNumber]=useState({});
   const [roleCaps,setRoleCaps]=useState(DEFAULT_ROLE_CAPS);
   const prevUserRef=useRef("");
+  const transitionTimeoutRef=useRef(null);
+  const [transitionState,setTransitionState]=useState({ status:"idle", message:"" });
+
+  function setTransition(status, message, resetMs){
+    if(transitionTimeoutRef.current){
+      clearTimeout(transitionTimeoutRef.current);
+      transitionTimeoutRef.current=null;
+    }
+    setTransitionState({ status, message });
+    if(resetMs){
+      transitionTimeoutRef.current=setTimeout(()=>{
+        setTransitionState({ status:"idle", message:"" });
+        transitionTimeoutRef.current=null;
+      }, resetMs);
+    }
+  }
+
+  async function runTransition(actionLabel, fn){
+    setTransition("loading", `${actionLabel}…`);
+    try{
+      const result=await fn();
+      setTransition("success", `${actionLabel} complete.`, 3500);
+      return result;
+    }catch(err){
+      const detail=err?.message ? ` ${err.message}` : "";
+      setTransition("error", `${actionLabel} failed.${detail}`, 7000);
+      throw err;
+    }
+  }
+
+  useEffect(()=>()=>{ if(transitionTimeoutRef.current) clearTimeout(transitionTimeoutRef.current); },[]);
 
   useEffect(()=>{
     let active=true;
@@ -2753,6 +3176,33 @@ export default function App() {
     return ()=>{active=false;};
   },[]);
 
+  async function reloadLiveData(){
+    setDataStatus("loading");
+    setDataErr("");
+    try{
+      const role=currentRole || "Admin";
+      const [toolsList, partsList] = await Promise.all([
+        api.tools.list(role),
+        api.parts.list(role)
+      ]);
+      const partDetails = await Promise.all((partsList||[]).map(p=>api.parts.get(p.id, role)));
+      const { partsObj, opIdToNumber: opMap } = buildPartsFromApi(partDetails);
+      const [jobsList, recordsList] = await Promise.all([
+        api.jobs.list({}, role),
+        api.records.list({}, role)
+      ]);
+      setToolLibrary(mapToolLibrary(toolsList));
+      setParts(partsObj);
+      setOpIdToNumber(opMap);
+      setJobs(mapJobsFromApi(jobsList, opMap));
+      setRecords(mapRecordsFromApi(recordsList, opMap, usersById));
+      setDataStatus("live");
+    }catch(err){
+      setDataStatus("fallback");
+      setDataErr(err?.message || "API unavailable.");
+    }
+  }
+
   const currentCaps=roleCaps[currentRole] || [];
   const hasCap = cap => currentCaps.includes(cap);
   const canViewAdmin = hasCap("view_admin");
@@ -2811,13 +3261,16 @@ export default function App() {
         isOot
       });
     }
-    const toolsPayload=Object.entries(record.tools||{}).flatMap(([dimId,t])=>{
-      if(!t?.toolId) return [];
-      return [{
-        dimensionId:Number(dimId),
-        toolId:Number(t.toolId),
-        itNum:t.itNum
-      }];
+    const toolsPayload=Object.entries(record.tools||{}).flatMap(([dimId,rows])=>{
+      const list=Array.isArray(rows) ? rows : (rows ? [rows] : []);
+      return list.flatMap(t=>{
+        if(!t?.toolId || !t?.itNum) return [];
+        return [{
+          dimensionId:Number(dimId),
+          toolId:Number(t.toolId),
+          itNum:String(t.itNum)
+        }];
+      });
     });
     const payload={
       jobId:jobNumber,
@@ -2845,19 +3298,21 @@ export default function App() {
       setJobs(prev=>({...prev,[job.jobNumber]:job}));
       return;
     }
-    if(!canManageJobs) throw new Error("Permission required to create jobs.");
-    const opId=parts?.[job.partNumber]?.operations?.[job.operation]?.id;
-    if(!opId) throw new Error("Operation mapping missing for this job.");
-    const created=await api.jobs.create({
-      id:job.jobNumber,
-      partId:job.partNumber,
-      operationId:Number(opId),
-      lot:job.lot,
-      qty:job.qty,
-      status:job.status || "open"
-    }, currentRole);
-    const mapped=mapJobsFromApi([created], opIdToNumber)[0];
-    setJobs(prev=>({...prev,[mapped.jobNumber]:mapped}));
+    return runTransition("Create job", async ()=>{
+      if(!canManageJobs) throw new Error("Permission required to create jobs.");
+      const opId=parts?.[job.partNumber]?.operations?.[job.operation]?.id;
+      if(!opId) throw new Error("Operation mapping missing for this job.");
+      const created=await api.jobs.create({
+        id:job.jobNumber,
+        partId:job.partNumber,
+        operationId:Number(opId),
+        lot:job.lot,
+        qty:job.qty,
+        status:job.status || "open"
+      }, currentRole);
+      const mapped=mapJobsFromApi([created], opIdToNumber)[0];
+      setJobs(prev=>({...prev,[mapped.jobNumber]:mapped}));
+    });
   }
   async function handleCreatePart(part){
     const pn=part.partNumber;
@@ -2865,18 +3320,24 @@ export default function App() {
       setParts(prev=>({...prev,[pn]:{partNumber:pn,description:part.description,operations:{}}}));
       return;
     }
-    if(!canManageParts) throw new Error("Permission required to add parts.");
-    await api.parts.create({id:pn,description:part.description}, currentRole);
-    setParts(prev=>({...prev,[pn]:{partNumber:pn,description:part.description,operations:{}}}));
+    return runTransition("Create part", async ()=>{
+      if(!canManageParts) throw new Error("Permission required to add parts.");
+      await api.parts.create({id:pn,description:part.description}, currentRole);
+      setParts(prev=>({...prev,[pn]:{partNumber:pn,description:part.description,operations:{}}}));
+    });
   }
   async function handleUpdatePart(partNumber, description, persist){
     setParts(prev=>({...prev,[partNumber]:{...prev[partNumber],description}}));
     if(!persist) return;
     if(dataStatus!=="live") return;
-    if(!canManageParts) throw new Error("Permission required to update parts.");
-    await api.parts.update(partNumber, {description}, currentRole);
+    return runTransition("Update part", async ()=>{
+      if(!canManageParts) throw new Error("Permission required to update parts.");
+      await api.parts.update(partNumber, {description}, currentRole);
+    });
   }
   async function handleCreateOp(partNumber, opNumber, label){
+    const normalizedOp=normalizeOpNumber(opNumber);
+    if(!normalizedOp) throw new Error("Operation number must be between 001 and 999.");
     if(dataStatus!=="live"){
       setParts(prev=>({
         ...prev,
@@ -2884,25 +3345,28 @@ export default function App() {
           ...prev[partNumber],
           operations:{
             ...prev[partNumber].operations,
-            [opNumber]:{ id:`op_${uid()}`, label, dimensions:[] }
+            [normalizedOp]:{ id:`op_${uid()}`, label, dimensions:[] }
           }
         }
       }));
       return;
     }
-    if(!canManageParts) throw new Error("Permission required to add operations.");
-    const created=await api.operations.create({partId:partNumber,opNumber:Number(opNumber),label}, currentRole);
-    setParts(prev=>({
-      ...prev,
-      [partNumber]:{
-        ...prev[partNumber],
-        operations:{
-          ...prev[partNumber].operations,
-          [opNumber]:{ id:String(created.id), label:created.label, dimensions:[] }
+    return runTransition("Create operation", async ()=>{
+      if(!canManageParts) throw new Error("Permission required to add operations.");
+      const created=await api.operations.create({partId:partNumber,opNumber:normalizedOp,label}, currentRole);
+      const createdOp=normalizeOpNumber(created.op_number ?? created.opNumber ?? normalizedOp) || normalizedOp;
+      setParts(prev=>({
+        ...prev,
+        [partNumber]:{
+          ...prev[partNumber],
+          operations:{
+            ...prev[partNumber].operations,
+            [createdOp]:{ id:String(created.id), label:created.label, dimensions:[] }
+          }
         }
-      }
-    }));
-    setOpIdToNumber(prev=>({...prev,[String(created.id)]:String(created.op_number ?? created.opNumber ?? opNumber)}));
+      }));
+      setOpIdToNumber(prev=>({...prev,[String(created.id)]:createdOp}));
+    });
   }
   async function handleCreateDim(partNumber, opNumber, dim){
     const op=parts?.[partNumber]?.operations?.[opNumber];
@@ -2921,34 +3385,52 @@ export default function App() {
       }));
       return;
     }
-    if(!canManageParts) throw new Error("Permission required to add dimensions.");
-    const created=await api.dimensions.create({
-      operationId:Number(op.id),
-      name:dim.name,
-      nominal:dim.nominal,
-      tolPlus:dim.tolPlus,
-      tolMinus:dim.tolMinus,
-      unit:dim.unit,
-      sampling:dim.sampling,
-      inputMode:dim.inputMode || "single",
-      toolIds:dim.tools
-    }, currentRole);
-    const newDim={id:String(created.id),name:created.name,nominal:created.nominal,tolPlus:created.tol_plus ?? created.tolPlus,tolMinus:created.tol_minus ?? created.tolMinus,unit:created.unit,sampling:created.sampling,inputMode:created.input_mode ?? created.inputMode ?? dim.inputMode ?? "single",tools:dim.tools};
-    setParts(prev=>({
-      ...prev,
-      [partNumber]:{
-        ...prev[partNumber],
-        operations:{
-          ...prev[partNumber].operations,
-          [opNumber]:{...prev[partNumber].operations[opNumber],dimensions:[...prev[partNumber].operations[opNumber].dimensions,newDim]}
+    return runTransition("Create dimension", async ()=>{
+      if(!canManageParts) throw new Error("Permission required to add dimensions.");
+      const created=await api.dimensions.create({
+        operationId:Number(op.id),
+        name:dim.name,
+        nominal:dim.nominal,
+        tolPlus:dim.tolPlus,
+        tolMinus:dim.tolMinus,
+        unit:dim.unit,
+        sampling:dim.sampling,
+        samplingInterval:dim.sampling==="custom_interval" ? (Number(dim.samplingInterval)||2) : null,
+        inputMode:dim.inputMode || "single",
+        toolIds:dim.tools
+      }, currentRole);
+      const newDim={id:String(created.id),name:created.name,nominal:created.nominal,tolPlus:created.tol_plus ?? created.tolPlus,tolMinus:created.tol_minus ?? created.tolMinus,unit:created.unit,sampling:created.sampling,samplingInterval:created.sampling_interval ?? created.samplingInterval ?? null,inputMode:created.input_mode ?? created.inputMode ?? dim.inputMode ?? "single",tools:dim.tools};
+      setParts(prev=>({
+        ...prev,
+        [partNumber]:{
+          ...prev[partNumber],
+          operations:{
+            ...prev[partNumber].operations,
+            [opNumber]:{...prev[partNumber].operations[opNumber],dimensions:[...prev[partNumber].operations[opNumber].dimensions,newDim]}
+          }
         }
-      }
-    }));
+      }));
+    });
   }
   async function handleUpdateDim(partNumber, opNumber, dimId, field, value, persist){
     const op=parts?.[partNumber]?.operations?.[opNumber];
     if(!op) return;
-    const dims=op.dimensions.map(d=>d.id===dimId?{...d,[field]:value}:d);
+    const dims=op.dimensions.map(d=>{
+      if(d.id!==dimId) return d;
+      const next={...d,[field]:value};
+      if(field==="sampling"){
+        if(value==="custom_interval"){
+          next.samplingInterval = d.samplingInterval || 2;
+        }else{
+          next.samplingInterval = null;
+        }
+      }
+      if(field==="samplingInterval"){
+        const n=Math.max(1, Number(value)||1);
+        next.samplingInterval=n;
+      }
+      return next;
+    });
     setParts(prev=>({
       ...prev,
       [partNumber]:{
@@ -2961,19 +3443,22 @@ export default function App() {
     }));
     if(!persist) return;
     if(dataStatus!=="live") return;
-    if(!canManageParts) throw new Error("Permission required to update dimensions.");
-    const dim=dims.find(d=>d.id===dimId);
-    if(!dim) return;
-    await api.dimensions.update(dimId, {
-      name:dim.name,
-      nominal:dim.nominal,
-      tolPlus:dim.tolPlus,
-      tolMinus:dim.tolMinus,
-      unit:dim.unit,
-      sampling:dim.sampling,
-      inputMode:dim.inputMode || "single",
-      toolIds:dim.tools
-    }, currentRole);
+    return runTransition("Update dimension", async ()=>{
+      if(!canManageParts) throw new Error("Permission required to update dimensions.");
+      const dim=dims.find(d=>d.id===dimId);
+      if(!dim) return;
+      await api.dimensions.update(dimId, {
+        name:dim.name,
+        nominal:dim.nominal,
+        tolPlus:dim.tolPlus,
+        tolMinus:dim.tolMinus,
+        unit:dim.unit,
+        sampling:dim.sampling,
+        samplingInterval:dim.sampling==="custom_interval" ? (Number(dim.samplingInterval)||2) : null,
+        inputMode:dim.inputMode || "single",
+        toolIds:dim.tools
+      }, currentRole);
+    });
   }
   async function handleRemoveDim(partNumber, opNumber, dimId){
     if(dataStatus!=="live"){
@@ -2989,18 +3474,20 @@ export default function App() {
       }));
       return;
     }
-    if(!canManageParts) throw new Error("Permission required to remove dimensions.");
-    await api.dimensions.remove(dimId, currentRole);
-    setParts(prev=>({
-      ...prev,
-      [partNumber]:{
-        ...prev[partNumber],
-        operations:{
-          ...prev[partNumber].operations,
-          [opNumber]:{...prev[partNumber].operations[opNumber],dimensions:prev[partNumber].operations[opNumber].dimensions.filter(d=>d.id!==dimId)}
+    return runTransition("Remove dimension", async ()=>{
+      if(!canManageParts) throw new Error("Permission required to remove dimensions.");
+      await api.dimensions.remove(dimId, currentRole);
+      setParts(prev=>({
+        ...prev,
+        [partNumber]:{
+          ...prev[partNumber],
+          operations:{
+            ...prev[partNumber].operations,
+            [opNumber]:{...prev[partNumber].operations[opNumber],dimensions:prev[partNumber].operations[opNumber].dimensions.filter(d=>d.id!==dimId)}
+          }
         }
-      }
-    }));
+      }));
+    });
   }
   async function handleCreateUser(user){
     if(dataStatus!=="live"){
@@ -3008,27 +3495,33 @@ export default function App() {
       setUsers(prev=>[...prev,{id,name:user.name,role:user.role,active:user.active}].sort((a,b)=>a.name.localeCompare(b.name)));
       return;
     }
-    if(!canManageUsers) throw new Error("Permission required to add users.");
-    const created=await api.users.create({name:user.name,role:user.role,active:user.active}, currentRole);
-    setUsers(prev=>[...prev,created].sort((a,b)=>a.name.localeCompare(b.name)));
+    return runTransition("Create user", async ()=>{
+      if(!canManageUsers) throw new Error("Permission required to add users.");
+      const created=await api.users.create({name:user.name,role:user.role,active:user.active}, currentRole);
+      setUsers(prev=>[...prev,created].sort((a,b)=>a.name.localeCompare(b.name)));
+    });
   }
   async function handleUpdateUser(id, payload){
     if(dataStatus!=="live"){
       setUsers(prev=>prev.map(u=>String(u.id)===String(id)?{...u,...payload}:u).sort((a,b)=>a.name.localeCompare(b.name)));
       return;
     }
-    if(!canManageUsers) throw new Error("Permission required to update users.");
-    const updated=await api.users.update(id, payload, currentRole);
-    setUsers(prev=>prev.map(u=>String(u.id)===String(id)?updated:u).sort((a,b)=>a.name.localeCompare(b.name)));
+    return runTransition("Update user", async ()=>{
+      if(!canManageUsers) throw new Error("Permission required to update users.");
+      const updated=await api.users.update(id, payload, currentRole);
+      setUsers(prev=>prev.map(u=>String(u.id)===String(id)?updated:u).sort((a,b)=>a.name.localeCompare(b.name)));
+    });
   }
   async function handleRemoveUser(id){
     if(dataStatus!=="live"){
       setUsers(prev=>prev.filter(u=>String(u.id)!==String(id)));
       return;
     }
-    if(!canManageUsers) throw new Error("Permission required to remove users.");
-    await api.users.remove(id, currentRole);
-    setUsers(prev=>prev.filter(u=>String(u.id)!==String(id)));
+    return runTransition("Remove user", async ()=>{
+      if(!canManageUsers) throw new Error("Permission required to remove users.");
+      await api.users.remove(id, currentRole);
+      setUsers(prev=>prev.filter(u=>String(u.id)!==String(id)));
+    });
   }
   async function handleCreateTool(tool){
     if(dataStatus!=="live"){
@@ -3036,18 +3529,20 @@ export default function App() {
       setToolLibrary(prev=>({...prev,[id]:{id,name:tool.name,type:tool.type,itNum:tool.itNum,size:tool.size||"",active:tool.active!==false,visible:tool.visible!==false}}));
       return;
     }
-    if(!canManageTools) throw new Error("Permission required to add tools.");
-    const created=await api.tools.create({name:tool.name,type:tool.type,itNum:tool.itNum,size:tool.size,active:tool.active!==false,visible:tool.visible!==false}, currentRole);
-    const id=String(created.id);
-    setToolLibrary(prev=>({...prev,[id]:{
-      id,
-      name:created.name,
-      type:created.type,
-      itNum:created.it_num ?? created.itNum,
-      size:created.size ?? "",
-      active:created.active ?? true,
-      visible:created.visible ?? true
-    }}));
+    return runTransition("Create tool", async ()=>{
+      if(!canManageTools) throw new Error("Permission required to add tools.");
+      const created=await api.tools.create({name:tool.name,type:tool.type,itNum:tool.itNum,size:tool.size,active:tool.active!==false,visible:tool.visible!==false}, currentRole);
+      const id=String(created.id);
+      setToolLibrary(prev=>({...prev,[id]:{
+        id,
+        name:created.name,
+        type:created.type,
+        itNum:created.it_num ?? created.itNum,
+        size:created.size ?? "",
+        active:created.active ?? true,
+        visible:created.visible ?? true
+      }}));
+    });
   }
   async function handleUpdateTool(id, patch){
     if(dataStatus!=="live"){
@@ -3057,45 +3552,51 @@ export default function App() {
       }));
       return;
     }
-    if(!canManageTools) throw new Error("Permission required to update tools.");
-    const updated=await api.tools.update(id, patch, currentRole);
-    setToolLibrary(prev=>({
-      ...prev,
-      [String(updated.id)]:{
-        id:String(updated.id),
-        name:updated.name,
-        type:updated.type,
-        itNum:updated.it_num ?? updated.itNum,
-        size:updated.size ?? "",
-        active:updated.active ?? true,
-        visible:updated.visible ?? true
-      }
-    }));
+    return runTransition("Update tool", async ()=>{
+      if(!canManageTools) throw new Error("Permission required to update tools.");
+      const updated=await api.tools.update(id, patch, currentRole);
+      setToolLibrary(prev=>({
+        ...prev,
+        [String(updated.id)]:{
+          id:String(updated.id),
+          name:updated.name,
+          type:updated.type,
+          itNum:updated.it_num ?? updated.itNum,
+          size:updated.size ?? "",
+          active:updated.active ?? true,
+          visible:updated.visible ?? true
+        }
+      }));
+    });
   }
   async function handleUpdateRoleCaps(role, capabilities){
     if(dataStatus!=="live"){
       setRoleCaps(prev=>({...prev,[role]:capabilities}));
       return;
     }
-    if(!canManageRoles) throw new Error("Permission required to manage roles.");
-    const updated=await api.roles.update(role, { capabilities }, currentRole);
-    setRoleCaps(prev=>({...prev,[role]:updated.capabilities || []}));
+    return runTransition("Update role capabilities", async ()=>{
+      if(!canManageRoles) throw new Error("Permission required to manage roles.");
+      const updated=await api.roles.update(role, { capabilities }, currentRole);
+      setRoleCaps(prev=>({...prev,[role]:updated.capabilities || []}));
+    });
   }
   async function handleEditRecordValue({ recordId, dimensionId, pieceNumber, value, reason }){
     if(dataStatus!=="live") throw new Error("Edits require live data mode.");
-    if(!currentUserId) throw new Error("Select a current user before editing.");
-    if(!canEditRecords) throw new Error("Permission required for edits.");
-    await api.records.editValue(recordId, {
-      userId: Number(currentUserId),
-      dimensionId: Number(dimensionId),
-      pieceNumber: Number(pieceNumber),
-      value: String(value),
-      reason
-    }, currentRole);
-    const detail=await api.records.get(recordId, currentRole);
-    const mapped=mapRecordDetailFromApi(detail, opIdToNumber, usersById);
-    setRecords(prev=>prev.map(r=>String(r.id)===String(recordId)?{...r,oot:mapped.oot}:r));
-    return mapped;
+    return runTransition("Update inspection record", async ()=>{
+      if(!currentUserId) throw new Error("Select a current user before editing.");
+      if(!canEditRecords) throw new Error("Permission required for edits.");
+      await api.records.editValue(recordId, {
+        userId: Number(currentUserId),
+        dimensionId: Number(dimensionId),
+        pieceNumber: Number(pieceNumber),
+        value: String(value),
+        reason
+      }, currentRole);
+      const detail=await api.records.get(recordId, currentRole);
+      const mapped=mapRecordDetailFromApi(detail, opIdToNumber, usersById);
+      setRecords(prev=>prev.map(r=>String(r.id)===String(recordId)?{...r,oot:mapped.oot}:r));
+      return mapped;
+    });
   }
   async function handleLockJob(jobId){
     if(dataStatus!=="live") return;
@@ -3111,8 +3612,10 @@ export default function App() {
   }
   async function handleUnlockJob(jobId){
     if(dataStatus!=="live") return;
-    await api.jobs.unlock(jobId, Number(currentUserId) || undefined, currentRole||"Operator");
-    setJobs(prev=>({...prev,[jobId]:{...prev[jobId],lockOwnerUserId:null,lockTimestamp:null}}));
+    return runTransition("Unlock job", async ()=>{
+      await api.jobs.unlock(jobId, Number(currentUserId) || undefined, currentRole||"Operator");
+      setJobs(prev=>({...prev,[jobId]:{...prev[jobId],lockOwnerUserId:null,lockTimestamp:null}}));
+    });
   }
   async function loadRecordDetail(id){
     const role=currentRole||"Admin";
@@ -3153,6 +3656,7 @@ export default function App() {
           </div>
         </div>
         <div className="page">
+          <TransitionBanner state={transitionState}/>
           {view==="operator" && (
             <OperatorView parts={parts} jobs={jobs} toolLibrary={toolLibrary} onSubmit={handleSubmit} onDraft={handleDraft} currentUserId={currentUserId} currentRole={currentRole} onLockJob={handleLockJob} onUnlockJob={handleUnlockJob} dataStatus={dataStatus} usersById={usersById}/>
           )}
@@ -3160,7 +3664,7 @@ export default function App() {
             <AdminRecords records={records} parts={parts} toolLibrary={toolLibrary} usersById={usersById} loadRecordDetail={loadRecordDetail} canEdit={canEditRecords} onEditValue={handleEditRecordValue}/>
           )}
           {view==="admin" && (
-            <AdminView parts={parts} jobs={jobs} records={records} toolLibrary={toolLibrary} users={users} usersById={usersById} currentCaps={currentCaps} roleCaps={roleCaps} currentRole={currentRole} currentUserId={currentUserId} loadRecordDetail={loadRecordDetail} onEditValue={handleEditRecordValue} onCreateJob={handleCreateJob} onCreatePart={handleCreatePart} onUpdatePart={handleUpdatePart} onCreateOp={handleCreateOp} onCreateDim={handleCreateDim} onUpdateDim={handleUpdateDim} onRemoveDim={handleRemoveDim} onCreateTool={handleCreateTool} onUpdateTool={handleUpdateTool} onCreateUser={handleCreateUser} onUpdateUser={handleUpdateUser} onRemoveUser={handleRemoveUser} onUpdateRoleCaps={handleUpdateRoleCaps} onUnlockJob={handleUnlockJob}/>
+            <AdminView parts={parts} jobs={jobs} records={records} toolLibrary={toolLibrary} users={users} usersById={usersById} currentCaps={currentCaps} roleCaps={roleCaps} currentRole={currentRole} currentUserId={currentUserId} loadRecordDetail={loadRecordDetail} onEditValue={handleEditRecordValue} onCreateJob={handleCreateJob} onCreatePart={handleCreatePart} onUpdatePart={handleUpdatePart} onCreateOp={handleCreateOp} onCreateDim={handleCreateDim} onUpdateDim={handleUpdateDim} onRemoveDim={handleRemoveDim} onCreateTool={handleCreateTool} onUpdateTool={handleUpdateTool} onCreateUser={handleCreateUser} onUpdateUser={handleUpdateUser} onRemoveUser={handleRemoveUser} onUpdateRoleCaps={handleUpdateRoleCaps} onUnlockJob={handleUnlockJob} onRefreshData={reloadLiveData}/>
           )}
         </div>
       </>

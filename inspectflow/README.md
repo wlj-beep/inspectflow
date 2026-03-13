@@ -49,3 +49,4 @@ Playwright requires browser binaries:
 - `docs/backlog.md` stores detailed backlog items keyed by `BL-###`.
 - `WORKLOG.md` stores completed work history.
 - `docs/deployment-governance.md` defines change controls and pre-deploy checks.
+- `CONTRIBUTING.md` defines Git branching, commit, and PR best practices for this repo.

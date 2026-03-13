@@ -3,6 +3,14 @@ import { query } from "../db.js";
 import { requireAnyCapability, requireCapability } from "../middleware/requireCapability.js";
 
 const router = Router();
+const VALID_SAMPLING = ["first_last", "first_middle_last", "every_5", "every_10", "100pct", "custom_interval"];
+
+function normalizeSamplingInterval(sampling, samplingInterval) {
+  if (sampling !== "custom_interval") return null;
+  const intervalNum = Number(samplingInterval);
+  if (!Number.isInteger(intervalNum) || intervalNum <= 0) return null;
+  return intervalNum;
+}
 
 router.get("/", requireAnyCapability(["view_operator", "view_admin", "view_records"]), async (req, res, next) => {
   try {
@@ -21,7 +29,7 @@ router.get("/", requireAnyCapability(["view_operator", "view_admin", "view_recor
 
 router.post("/", requireCapability("manage_parts"), async (req, res, next) => {
   try {
-    const { operationId, name, nominal, tolPlus, tolMinus, unit, sampling, inputMode = "single", toolIds = [] } = req.body;
+    const { operationId, name, nominal, tolPlus, tolMinus, unit, sampling, samplingInterval, inputMode = "single", toolIds = [] } = req.body;
     const trimmedName = String(name || "").trim();
     const nominalNum = Number(nominal);
     const tolPlusNum = Number(tolPlus);
@@ -32,8 +40,12 @@ router.post("/", requireCapability("manage_parts"), async (req, res, next) => {
     if (!["in", "mm", "Ra", "deg"].includes(unit)) {
       return res.status(400).json({ error: "invalid_unit" });
     }
-    if (!["first_last", "every_5", "every_10", "100pct"].includes(sampling)) {
+    if (!VALID_SAMPLING.includes(sampling)) {
       return res.status(400).json({ error: "invalid_sampling" });
+    }
+    const normalizedSamplingInterval = normalizeSamplingInterval(sampling, samplingInterval);
+    if (sampling === "custom_interval" && normalizedSamplingInterval === null) {
+      return res.status(400).json({ error: "invalid_sampling_interval" });
     }
     if (!["single", "range"].includes(inputMode)) {
       return res.status(400).json({ error: "invalid_input_mode" });
@@ -55,9 +67,9 @@ router.post("/", requireCapability("manage_parts"), async (req, res, next) => {
       }
     }
     const { rows } = await query(
-      `INSERT INTO dimensions (operation_id, name, nominal, tol_plus, tol_minus, unit, sampling, input_mode)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-      [operationId, trimmedName, nominalNum, tolPlusNum, tolMinusNum, unit, sampling, inputMode]
+      `INSERT INTO dimensions (operation_id, name, nominal, tol_plus, tol_minus, unit, sampling, sampling_interval, input_mode)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+      [operationId, trimmedName, nominalNum, tolPlusNum, tolMinusNum, unit, sampling, normalizedSamplingInterval, inputMode]
     );
     const dim = rows[0];
     for (const toolId of normalizedToolIds) {
@@ -75,7 +87,7 @@ router.post("/", requireCapability("manage_parts"), async (req, res, next) => {
 router.put("/:id", requireCapability("manage_parts"), async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { name, nominal, tolPlus, tolMinus, unit, sampling, inputMode, toolIds } = req.body;
+    const { name, nominal, tolPlus, tolMinus, unit, sampling, samplingInterval, inputMode, toolIds } = req.body;
     const existingRes = await query("SELECT * FROM dimensions WHERE id=$1", [id]);
     const existing = existingRes.rows[0];
     if (!existing) return res.status(404).json({ error: "not_found" });
@@ -87,23 +99,34 @@ router.put("/:id", requireCapability("manage_parts"), async (req, res, next) => 
     const nextUnit = unit ?? existing.unit;
     const nextSampling = sampling ?? existing.sampling;
     const nextInputMode = inputMode ?? existing.input_mode;
+    const nextSamplingInterval =
+      nextSampling === "custom_interval"
+        ? (
+            samplingInterval === undefined
+              ? normalizeSamplingInterval(nextSampling, existing.sampling_interval)
+              : normalizeSamplingInterval(nextSampling, samplingInterval)
+          )
+        : null;
     if (!trimmedName || Number.isNaN(nominalNum) || Number.isNaN(tolPlusNum) || Number.isNaN(tolMinusNum) || !nextUnit || !nextSampling) {
       return res.status(400).json({ error: "required_fields_missing" });
     }
     if (!["in", "mm", "Ra", "deg"].includes(nextUnit)) {
       return res.status(400).json({ error: "invalid_unit" });
     }
-    if (!["first_last", "every_5", "every_10", "100pct"].includes(nextSampling)) {
+    if (!VALID_SAMPLING.includes(nextSampling)) {
       return res.status(400).json({ error: "invalid_sampling" });
+    }
+    if (nextSampling === "custom_interval" && nextSamplingInterval === null) {
+      return res.status(400).json({ error: "invalid_sampling_interval" });
     }
     if (!["single", "range"].includes(nextInputMode)) {
       return res.status(400).json({ error: "invalid_input_mode" });
     }
     const { rows } = await query(
       `UPDATE dimensions
-       SET name=$1, nominal=$2, tol_plus=$3, tol_minus=$4, unit=$5, sampling=$6, input_mode=$7
-       WHERE id=$8 RETURNING *`,
-      [trimmedName, nominalNum, tolPlusNum, tolMinusNum, nextUnit, nextSampling, nextInputMode, id]
+       SET name=$1, nominal=$2, tol_plus=$3, tol_minus=$4, unit=$5, sampling=$6, sampling_interval=$7, input_mode=$8
+       WHERE id=$9 RETURNING *`,
+      [trimmedName, nominalNum, tolPlusNum, tolMinusNum, nextUnit, nextSampling, nextSamplingInterval, nextInputMode, id]
     );
     if (Array.isArray(toolIds)) {
       const normalizedToolIds = toolIds.map((toolId) => Number(toolId)).filter((toolId) => !Number.isNaN(toolId));

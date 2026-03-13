@@ -1,0 +1,4 @@
+part_id,part_name,op_number,op_label,dimension_name,nominal,tol_plus,tol_minus,unit,sampling,sampling_interval,input_mode,tool_it_nums
+5678,Pump Housing,010,Rough Turn,Outer Diameter,1.0000,0.0050,0.0050,in,first_last,,single,IT-0042;IT-0018
+5678,Pump Housing,020,Bore Finish,Bore Diameter,0.6250,0.0030,0.0000,in,first_middle_last,,single,IT-0031;IT-0074
+5678,Pump Housing,030,Final Inspect,Surface Finish,32.0,8.0,8.0,Ra,custom_interval,3,single,IT-0063

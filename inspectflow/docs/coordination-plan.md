@@ -22,6 +22,7 @@ Reviewer Agent
 - `docs/backlog.md`: backlog detail and acceptance context keyed by `BL-###` IDs.
 - `WORKLOG.md`: chronological merged-change and decision history.
 - PR template: consistent change summary, test plan, risk, rollback, and coordination approvals.
+- `CONTRIBUTING.md`: repository Git workflow standards (branching, commits, PR/merge policy).
 
 ## Working Rules
 - No coding without prior claim in `STATUS.md`.
