@@ -1482,7 +1482,7 @@ function AdminTools({ toolLibrary, onCreateTool, onUpdateTool }) {
   );
 }
 
-function AdminUsers({ users, onCreateUser, onUpdateUser, onRemoveUser, onDirtyChange }) {
+function AdminUsers({ users, roleCaps, onCreateUser, onUpdateUser, onRemoveUser, onDirtyChange }) {
   const [form,setForm]=useState({name:"",role:"Operator",active:true});
   const [err,setErr]=useState("");
   const [apiErr,setApiErr]=useState("");
@@ -1544,6 +1544,23 @@ function AdminUsers({ users, onCreateUser, onUpdateUser, onRemoveUser, onDirtyCh
   useEffect(()=>{
     if(onDirtyChange) onDirtyChange(Object.keys(edits).length>0);
   },[edits,onDirtyChange]);
+  const orderedRoles=["Operator","Quality","Supervisor","Admin"];
+  function roleSummary(role){
+    const caps=(roleCaps?.[role]||[]).slice();
+    if(!caps.length) return "No permissions assigned.";
+    const labels=caps
+      .map(cap=>CAPABILITY_DEFS.find(c=>c.key===cap)?.label || cap.replace(/_/g," "))
+      .sort((a,b)=>a.localeCompare(b));
+    const viewCount=caps.filter(c=>c.startsWith("view_")).length;
+    const manageCount=caps.filter(c=>c.startsWith("manage_")).length;
+    const highlights=[
+      viewCount ? `${viewCount} view` : "",
+      manageCount ? `${manageCount} manage` : "",
+      caps.includes("submit_records") ? "submit records" : "",
+      caps.includes("edit_records") ? "edit records" : ""
+    ].filter(Boolean).join(" · ");
+    return `${highlights ? `${highlights} | ` : ""}${labels.join(", ")}`;
+  }
   return (
     <div>
       <div className="card">
@@ -1605,12 +1622,13 @@ function AdminUsers({ users, onCreateUser, onUpdateUser, onRemoveUser, onDirtyCh
           </tbody>
         </table>
         <div className="card-body" style={{paddingTop:".75rem"}}>
-          <div className="section-label" style={{marginBottom:".35rem"}}>Role Definitions</div>
+          <div className="section-label" style={{marginBottom:".35rem"}}>Role Permissions (Live)</div>
           <div className="text-muted" style={{fontSize:".78rem",lineHeight:1.5}}>
-            <div><strong style={{color:"var(--text)"}}>Operator</strong>: Enter measurements, submit jobs, save drafts.</div>
-            <div><strong style={{color:"var(--text)"}}>Quality</strong>: Access Jobs/Records, review and edit measurements with audit log.</div>
-            <div><strong style={{color:"var(--text)"}}>Supervisor</strong>: All Quality permissions plus create/manage jobs.</div>
-            <div><strong style={{color:"var(--text)"}}>Admin</strong>: Full system configuration (users, parts, tools, roles).</div>
+            {orderedRoles.map(role=>(
+              <div key={role}>
+                <strong style={{color:"var(--text)"}}>{role}</strong>: {roleSummary(role)}
+              </div>
+            ))}
           </div>
         </div>
       </div>
@@ -2992,7 +3010,7 @@ function AdminView({ parts, jobs, records, toolLibrary, users, usersById, curren
       {tab==="imports"&&canViewImports&&<AdminImports currentRole={currentRole} canManageTools={canManageTools} canManageParts={canManageParts} onRefreshData={onRefreshData}/>}
       {tab==="parts"&&canManageParts&&<AdminParts parts={parts} toolLibrary={toolLibrary} onCreatePart={onCreatePart} onUpdatePart={onUpdatePart} onCreateOp={onCreateOp} onCreateDim={onCreateDim} onUpdateDim={onUpdateDim} onRemoveDim={onRemoveDim} onDirtyChange={dirty=>setDirtyByTab(p=>({...p,parts:dirty}))}/>}
       {tab==="tools"&&canManageTools&&<AdminTools toolLibrary={toolLibrary} onCreateTool={onCreateTool} onUpdateTool={onUpdateTool}/>}
-      {tab==="users"&&canManageUsers&&<AdminUsers users={users} onCreateUser={onCreateUser} onUpdateUser={onUpdateUser} onRemoveUser={onRemoveUser} onDirtyChange={dirty=>setDirtyByTab(p=>({...p,users:dirty}))}/>}
+      {tab==="users"&&canManageUsers&&<AdminUsers users={users} roleCaps={roleCaps} onCreateUser={onCreateUser} onUpdateUser={onUpdateUser} onRemoveUser={onRemoveUser} onDirtyChange={dirty=>setDirtyByTab(p=>({...p,users:dirty}))}/>}
       {tab==="roles"&&canManageRoles&&<AdminRoles roleCaps={roleCaps} onUpdateRoleCaps={onUpdateRoleCaps} onDirtyChange={dirty=>setDirtyByTab(p=>({...p,roles:dirty}))}/>}
     </div>
   );

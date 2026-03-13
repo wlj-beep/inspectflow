@@ -16,6 +16,7 @@ Completed from active queue:
 - `BL-003` implemented.
 - `BL-004` implemented.
 - `BL-005` implemented.
+- `BL-009` implemented.
 
 ### BL-006 (P2) Revision-Controlled Part Setup
 - Implement revision-controlled part setups with progression `A-Z`, then `AA-ZZ`, and onward.
@@ -50,6 +51,11 @@ Completed from active queue:
 - BL-003: Updated regenerated lot-family logic to reuse original base prefix and apply a consistent incremented run index across sibling operations.
 - BL-004: Normalized operation number handling to `001`-`999` across setup validation and job-number generation paths.
 - BL-005: Added setup-critical dimension snapshots on record persistence and switched record detail/export to snapshot-backed dimension metadata.
+- Added sampling plan extensions: `first_middle_last` and `custom_interval` (`sampling_interval` support end-to-end).
+- Added CSV import APIs and templates for tools and part-dimension setup ingestion.
+- Added Admin `Data Imports` tab with template download/sample load/upload and post-import data refresh.
+- Added integration strategy doc for API/webhook and staged import architecture.
+- Added live Users-page role permission summaries derived from role capability configuration.
 - Added quality role support and role descriptions on Users page.
 - Switched Users page to single `Save All` with unsaved-changes warning.
 - Added role capability editor (Admin can modify what each role can access/do).
