@@ -132,6 +132,18 @@ async function mockApi(page, { createPartMode = "success", createPartDelayMs = 0
     if (enableImports && method === "POST" && path === "/api/imports/part-dimensions/csv") {
       return route.fulfill({ status: 200, json: { ok: true, totalRows: 1, partsUpserted: 1, operationsUpserted: 1, dimensionsUpserted: 1 } });
     }
+    if (enableImports && method === "GET" && path === "/api/imports/integrations") {
+      return route.fulfill({ status: 200, json: [] });
+    }
+    if (enableImports && method === "GET" && path === "/api/imports/unresolved") {
+      return route.fulfill({ status: 200, json: [] });
+    }
+    if (enableImports && method === "POST" && path === "/api/imports/integrations") {
+      return route.fulfill({ status: 201, json: { id: 1, name: "Mock Integration", source_type: "api_pull", import_type: "jobs" } });
+    }
+    if (enableImports && method === "POST" && path === "/api/imports/measurements/bulk") {
+      return route.fulfill({ status: 200, json: { ok: true, totalRows: 1, inserted: 1, updated: 0, failed: 0 } });
+    }
 
     return route.fulfill({ status: 404, json: { error: `Unhandled ${method} ${path}` } });
   });

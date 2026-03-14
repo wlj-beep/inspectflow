@@ -1,117 +1,53 @@
-# MVP Manual Test Plan
+# Release Test Plan
 
-This checklist validates the MVP requirements and is intended for manual execution.
+This plan governs acceptance from R1 through R4 and preserves existing smoke/manual coverage.
 
-## Automated Smoke Tests
-1. Ensure `DATABASE_URL_TEST` is set in `backend/.env`.
-2. Run `npm run test` from the repo root.
+## Core Automated Validation
+1. `npm run coordination:check`
+2. `npm run test:api`
+3. `npm run test:ui`
 
-## Latest Validation Run (2026-03-12)
-- Executed `npm run test` from repo root: API + UI suites passing.
-- Added backend regression coverage for:
-  - Capability enforcement across admin/workflow endpoints.
-  - Job lock ownership rules and `manage_jobs` override unlock.
-  - Record validation for invalid dimension/tool references.
-  - Missing-piece reason requirements (`Scrapped`, `Other`, `Unable to Measure`).
-  - Supervisor edit audit-log integrity and CSV export verification.
-  - Role capability read/write persistence checks.
-  - Part setup revision progression/history (`A..Z`, `AA..`) and historical revision lookup via API.
-  - Part/job revision-required workflow validation and part+revision enforcement for job create/update APIs.
-  - Bulk part-name update workflow (`/api/parts/bulk-update`) and large-catalog filtering controls in Part Setup.
-  - Tool calibration/location tracking with admin-managed location master (`/api/tool-locations`) and location-in-use safeguards.
+## Release Acceptance Matrix
 
-## Setup
-1. Start Postgres.
-2. Start backend (`npm run dev`) and frontend (`npm run dev`).
-3. Ensure `Live Data` chip is green.
-4. Select a current user in the header.
+| Release | Required Suites | Gate Condition |
+| --- | --- | --- |
+| R1 | Security/auth regression, workflow regression, export regression, deployment backup/restore checks | All R1 critical paths pass with core module only |
+| R2 | R1 suites + integration reliability suite + enterprise quality export suite | R2 modules pass without breaking R1 core |
+| R3 | R1/R2 suites + analytics correctness suite + multi-site boundary suite | KPI and partition controls meet defined SLOs |
+| R4 | Full matrix + extension compatibility suite | Platform extensions do not regress core or prior modules |
 
-## Tests
+## Cross-Module Regression Policy
+Run matrix dimensions for every release candidate:
+1. CORE only
+2. CORE + QUALITY_PRO
+3. CORE + INTEGRATION_SUITE
+4. CORE + QUALITY_PRO + INTEGRATION_SUITE
+5. CORE + ANALYTICS_SUITE (R3+)
+6. CORE + MULTISITE + ANALYTICS_SUITE (R3+)
 
-1. Sampling logic coverage
-   - Create a part/operation with one dimension each for `first_last`, `every_5`, `every_10`, and `100pct`.
-   - Create jobs with different quantities (e.g., 1, 8, 12).
-   - Verify sampling pieces match expected rows in the measurement grid.
+## R1 Manual Acceptance Scenarios
+1. Auth/session and role authorization behavior.
+2. Operator end-to-end submission (manual and CSV-assisted paths).
+3. Supervisor correction with complete audit lineage.
+4. Quality traceability query by job/part/lot/piece and CSV export output.
+5. Work center and operation routing management with revision history.
+6. Local backup, restore, and offline update dry run.
+7. Entitlement soft controls visibility and audit logging.
 
-2. OOT logic (asymmetric tolerances + comment gating)
-   - Create a dimension with asymmetric tolerance (e.g., nominal 1.0000, tol +0.0050, tol -0.0010).
-   - Enter an out-of-tolerance value.
-   - Verify OOT banner appears and comment is required before submit.
+## Existing Functional Coverage (Retained)
+- Capability enforcement across CRUD/workflow endpoints.
+- Job lock ownership and force unlock controls.
+- Submission validation for OOT comments and references.
+- Revision progression and historical lookup.
+- Import pathways: tools, part dimensions, jobs, measurements, unresolved manual resolution.
 
-3. Missing piece flow
-   - Leave required sample values blank and attempt partial submit.
-   - Verify missing-piece modal appears.
-   - Choose `Scrapped` and confirm NC # is required.
-   - Choose `Other` and confirm details are required.
-   - Choose `Unable to Measure` and confirm submission allowed.
+## Evidence Requirements Per Release Candidate
+- CI run artifacts for API and UI suites.
+- Manual execution checklist with role, input, expected result, and observed result.
+- Export sample outputs and verification notes.
+- Backup/restore and update workflow logs.
+- Open defects list with release disposition.
 
-4. Role gating + capability editor
-   - As Operator: Admin tab hidden; Records view visible.
-   - As Quality: Admin tab visible; Jobs + Records available.
-   - As Supervisor: Admin tab visible; Jobs + Records + job creation available.
-   - As Admin: All admin tabs visible.
-   - As Admin: open Roles tab and toggle a capability; verify UI visibility updates.
-
-5. Audit log integrity
-   - As Supervisor/Admin, open a record and edit a measurement value.
-   - Provide a reason and save.
-   - Verify audit log shows before/after, user, timestamp, and reason.
-
-6. Job locking
-   - Lock a job by loading it as User A.
-   - Attempt to load the same job as User B and verify lock error.
-   - Close or submit the job as User A and confirm lock is released.
-
-7. Server-side permission enforcement
-   - As Operator: attempt to create a Part/Operation/Dimension/Tool/User and verify the API rejects the action.
-   - As Supervisor/Admin: verify job management actions succeed when `manage_jobs` is enabled.
-
-8. Record submission validation
-   - Submit an OOT record without a comment and verify the API rejects it.
-   - Submit a record with an invalid dimension/tool reference and verify the API rejects it.
-
-9. Record export
-   - Open a record detail modal.
-   - Click `Export CSV` and verify file downloads with values.
-   - From Records list, apply a Lot filter and export filtered CSV.
-
-10. Job Builder
-   - Build jobs from Part + Lot with multiple operations.
-   - Verify generated job numbers match base + op + remeasure index.
-   - If lot exists, verify remeasure index increments.
-
-11. Tool selection
-   - Select Tool Name then type IT # to match an existing tool.
-   - Verify invalid IT # shows warning and blocks submission.
-
-12. Range input mode
-   - Set a dimension input mode to `Range`.
-   - Enter min/max values; verify OOT calculation and display.
-
-13. Auto-timeout
-   - Start a job entry and remain idle for 20 minutes.
-   - Verify auto-save to draft and lock release.
-
-14. Revision-controlled setup edits
-   - As Admin, open `Part / Op Setup` and edit a setup-critical field (part name, operation label/number, dimension spec, or allowed tools).
-   - Verify revision review confirmation appears before commit and shows current→next revision.
-   - Verify part detail reflects incremented revision code after save.
-   - Open a prior revision via API (`/api/parts/:id?revision=<code>`) and verify historical setup values are preserved.
-
-15. Part/job revision input enforcement
-   - In `Part / Op Setup`, verify creating a new part requires an initial revision entry.
-   - In `Job Management`, verify creating a job requires selecting part revision.
-   - Submit job create/update with an unknown part revision via API and verify it is rejected (`part_revision_not_found`).
-
-16. Large-catalog setup controls and bulk updates
-   - In `Part / Op Setup`, verify search filter and pagination reduce rendered part cards for large datasets.
-   - Use bulk find/replace to apply name updates across filtered parts and verify summary results.
-   - Verify updated parts receive new setup revisions and remain editable via normal per-part controls.
-
-17. Tool calibration and location tracking
-   - In `Tool Library`, create location master entries across machine/user/job/vendor/out-for-calibration types.
-   - Create/update a tool with calibration due date, current location, and home location.
-   - Verify deleting an in-use location is blocked (`location_in_use`), then clear tool references and verify delete succeeds.
-
-## Notes
-- If any test fails, capture the exact steps, user role, and any error message.
+## Failure Handling
+- Any critical-path failure blocks release promotion.
+- Known non-critical issues require documented risk acceptance and owner/date commitments.

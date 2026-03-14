@@ -204,6 +204,55 @@ CREATE TABLE IF NOT EXISTS user_sessions (
   end_ts TIMESTAMPTZ
 );
 
+CREATE TABLE IF NOT EXISTS import_integrations (
+  id SERIAL PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  source_type TEXT NOT NULL CHECK (source_type IN ('api_pull','webhook','excel_sheet')),
+  import_type TEXT NOT NULL CHECK (import_type IN ('tools','part_dimensions','jobs','measurements')),
+  endpoint_url TEXT,
+  auth_header TEXT,
+  poll_interval_minutes INTEGER CHECK (poll_interval_minutes IS NULL OR poll_interval_minutes >= 1),
+  enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  options JSONB NOT NULL DEFAULT '{}'::JSONB,
+  last_run_at TIMESTAMPTZ,
+  last_status TEXT,
+  last_message TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS import_runs (
+  id SERIAL PRIMARY KEY,
+  integration_id INTEGER REFERENCES import_integrations(id) ON DELETE SET NULL,
+  source_type TEXT NOT NULL,
+  import_type TEXT NOT NULL,
+  trigger_mode TEXT NOT NULL CHECK (trigger_mode IN ('manual','webhook','scheduled')),
+  status TEXT NOT NULL CHECK (status IN ('success','partial','error')),
+  total_rows INTEGER NOT NULL DEFAULT 0,
+  inserted_count INTEGER NOT NULL DEFAULT 0,
+  updated_count INTEGER NOT NULL DEFAULT 0,
+  failed_count INTEGER NOT NULL DEFAULT 0,
+  summary JSONB NOT NULL DEFAULT '{}'::JSONB,
+  errors JSONB NOT NULL DEFAULT '[]'::JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS import_unresolved_items (
+  id SERIAL PRIMARY KEY,
+  run_id INTEGER REFERENCES import_runs(id) ON DELETE SET NULL,
+  source_type TEXT NOT NULL,
+  import_type TEXT NOT NULL CHECK (import_type IN ('measurements')),
+  line_number INTEGER,
+  reason TEXT NOT NULL,
+  confidence NUMERIC,
+  payload JSONB NOT NULL,
+  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','resolved','ignored')),
+  resolved_payload JSONB,
+  resolved_by_role TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  resolved_at TIMESTAMPTZ
+);
+
 ALTER TABLE missing_pieces DROP CONSTRAINT IF EXISTS missing_pieces_reason_check;
 ALTER TABLE missing_pieces ADD CONSTRAINT missing_pieces_reason_check CHECK (reason IN ('Scrapped','Lost','Damaged','Other','Unable to Measure'));
 ALTER TABLE dimensions ADD COLUMN IF NOT EXISTS sampling_interval INTEGER;
@@ -222,3 +271,9 @@ CREATE INDEX IF NOT EXISTS idx_part_setup_revisions_part_latest
 ON part_setup_revisions (part_id, revision_index DESC);
 CREATE INDEX IF NOT EXISTS idx_tool_locations_type
 ON tool_locations (location_type);
+CREATE INDEX IF NOT EXISTS idx_import_integrations_enabled
+ON import_integrations (enabled);
+CREATE INDEX IF NOT EXISTS idx_import_runs_created
+ON import_runs (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_import_unresolved_status
+ON import_unresolved_items (status, created_at DESC);

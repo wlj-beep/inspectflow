@@ -1,45 +1,53 @@
 # Coordination Plan
 
 ## Goals
-- Prevent duplicate or conflicting work across agents.
-- Drive work by one global ranked priority queue.
-- Ensure every change is reviewed and tested before merge or deploy.
+- Enable parallel development across specialized teams.
+- Preserve one canonical queue and stable backlog IDs.
+- Prevent interface drift and integration conflicts.
 
-## Roles
-Coordinator Agent
-- Owns intake, de-duplication, and queue ordering.
-- Maintains ranked priority order in `STATUS.md`.
-- Maintains `WORKLOG.md` completion history.
-- Resolves overlap and sequencing conflicts.
+## Canonical Artifacts
+- `STATUS.md`: active ranked queue.
+- `docs/backlog.md`: release-aware backlog with metadata.
+- `docs/backlog-framework.md`: required metadata and scoring model.
+- `docs/stream-contracts-*.md`: cross-team interface contracts.
+- `WORKLOG.md`: historical completion record.
 
-Reviewer Agent
-- Performs required code review for every change.
-- Enforces PR checklist compliance and test evidence.
-- Verifies rollback and risk notes for production-impacting changes.
+## Stream Ownership
+- `PLAT` -> Team Atlas
+- `OPS` -> Team Forge
+- `QUAL` -> Team Helix
+- `INT` -> Team Bridge
+- `ANA` -> Team Signal
+- `COMM` -> Team Ledger
 
-## Required Artifacts
-- `STATUS.md`: canonical global execution queue and active ownership state.
-- `docs/backlog.md`: backlog detail and acceptance context keyed by `BL-###` IDs.
-- `WORKLOG.md`: chronological merged-change and decision history.
-- PR template: consistent change summary, test plan, risk, rollback, and coordination approvals.
-- `CONTRIBUTING.md`: repository Git workflow standards (branching, commits, PR/merge policy).
+Each backlog item has exactly one owning stream/team.
 
 ## Working Rules
-- No coding without prior claim in `STATUS.md`.
-- Agents start with the highest-ranked eligible queue item.
-- Soft claim policy: one lead owner per active item; collaborators allowed only when listed in `Owner`.
-- Only the Coordinator may change queue `Rank` or `Priority`.
-- If `Updated` is older than 24 hours, another agent may take over after recording a handoff note in `STATUS.md`.
-- Every `STATUS.md` item must reference a valid `BL-###` entry in `docs/backlog.md`.
-- Reviewer Agent approval is required before merge.
+1. No coding without a valid claimed/queued backlog item.
+2. `STATUS.md` remains schema-stable and globally ranked.
+3. Stream/team tags are included in `Work Item` text only.
+4. Cross-team work must reference a contract ID.
+5. Breaking contract changes require version bump and release approval.
+6. Completed work updates backlog state and appends `WORKLOG.md`.
+
+## Parallel Delivery Model
+- Teams may run in parallel when dependencies are contract-satisfied.
+- Contract-providing team owns interface test fixtures.
+- Consuming teams cannot bypass unresolved dependency items.
+
+## Intake and Prioritization
+- New requests are mapped to release (`R1`-`R4`) and stream.
+- Priority scoring follows `docs/backlog-framework.md`.
+- Coordinator maintains final rank order in `STATUS.md`.
 
 ## Definition of Ready
-- Item exists in `docs/backlog.md` with a stable `BL-###` ID.
-- Item is ranked in `STATUS.md` with `Priority` and `Status` set.
-- Lead owner is assigned for active states (`Claimed`, `In Progress`, `Blocked`).
+- Required metadata complete.
+- Dependencies explicit and valid.
+- Interface contract exists and is owned.
+- Acceptance criteria testable.
 
 ## Definition of Done
-- Change is merged or explicitly closed.
-- Queue entry is removed/closed in `STATUS.md`.
-- `WORKLOG.md` entry is appended with date, owner, and result.
-- Tests pass or are explicitly waived with justification.
+- Acceptance criteria pass.
+- Contract updates documented.
+- Queue/backlog state updated.
+- Worklog entry added for completed deliverables.

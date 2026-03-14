@@ -1,0 +1,4 @@
+record_key,job_id,part_id,part_revision,operation_ref,piece_number,dimension_name,value,is_oot,operator_user_id,status,comment,tool_it_nums,missing_reason,nc_num,details
+batch-001,J-10042,1234,A,020,1,Bore Diameter,0.6250,false,1,complete,Imported from CMM,IT-0031,,,
+batch-001,J-10042,1234,A,020,1,Surface Finish,31.8,false,1,complete,Imported from CMM,IT-0063,,,
+batch-001,J-10042,1234,A,020,2,Bore Diameter,,false,1,incomplete,Probe collision,IT-0031,Unable to Measure,,Probe access blocked

@@ -1,0 +1,3 @@
+piece_number,dimension_name,value,is_oot,tool_it_nums,missing_reason,nc_num,details
+1,Bore Diameter,0.6250,false,IT-0031,,,
+2,Bore Diameter,,false,IT-0031,Unable to Measure,,Probe access blocked

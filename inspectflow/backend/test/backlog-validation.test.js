@@ -818,4 +818,135 @@ describe("Backlog validation hardening", () => {
     expect(dimRes.rows[0]?.sampling).toBe("custom_interval");
     expect(Number(dimRes.rows[0]?.sampling_interval)).toBe(3);
   });
+
+  it("imports jobs from CSV payload with row-level error reporting", async () => {
+    const suffix = crypto.randomUUID().slice(0, 5).toUpperCase();
+    const validJobId = `J-IMP-${suffix}`;
+    const csv = [
+      "job_id,part_id,part_revision,op_number,lot,qty,status",
+      `${validJobId},1234,A,020,Lot Import,8,open`,
+      `J-IMP-BAD-${suffix},1234,A,999,Lot Import,5,open`
+    ].join("\n");
+
+    const res = await request(app)
+      .post("/api/imports/jobs/csv")
+      .set("x-user-role", "Admin")
+      .send({ csvText: csv });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ inserted: 1, failed: 1 });
+    expect(Array.isArray(res.body.errors)).toBe(true);
+    expect(res.body.errors[0]?.error).toContain("operation_not_found");
+
+    const check = await query("SELECT id FROM jobs WHERE id=$1", [validJobId]);
+    expect(check.rows[0]).toBeTruthy();
+  });
+
+  it("ingests measurement CSV and tracks unresolved rows for manual resolution", async () => {
+    const op20 = await getOperationId("1234", "20");
+    expect(op20).toBeTruthy();
+    const jobId = nextJobId("J-MEAS");
+    const created = await createJob({ id: jobId, partId: "1234", operationId: op20, qty: 3, role: "Supervisor" });
+    expect(created.status).toBe(201);
+
+    const csv = [
+      "record_key,job_id,operation_ref,piece_number,dimension_name,value,operator_user_id,status,comment",
+      `batch-a,${jobId},020,1,Bore Diameter,0.6250,1,complete,bulk import`,
+      `batch-a,${jobId},020,1,Unknown Feature,0.5000,1,complete,bulk import`
+    ].join("\n");
+
+    const ingest = await request(app)
+      .post("/api/imports/measurements/bulk")
+      .set("x-user-role", "Admin")
+      .send({ csvText: csv });
+    expect(ingest.status).toBe(200);
+    expect(ingest.body.inserted).toBe(1);
+    expect(Number(ingest.body.unresolvedCount || 0)).toBeGreaterThanOrEqual(1);
+
+    const unresolved = await query(
+      "SELECT id FROM import_unresolved_items WHERE status='open' ORDER BY id DESC LIMIT 1"
+    );
+    expect(unresolved.rows[0]).toBeTruthy();
+
+    const resolve = await request(app)
+      .post(`/api/imports/unresolved/${unresolved.rows[0].id}/resolve`)
+      .set("x-user-role", "Admin")
+      .send({
+        assignment: {
+          jobId,
+          operationRef: "020",
+          dimensionName: "Bore Diameter",
+          pieceNumber: 2,
+          value: "0.6248",
+          operatorUserId: 1,
+          status: "complete"
+        }
+      });
+    expect(resolve.status).toBe(200);
+    expect(resolve.body).toMatchObject({ ok: true });
+
+    const unresolvedCheck = await query(
+      "SELECT status FROM import_unresolved_items WHERE id=$1",
+      [unresolved.rows[0].id]
+    );
+    expect(unresolvedCheck.rows[0]?.status).toBe("resolved");
+  });
+
+  it("supports operator-facing per-job CSV measurement import", async () => {
+    const op30 = await getOperationId("1234", "30");
+    expect(op30).toBeTruthy();
+    const jobId = nextJobId("J-OPCSV");
+    const created = await createJob({ id: jobId, partId: "1234", operationId: op30, qty: 4, role: "Supervisor" });
+    expect(created.status).toBe(201);
+
+    const lock = await request(app)
+      .post(`/api/jobs/${jobId}/lock`)
+      .set("x-user-role", "Operator")
+      .send({ userId: 1 });
+    expect(lock.status).toBe(200);
+
+    const csv = [
+      "piece_number,dimension_name,value,is_oot,tool_it_nums,missing_reason,nc_num,details",
+      "1,Thread Pitch Dia,0.5001,false,IT-0082,,,"
+    ].join("\n");
+
+    const imported = await request(app)
+      .post(`/api/imports/jobs/${jobId}/measurements/csv`)
+      .set("x-user-role", "Operator")
+      .send({
+        csvText: csv,
+        operatorUserId: 1
+      });
+    expect(imported.status).toBe(200);
+    expect(imported.body.inserted).toBe(1);
+  });
+
+  it("runs configured integrations for jobs imports", async () => {
+    const suffix = crypto.randomUUID().slice(0, 5).toUpperCase();
+    const jobId = `J-INT-${suffix}`;
+
+    const created = await request(app)
+      .post("/api/imports/integrations")
+      .set("x-user-role", "Admin")
+      .send({
+        name: `Jobs Feed ${suffix}`,
+        sourceType: "api_pull",
+        importType: "jobs",
+        endpointUrl: null,
+        enabled: true
+      });
+    expect(created.status).toBe(201);
+
+    const pull = await request(app)
+      .post(`/api/imports/integrations/${created.body.id}/pull`)
+      .set("x-user-role", "Admin")
+      .send({
+        csvText: [
+          "job_id,part_id,part_revision,op_number,lot,qty,status",
+          `${jobId},1234,A,020,Lot Int,6,open`
+        ].join("\n")
+      });
+    expect(pull.status).toBe(200);
+    expect(pull.body.inserted).toBe(1);
+    expect(pull.body.runId).toBeTruthy();
+  });
 });

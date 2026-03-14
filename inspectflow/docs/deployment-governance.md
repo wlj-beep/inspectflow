@@ -1,32 +1,45 @@
 # Deployment Governance Plan
 
-This plan defines the minimum controls required before any deployment.
+## Purpose
+Define release controls for safe delivery from R1 through R4.
 
-## Repository Controls
-- Protect `main` and any release branches.
-- Require pull request reviews and status checks.
-- Require review from code owners once defined.
-- Require conversation resolution before merge.
-- Restrict who can push to protected branches.
-- Disable force-push to protected branches.
+## Baseline Required Checks
+1. `npm run coordination:check`
+2. `npm run test:api`
+3. `npm run test:ui`
+4. Release-specific manual checks from `docs/test-plan.md`
 
-## Change Classification
-- Standard: low risk, repeatable changes. Reviewer Agent approval required.
-- Normal: moderate risk or data-impacting changes. Reviewer Agent approval plus Coordinator Agent sign-off.
-- Emergency: urgent fixes. Reviewer Agent approval required; document justification and follow-up review.
+## Change Classes
+- Standard: low-risk, no contract changes.
+- Normal: behavior or data-impacting change.
+- High impact: security, deployment/update, backup/restore, or contract-version change.
 
-## Required Checks
-- Coordination queue validation (`npm run coordination:check`).
-- API smoke tests (`npm run test:api`) or repo root `npm run test`.
-- UI smoke tests (`npm run test:ui`) for UI-impacting changes.
-- Manual tests from `docs/test-plan.md` when behavior changes.
+## Release Gates
 
-## Deployment Flow
-1. Validate required checks and Reviewer Agent approval.
-2. Confirm rollback steps for any production-impacting change.
-3. Deploy to staging or a pilot environment if available.
-4. Deploy to production only after validation and Coordinator Agent sign-off.
+### R1 Gate
+- Auth/session enforcement active.
+- Backup/restore and offline update workflow validated.
+- Core traceability/export acceptance complete.
 
-## Records
-- Each change must have a PR summary and a `WORKLOG.md` entry.
-- Capture test evidence and any risk notes in the PR.
+### R2 Gate
+- R1 gate remains green.
+- Integration reliability and enterprise quality suites pass.
+- Contract compatibility maintained for R1 consumers.
+
+### R3 Gate
+- R1/R2 gates remain green.
+- Analytics correctness and multi-site boundary suites pass.
+
+### R4 Gate
+- Full matrix (core + modules + extensions) passes.
+- Extension compatibility and rollback paths validated.
+
+## Rollback Policy
+- Every production-impacting change must include rollback steps.
+- Contract-affecting releases require version rollback compatibility notes.
+- Data migrations require restore-tested fallback before release approval.
+
+## Evidence and Records
+- Record release evidence in PR and worklog references.
+- Capture risk waivers with owner and expiration date.
+- Keep release notes aligned with enabled modules and contract versions.
