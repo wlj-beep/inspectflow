@@ -20,6 +20,11 @@ Production MVP scaffold (on‑prem web app)..
 - Frontend: `http://localhost:5173`
 - API: `http://localhost:4000`
 
+### Local Auth
+- Protected APIs now require authenticated session identity.
+- Login in UI with a seeded user and local password.
+- Default seeded password is `inspectflow` unless overridden by `INSPECTFLOW_DEFAULT_PASSWORD`.
+
 If you need LAN testing (phone/tablet), bind Vite to your LAN IP and set:
 - `npm run dev -- --host 0.0.0.0` (from `frontend/`)
 - `VITE_API_URL=http://<LAN-IP>:4000`
@@ -51,3 +56,9 @@ Playwright requires browser binaries:
 - `docs/deployment-governance.md` defines change controls and pre-deploy checks.
 - `CONTRIBUTING.md` defines Git branching, commit, and PR best practices for this repo.
 - `docs/direct-push-mode.md` documents optional solo/offline direct push workflow for `main`.
+
+## On-Prem and Backup Operations
+- On-prem install/runbook: `docs/onprem-install-runbook.md`
+- Backup/restore runbook: `docs/backup-restore-runbook.md`
+- Install package scripts: `deploy/onprem/*.sh`
+- Backup workflow scripts: `scripts/backup/*.sh`

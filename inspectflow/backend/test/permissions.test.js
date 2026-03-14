@@ -3,10 +3,10 @@ import request from "supertest";
 import app from "../src/index.js";
 
 describe("Permissions and validation", () => {
-  it("rejects record list without role", async () => {
+  it("rejects record list without auth", async () => {
     const res = await request(app).get("/api/records");
-    expect(res.status).toBe(400);
-    expect(res.body).toMatchObject({ error: "missing_role" });
+    expect(res.status).toBe(401);
+    expect(res.body).toMatchObject({ error: "unauthenticated" });
   });
 
   it("rejects part creation without manage_parts", async () => {

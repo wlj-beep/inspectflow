@@ -4,7 +4,7 @@
 - Frontend: React app with large legacy shell component and API adapters.
 - Backend: Node/Express monolith route layer with Postgres persistence.
 - Deployment: single-site on-prem assumptions with localhost-first tooling.
-- Access control: capability checks are implemented, but request role-header trust is not a production security boundary.
+- Access control: capability checks are bound to authenticated session identity with role-header compatibility disabled by default.
 - Data capabilities: records, audit logs, revisions, import pipelines, unresolved-item workflows.
 
 ## Target State

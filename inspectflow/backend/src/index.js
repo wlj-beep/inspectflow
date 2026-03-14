@@ -15,17 +15,24 @@ import issuesRouter from "./routes/issues.js";
 import importsRouter from "./routes/imports.js";
 import { startImportScheduler } from "./routes/imports.js";
 import toolLocationsRouter from "./routes/toolLocations.js";
+import authRouter from "./routes/auth.js";
+import { attachAuthSession } from "./middleware/authSession.js";
 
 dotenv.config();
 
 const app = express();
-app.use(cors());
+app.use(cors({
+  origin: true,
+  credentials: true
+}));
 app.use(express.json());
+app.use(attachAuthSession);
 
 app.get("/health", (req, res) => {
   res.json({ ok: true, service: "inspectflow-backend" });
 });
 
+app.use("/api/auth", authRouter);
 app.use("/api/users", usersRouter);
 app.use("/api/tools", toolsRouter);
 app.use("/api/parts", partsRouter);

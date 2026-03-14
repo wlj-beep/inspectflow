@@ -81,6 +81,27 @@ INSERT INTO operations (part_id, op_number, label) VALUES
   ('1234','30','Thread & Final')
 ON CONFLICT DO NOTHING;
 
+INSERT INTO work_centers (code, name, description, active) VALUES
+  ('WC-100','Turning Cell','Primary turning operations',true),
+  ('WC-200','Bore Cell','Bore and finish operations',true),
+  ('WC-300','Thread Cell','Thread/final operations',true)
+ON CONFLICT (code) DO UPDATE
+SET name = EXCLUDED.name,
+    description = EXCLUDED.description,
+    active = EXCLUDED.active,
+    updated_at = NOW();
+
+UPDATE operations
+SET work_center_id = (
+  SELECT id FROM work_centers WHERE code = CASE operations.op_number
+    WHEN '10' THEN 'WC-100'
+    WHEN '20' THEN 'WC-200'
+    WHEN '30' THEN 'WC-300'
+    ELSE NULL
+  END
+)
+WHERE part_id='1234';
+
 -- Dimensions
 INSERT INTO dimensions (operation_id, name, nominal, tol_plus, tol_minus, unit, sampling)
 SELECT o.id, 'Outer Diameter', 1.0000, 0.0050, 0.0050, 'in', 'first_last'

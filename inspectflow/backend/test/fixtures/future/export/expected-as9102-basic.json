@@ -1,0 +1,15 @@
+{
+  "profileId": "as9102-basic",
+  "profileName": "AS9102 Basic",
+  "profileVersion": "0.1.0",
+  "artifacts": [
+    {
+      "templateId": "fai-summary-v1",
+      "content": "Part: P-1001\nRevision: B\nLot: LOT-77\nInspector: Alex\nMeasured: 40\nPass Rate: 97.50%"
+    },
+    {
+      "templateId": "fai-line-v1",
+      "content": "P-1001,B,LOT-77,40,1"
+    }
+  ]
+}

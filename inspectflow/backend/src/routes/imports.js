@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { query, transaction } from "../db.js";
 import { requireCapability } from "../middleware/requireCapability.js";
+import { getActorRole, getActorUserId } from "../middleware/authSession.js";
 import {
   createPartSetupRevision,
   ensurePartSetupBaselineRevision,
@@ -37,7 +38,7 @@ function normalizePartRevision(value) {
 }
 
 function requestRole(req) {
-  return String(req.header("x-user-role") || "").trim() || null;
+  return getActorRole(req);
 }
 
 function canonicalHeader(header) {
@@ -1392,9 +1393,15 @@ router.post("/jobs/:jobId/measurements/csv", requireCapability("submit_records")
   try {
     const { jobId } = req.params;
     const { csvText, operatorUserId, operationId, partId, status, comment } = req.body || {};
+    const actorUserId = getActorUserId(req);
+    const suppliedOperatorId = parsePositiveInteger(operatorUserId);
+    const effectiveOperatorId = parsePositiveInteger(actorUserId) || suppliedOperatorId;
 
     if (!String(csvText || "").trim()) return res.status(400).json({ error: "csv_required" });
-    if (!parsePositiveInteger(operatorUserId)) return res.status(400).json({ error: "operator_user_required" });
+    if (!effectiveOperatorId) return res.status(400).json({ error: "operator_user_required" });
+    if (parsePositiveInteger(actorUserId) && suppliedOperatorId && suppliedOperatorId !== parsePositiveInteger(actorUserId)) {
+      return res.status(403).json({ error: "auth_user_mismatch" });
+    }
 
     const { rows } = parseCsvText(csvText);
     if (!rows.length) return res.status(400).json({ error: "csv_no_rows" });
@@ -1408,11 +1415,11 @@ router.post("/jobs/:jobId/measurements/csv", requireCapability("submit_records")
         forceJobId: jobId,
         forcePartId: partId,
         forceOperationId: operationId,
-        forceOperatorUserId: operatorUserId,
+        forceOperatorUserId: effectiveOperatorId,
         defaultStatus: status,
         defaultComment: comment,
         requireOpenJob: true,
-        requireLockOwnerUserId: operatorUserId
+        requireLockOwnerUserId: effectiveOperatorId
       }
     });
 

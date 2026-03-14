@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { query } from "../db.js";
 import { requireAnyCapability, requireCapability } from "../middleware/requireCapability.js";
+import { getActorRole, getActorUserId } from "../middleware/authSession.js";
 
 const router = Router();
 
@@ -62,9 +63,14 @@ router.post("/", requireAnyCapability(["view_operator", "submit_records", "view_
 
     const trimmedCategory = String(category || "").trim();
     const trimmedDetails = String(details || "").trim();
-    const userIdNum = Number(userId);
+    const actorUserId = getActorUserId(req);
+    const suppliedUserId = Number(userId);
+    const userIdNum = Number.isInteger(actorUserId) ? actorUserId : suppliedUserId;
     if (!trimmedCategory || !trimmedDetails || !Number.isInteger(userIdNum)) {
       return res.status(400).json({ error: "required_fields_missing" });
+    }
+    if (Number.isInteger(actorUserId) && Number.isInteger(suppliedUserId) && suppliedUserId !== actorUserId) {
+      return res.status(403).json({ error: "auth_user_mismatch" });
     }
     if (!VALID_CATEGORIES.includes(trimmedCategory)) {
       return res.status(400).json({ error: "invalid_category" });
@@ -72,7 +78,8 @@ router.post("/", requireAnyCapability(["view_operator", "submit_records", "view_
     const userRes = await query("SELECT id FROM users WHERE id=$1", [userIdNum]);
     if (!userRes.rows[0]) return res.status(400).json({ error: "user_not_found" });
 
-    const submittedByRole = String(req.header("x-user-role") || "");
+    const submittedByRole = getActorRole(req);
+    if (!submittedByRole) return res.status(401).json({ error: "unauthenticated" });
     const { rows } = await query(
       `INSERT INTO issue_reports (
          category, details, status,
@@ -103,9 +110,14 @@ router.put("/:id/complete", requireCapability("view_admin"), async (req, res, ne
   try {
     const { id } = req.params;
     const { userId, resolutionNote } = req.body || {};
-    const userIdNum = Number(userId);
+    const actorUserId = getActorUserId(req);
+    const suppliedUserId = Number(userId);
+    const userIdNum = Number.isInteger(actorUserId) ? actorUserId : suppliedUserId;
     if (!Number.isInteger(userIdNum)) {
       return res.status(400).json({ error: "user_required" });
+    }
+    if (Number.isInteger(actorUserId) && Number.isInteger(suppliedUserId) && suppliedUserId !== actorUserId) {
+      return res.status(403).json({ error: "auth_user_mismatch" });
     }
     const userRes = await query("SELECT id FROM users WHERE id=$1", [userIdNum]);
     if (!userRes.rows[0]) return res.status(400).json({ error: "user_not_found" });

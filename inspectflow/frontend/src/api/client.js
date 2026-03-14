@@ -3,6 +3,7 @@ const API_URL = import.meta.env.VITE_API_URL || "http://localhost:4000";
 export async function apiFetch(path, { method = "GET", body, role } = {}) {
   const res = await fetch(`${API_URL}${path}`, {
     method,
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
       ...(role ? { "x-user-role": role } : {})
@@ -23,6 +24,7 @@ export async function apiFetch(path, { method = "GET", body, role } = {}) {
 export async function apiFetchText(path, { method = "GET", role } = {}) {
   const res = await fetch(`${API_URL}${path}`, {
     method,
+    credentials: "include",
     headers: {
       ...(role ? { "x-user-role": role } : {})
     }

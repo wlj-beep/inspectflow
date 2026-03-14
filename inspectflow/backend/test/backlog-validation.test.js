@@ -60,10 +60,10 @@ async function getUserIdByName(name) {
 }
 
 describe("Backlog validation hardening", () => {
-  it("requires role header for user list", async () => {
+  it("requires authentication for user list", async () => {
     const res = await request(app).get("/api/users");
-    expect(res.status).toBe(400);
-    expect(res.body).toMatchObject({ error: "missing_role" });
+    expect(res.status).toBe(401);
+    expect(res.body).toMatchObject({ error: "unauthenticated" });
   });
 
   it("denies Operator access to admin CRUD endpoints", async () => {
@@ -948,5 +948,336 @@ describe("Backlog validation hardening", () => {
     expect(pull.status).toBe(200);
     expect(pull.body.inserted).toBe(1);
     expect(pull.body.runId).toBeTruthy();
+  });
+
+  it("supports work center master CRUD and operation assignment audit history", async () => {
+    const adminId = await getUserIdByName("S. Admin");
+    expect(adminId).toBeTruthy();
+
+    const partId = nextPartId("P-WC");
+    const createdPart = await request(app)
+      .post("/api/parts")
+      .set("x-user-role", "Admin")
+      .send({ id: partId, description: "Work Center Test Part", revision: "A" });
+    expect(createdPart.status).toBe(201);
+
+    const createdOp = await request(app)
+      .post("/api/operations")
+      .set("x-user-role", "Admin")
+      .send({ partId, opNumber: "010", label: "WC Assign Target" });
+    expect(createdOp.status).toBe(201);
+    const operationId = createdOp.body.id;
+    expect(operationId).toBeTruthy();
+
+    const suffix = crypto.randomUUID().slice(0, 6).toUpperCase();
+    const createdWorkCenter = await request(app)
+      .post("/api/operations/work-centers")
+      .set("x-user-role", "Admin")
+      .send({
+        code: `WC-${suffix}`,
+        name: `Work Center ${suffix}`,
+        description: "Assignment test center",
+        userId: adminId,
+        reason: "initial setup"
+      });
+    expect(createdWorkCenter.status).toBe(201);
+    const workCenterId = createdWorkCenter.body.id;
+    expect(workCenterId).toBeTruthy();
+
+    const assigned = await request(app)
+      .put(`/api/operations/${operationId}/work-center`)
+      .set("x-user-role", "Admin")
+      .send({
+        workCenterId,
+        userId: adminId,
+        reason: "route update"
+      });
+    expect(assigned.status).toBe(200);
+    expect(assigned.body).toMatchObject({
+      id: operationId,
+      work_center_id: workCenterId,
+      auditRecorded: true
+    });
+
+    const opHistory = await request(app)
+      .get(`/api/operations/${operationId}/work-center-history`)
+      .set("x-user-role", "Admin");
+    expect(opHistory.status).toBe(200);
+    expect(Array.isArray(opHistory.body)).toBe(true);
+    expect(opHistory.body.length).toBeGreaterThanOrEqual(1);
+    expect(opHistory.body[0]).toMatchObject({
+      operation_id: operationId,
+      after_work_center_id: workCenterId,
+      reason: "route update"
+    });
+
+    const wcHistory = await request(app)
+      .get(`/api/operations/work-centers/${workCenterId}/history`)
+      .set("x-user-role", "Admin");
+    expect(wcHistory.status).toBe(200);
+    expect(Array.isArray(wcHistory.body)).toBe(true);
+    expect(wcHistory.body.some((r) => r.action === "create")).toBe(true);
+    expect(wcHistory.body.some((r) => r.action === "assign")).toBe(true);
+
+    const blockedDelete = await request(app)
+      .delete(`/api/operations/work-centers/${workCenterId}`)
+      .set("x-user-role", "Admin")
+      .send({ userId: adminId, reason: "should fail while assigned" });
+    expect(blockedDelete.status).toBe(409);
+    expect(blockedDelete.body).toMatchObject({ error: "work_center_in_use" });
+
+    const cleared = await request(app)
+      .put(`/api/operations/${operationId}/work-center`)
+      .set("x-user-role", "Admin")
+      .send({
+        workCenterId: null,
+        userId: adminId,
+        reason: "clear assignment"
+      });
+    expect(cleared.status).toBe(200);
+    expect(cleared.body).toMatchObject({
+      id: operationId,
+      work_center_id: null,
+      auditRecorded: true
+    });
+
+    const deleted = await request(app)
+      .delete(`/api/operations/work-centers/${workCenterId}`)
+      .set("x-user-role", "Admin")
+      .send({ userId: adminId, reason: "cleanup" });
+    expect(deleted.status).toBe(200);
+    expect(deleted.body).toMatchObject({ ok: true });
+  });
+
+  it("captures per-piece comments across operator/review/export flows", async () => {
+    const op20 = await getOperationId("1234", "20");
+    expect(op20).toBeTruthy();
+    const dimId = await getFirstDimensionId(op20);
+    expect(dimId).toBeTruthy();
+
+    const jobId = nextJobId("J-PCOM");
+    const createdJob = await createJob({ id: jobId, partId: "1234", operationId: op20, qty: 3, role: "Supervisor" });
+    expect(createdJob.status).toBe(201);
+
+    const submitted = await request(app)
+      .post("/api/records")
+      .set("x-user-role", "Operator")
+      .send({
+        jobId,
+        partId: "1234",
+        operationId: op20,
+        lot: "Lot PCOM",
+        serialNumber: `SN-${crypto.randomUUID().slice(0, 6)}`,
+        qty: 3,
+        operatorUserId: 1,
+        status: "incomplete",
+        oot: false,
+        comment: "",
+        values: [
+          { dimensionId: dimId, pieceNumber: 1, value: "0.6250", isOot: false },
+          { dimensionId: dimId, pieceNumber: 2, value: "0.6251", isOot: false }
+        ],
+        tools: [],
+        missingPieces: [],
+        pieceComments: [
+          { pieceNumber: 1, comment: "First-piece setup witness", serialNumber: "SN-PCOM-1" },
+          { pieceNumber: 2, comment: "Minor burr removed", serialNumber: "SN-PCOM-2" }
+        ]
+      });
+    expect(submitted.status).toBe(201);
+    const recordId = submitted.body.id;
+    expect(recordId).toBeTruthy();
+
+    const detailBefore = await request(app)
+      .get(`/api/records/${recordId}`)
+      .set("x-user-role", "Supervisor");
+    expect(detailBefore.status).toBe(200);
+    expect(Array.isArray(detailBefore.body.pieceComments)).toBe(true);
+    expect(detailBefore.body.pieceComments).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ piece_number: 1, comment: "First-piece setup witness", serial_number: "SN-PCOM-1" }),
+        expect.objectContaining({ piece_number: 2, comment: "Minor burr removed", serial_number: "SN-PCOM-2" })
+      ])
+    );
+
+    const reviewUpdate = await request(app)
+      .put(`/api/records/${recordId}/piece-comment`)
+      .set("x-user-role", "Supervisor")
+      .send({
+        userId: 4,
+        pieceNumber: 2,
+        comment: "Verified and accepted after deburr",
+        serialNumber: "SN-PCOM-2-REV",
+        reason: "quality review update"
+      });
+    expect(reviewUpdate.status).toBe(200);
+    expect(reviewUpdate.body).toMatchObject({
+      record_id: recordId,
+      piece_number: 2,
+      comment: "Verified and accepted after deburr",
+      serial_number: "SN-PCOM-2-REV"
+    });
+
+    const detailAfter = await request(app)
+      .get(`/api/records/${recordId}`)
+      .set("x-user-role", "Supervisor");
+    expect(detailAfter.status).toBe(200);
+    expect(Array.isArray(detailAfter.body.pieceCommentAudit)).toBe(true);
+    expect(detailAfter.body.pieceCommentAudit.some((row) => row.reason === "quality review update")).toBe(true);
+
+    const csv = await request(app)
+      .get(`/api/records/${recordId}/export`)
+      .set("x-user-role", "Supervisor");
+    expect(csv.status).toBe(200);
+    expect(csv.text).toContain("piece_comment");
+    expect(csv.text).toContain("piece_serial_number");
+    expect(csv.text).toContain("Verified and accepted after deburr");
+    expect(csv.text).toContain("SN-PCOM-2-REV");
+  });
+
+  it("captures quantity adjustment reason, actor, and before/after state", async () => {
+    const op30 = await getOperationId("1234", "30");
+    expect(op30).toBeTruthy();
+    const jobId = nextJobId("J-QTY");
+    const createdJob = await createJob({ id: jobId, partId: "1234", operationId: op30, qty: 4, role: "Supervisor" });
+    expect(createdJob.status).toBe(201);
+
+    const adjusted = await request(app)
+      .post(`/api/jobs/${jobId}/quantity-adjustments`)
+      .set("x-user-role", "Supervisor")
+      .send({
+        userId: 4,
+        afterQty: 6,
+        reason: "verified recount after setup hold"
+      });
+    expect(adjusted.status).toBe(201);
+    expect(adjusted.body).toMatchObject({
+      job_id: jobId,
+      before_qty: 4,
+      after_qty: 6,
+      actor_user_id: 4,
+      reason: "verified recount after setup hold"
+    });
+
+    const listed = await request(app)
+      .get(`/api/jobs/${jobId}/quantity-adjustments`)
+      .set("x-user-role", "Supervisor");
+    expect(listed.status).toBe(200);
+    expect(Array.isArray(listed.body)).toBe(true);
+    expect(listed.body[0]).toMatchObject({
+      job_id: jobId,
+      before_qty: 4,
+      after_qty: 6
+    });
+
+    const jobDetail = await request(app)
+      .get(`/api/jobs/${jobId}`)
+      .set("x-user-role", "Supervisor");
+    expect(jobDetail.status).toBe(200);
+    expect(jobDetail.body).toMatchObject({ id: jobId, qty: 6 });
+    expect(Array.isArray(jobDetail.body.quantityAdjustments)).toBe(true);
+    expect(jobDetail.body.quantityAdjustments.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("returns traceability chain by job/part/lot/piece/serial with correction lineage", async () => {
+    const op20 = await getOperationId("1234", "20");
+    expect(op20).toBeTruthy();
+    const dimId = await getFirstDimensionId(op20);
+    expect(dimId).toBeTruthy();
+
+    const jobId = nextJobId("J-TRACE");
+    const createdJob = await createJob({ id: jobId, partId: "1234", operationId: op20, lot: "Lot TRACE", qty: 3, role: "Supervisor" });
+    expect(createdJob.status).toBe(201);
+
+    const submit = await request(app)
+      .post("/api/records")
+      .set("x-user-role", "Operator")
+      .send({
+        jobId,
+        partId: "1234",
+        operationId: op20,
+        lot: "Lot TRACE",
+        serialNumber: "SN-TRACE-ROOT",
+        qty: 3,
+        operatorUserId: 1,
+        status: "incomplete",
+        oot: false,
+        comment: "",
+        values: [
+          { dimensionId: dimId, pieceNumber: 1, value: "0.6250", isOot: false },
+          { dimensionId: dimId, pieceNumber: 2, value: "0.6252", isOot: false }
+        ],
+        tools: [],
+        missingPieces: [],
+        pieceComments: [
+          { pieceNumber: 1, comment: "trace comment 1", serialNumber: "SN-TRACE-1" },
+          { pieceNumber: 2, comment: "trace comment 2", serialNumber: "SN-TRACE-2" }
+        ]
+      });
+    expect(submit.status).toBe(201);
+    const recordId = submit.body.id;
+
+    const valueEdit = await request(app)
+      .put(`/api/records/${recordId}/value`)
+      .set("x-user-role", "Supervisor")
+      .send({
+        userId: 4,
+        dimensionId: dimId,
+        pieceNumber: 2,
+        value: "0.7000",
+        reason: "trace verification correction"
+      });
+    expect(valueEdit.status).toBe(200);
+
+    const pieceEdit = await request(app)
+      .put(`/api/records/${recordId}/piece-comment`)
+      .set("x-user-role", "Supervisor")
+      .send({
+        userId: 4,
+        pieceNumber: 2,
+        comment: "trace comment corrected",
+        serialNumber: "SN-TRACE-2-REV",
+        reason: "trace comment correction"
+      });
+    expect(pieceEdit.status).toBe(200);
+
+    const qtyAdjust = await request(app)
+      .post(`/api/jobs/${jobId}/quantity-adjustments`)
+      .set("x-user-role", "Supervisor")
+      .send({
+        userId: 4,
+        afterQty: 4,
+        reason: "trace quantity correction"
+      });
+    expect(qtyAdjust.status).toBe(201);
+
+    const traceByJob = await request(app)
+      .get(`/api/records/trace?jobId=${encodeURIComponent(jobId)}`)
+      .set("x-user-role", "Supervisor");
+    expect(traceByJob.status).toBe(200);
+    expect(traceByJob.body.count).toBeGreaterThanOrEqual(1);
+    const traceRecord = traceByJob.body.records.find((r) => r.job?.id === jobId);
+    expect(traceRecord).toBeTruthy();
+    expect(traceRecord.values.length).toBeGreaterThanOrEqual(2);
+    expect(traceRecord.pieceComments.length).toBeGreaterThanOrEqual(2);
+    expect(traceRecord.corrections.some((row) => row.piece_number === 2)).toBe(true);
+    expect(traceRecord.pieceCommentCorrections.some((row) => row.piece_number === 2)).toBe(true);
+    expect(traceRecord.quantityAdjustments.length).toBeGreaterThanOrEqual(1);
+
+    const traceByPiece = await request(app)
+      .get(`/api/records/trace?jobId=${encodeURIComponent(jobId)}&pieceNumber=2`)
+      .set("x-user-role", "Supervisor");
+    expect(traceByPiece.status).toBe(200);
+    expect(traceByPiece.body.count).toBeGreaterThanOrEqual(1);
+    const pieceScoped = traceByPiece.body.records[0];
+    expect(pieceScoped.values.every((row) => Number(row.piece_number) === 2)).toBe(true);
+    expect(pieceScoped.pieceComments.every((row) => Number(row.piece_number) === 2)).toBe(true);
+
+    const traceBySerial = await request(app)
+      .get("/api/records/trace?serial=SN-TRACE-2-REV")
+      .set("x-user-role", "Supervisor");
+    expect(traceBySerial.status).toBe(200);
+    expect(traceBySerial.body.count).toBeGreaterThanOrEqual(1);
+    expect(traceBySerial.body.records.some((r) => r.job?.id === jobId)).toBe(true);
   });
 });

@@ -57,15 +57,17 @@ Coordination requirement:
 - Do not introduce new lint/format tooling unless explicitly requested.
 
 ## 6) Security Note (Important)
-⚠️ There is no authentication. The `x-user-role` request header controls role gating and is not a security boundary. Treat it as a UI/dev convenience only.
+⚠️ Protected APIs now use local authenticated session identity as the security boundary.
+- `x-user-role` may appear in legacy clients but should not be treated as authoritative in production.
+- Compatibility header mode is opt-in via `ALLOW_LEGACY_ROLE_HEADER=true` and is intended for controlled transition/testing only.
 
 ## 7) Do‑Not‑Touch / Caution
 - Avoid editing `frontend/src/legacy/InspectFlowDemo.jsx` unless explicitly asked.
 - Change DB schema only with explicit request and a migration plan.
 
 ## 8) Implementation Constraints
-- MVP has no auth; role gating uses request header `x-user-role`.
-- UI role selection is a feature, not authentication.
+- R1 includes local auth/session; protected route enforcement must use authenticated identity.
+- Legacy UI role selection is not an authentication substitute.
 - Keep `docs/test-plan.md` aligned with major behavioral changes.
 
 ## 9) Git / Workflow

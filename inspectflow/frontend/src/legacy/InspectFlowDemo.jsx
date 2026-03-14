@@ -3756,12 +3756,12 @@ function TransitionBanner({ state }) {
   );
 }
 
-export default function App() {
+export default function App({ authUser = null, onLogout = null }) {
   const [view,setView]=useState("operator");
   const [users,setUsers]=useState([]);
   const [usersById,setUsersById]=useState({});
-  const [currentUserId,setCurrentUserId]=useState("");
-  const [currentRole,setCurrentRole]=useState("Operator");
+  const [currentUserId,setCurrentUserId]=useState(authUser?.id ? String(authUser.id) : "");
+  const [currentRole,setCurrentRole]=useState(authUser?.role || "Operator");
   const [userLoadErr,setUserLoadErr]=useState("");
   const [dataStatus,setDataStatus]=useState("local");
   const [dataErr,setDataErr]=useState("");
@@ -3812,7 +3812,10 @@ export default function App() {
         if(!active)return;
         const localUsers = Array.isArray(rows) && rows.length ? rows : INITIAL_USERS;
         setUsers(localUsers);
-        if(!currentUserId && localUsers.length){
+        if(authUser?.id){
+          setCurrentUserId(String(authUser.id));
+          setCurrentRole(authUser.role || "Operator");
+        }else if(!currentUserId && localUsers.length){
           setCurrentUserId(String(localUsers[0].id));
           setCurrentRole(localUsers[0].role);
         }
@@ -3823,7 +3826,10 @@ export default function App() {
       .catch(()=>{
         if(!active)return;
         setUsers(INITIAL_USERS);
-        if(!currentUserId && INITIAL_USERS.length){
+        if(authUser?.id){
+          setCurrentUserId(String(authUser.id));
+          setCurrentRole(authUser.role || "Operator");
+        }else if(!currentUserId && INITIAL_USERS.length){
           setCurrentUserId(String(INITIAL_USERS[0].id));
           setCurrentRole(INITIAL_USERS[0].role);
         }
@@ -3861,9 +3867,15 @@ export default function App() {
   },[users]);
 
   useEffect(()=>{
+    if(authUser?.id){
+      const authId=String(authUser.id);
+      if(currentUserId!==authId) setCurrentUserId(authId);
+      if((authUser.role||"Operator")!==currentRole) setCurrentRole(authUser.role||"Operator");
+      return;
+    }
     const u=users.find(u=>String(u.id)===String(currentUserId));
     if(u&&u.role!==currentRole) setCurrentRole(u.role);
-  },[currentUserId,users]);
+  },[authUser,currentRole,currentUserId,users]);
 
   useEffect(()=>{
     if(dataStatus!=="live"){ prevUserRef.current=currentUserId; return; }
@@ -4481,7 +4493,7 @@ export default function App() {
             <div className="user-ctrl">
               <div className="user-ctrl-label">Current User</div>
               <div className="user-ctrl-row">
-                <select value={currentUserId} onChange={(e)=>setCurrentUserId(e.target.value)}>
+                <select value={currentUserId} onChange={(e)=>setCurrentUserId(e.target.value)} disabled={!!authUser?.id}>
                   <option value="">Select user…</option>
                   {users.map(u=>(
                     <option key={u.id} value={u.id}>{u.name} — {u.role}</option>
@@ -4489,10 +4501,12 @@ export default function App() {
                 </select>
                 <span className={`role-chip role-${(currentRole||"").toLowerCase()}`}>{currentRole||"Unknown"}</span>
               </div>
+              {authUser?.id?<div className="user-ctrl-hint">Authenticated session user is fixed for protected actions.</div>:null}
               {userLoadErr?<div className="user-ctrl-hint">{userLoadErr}</div>:null}
               {dataErr?<div className="user-ctrl-hint">{dataErr}</div>:null}
             </div>
             <span className={`data-chip ${dataChipClass}`}>{dataChipLabel}</span>
+            {onLogout ? <button className="nav-btn" onClick={onLogout}>Sign Out</button> : null}
             <nav className="nav">
               {canViewOperator && <button className={`nav-btn ${view==="operator"?"active":""}`} onClick={()=>setView("operator")}>Operator Entry</button>}
               {canViewRecords && <button className={`nav-btn ${view==="records"?"active":""}`} onClick={()=>setView("records")}>Records</button>}

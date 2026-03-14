@@ -29,6 +29,8 @@ Each backlog item has exactly one owning stream/team.
 4. Cross-team work must reference a contract ID.
 5. Breaking contract changes require version bump and release approval.
 6. Completed work updates backlog state and appends `WORKLOG.md`.
+7. Parallel execution is capped at `4` builders unless coordinator approval expands capacity.
+8. Non-coding oversight uses a read-only control plane per `docs/operations/persistent-agent-cadence.md`.
 
 ## Workflow Mode
 - Default workflow is PR-based with protected `main`.
@@ -38,6 +40,9 @@ Each backlog item has exactly one owning stream/team.
 - Teams may run in parallel when dependencies are contract-satisfied.
 - Contract-providing team owns interface test fixtures.
 - Consuming teams cannot bypass unresolved dependency items.
+- A persistent `Control Hub` plus controllers `T/D/R` run two-hour cycles while builders are active.
+- Controllers do not mutate repo state; they only issue BL-mapped findings and mitigation actions.
+- Hub owns gate status (`Green/Yellow/Red`) and stop-the-line escalation.
 
 ## Intake and Prioritization
 - New requests are mapped to release (`R1`-`R4`) and stream.
@@ -55,3 +60,12 @@ Each backlog item has exactly one owning stream/team.
 - Contract updates documented.
 - Queue/backlog state updated.
 - Worklog entry added for completed deliverables.
+
+## Oversight Cadence
+- Operating model: `1` hub + `4` builders + `3` read-only controllers.
+- Cycle interval: every `2` hours, plus event-triggered checks on blockers.
+- Stop-the-line policy: no new starts while any Red gate is open.
+- Templates and launch prompts are in:
+  - `docs/operations/controller-prompts.md`
+  - `docs/operations/cycle-control-ledger-template.md`
+  - `docs/operations/next-step-packet-template.md`

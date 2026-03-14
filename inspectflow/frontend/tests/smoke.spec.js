@@ -43,6 +43,25 @@ async function mockApi(page, { createPartMode = "success", createPartDelayMs = 0
     const url = new URL(req.url());
     const path = url.pathname;
 
+    if (method === "GET" && path === "/api/auth/session") {
+      return route.fulfill({ status: 401, json: { valid: false } });
+    }
+    if (method === "GET" && path === "/api/auth/users") {
+      return route.fulfill({ status: 200, json: [{ id: 1, name: "Admin User", role: "Admin", active: true }] });
+    }
+    if (method === "POST" && path === "/api/auth/login") {
+      return route.fulfill({
+        status: 200,
+        json: {
+          ok: true,
+          user: { id: 1, name: "Admin User", role: "Admin" },
+          expiresAt: "2026-03-15T00:00:00.000Z"
+        }
+      });
+    }
+    if (method === "POST" && path === "/api/auth/logout") {
+      return route.fulfill({ status: 200, json: { ok: true } });
+    }
     if (method === "GET" && path === "/api/users") {
       return route.fulfill({ status: 200, json: [{ id: 1, name: "Admin User", role: "Admin", active: true }] });
     }
@@ -149,14 +168,24 @@ async function mockApi(page, { createPartMode = "success", createPartDelayMs = 0
   });
 }
 
+async function loginAsAdmin(page) {
+  await page.getByLabel("User").selectOption("1");
+  await page.getByLabel("Password").fill("inspectflow");
+  await page.getByRole("button", { name: "Sign In" }).click();
+  await expect(page.getByText("Manufacturing Inspection System")).toBeVisible();
+}
+
 test("loads the InspectFlow shell", async ({ page }) => {
+  await mockApi(page);
   await page.goto("/");
+  await loginAsAdmin(page);
   await expect(page.getByText("InspectFlow", { exact: false })).toBeVisible();
 });
 
 test("shows loading and success transitions during part creation", async ({ page }) => {
   await mockApi(page, { createPartMode: "success", createPartDelayMs: 500 });
   await page.goto("/");
+  await loginAsAdmin(page);
 
   await page.getByRole("button", { name: "Admin" }).click();
   await page.getByRole("button", { name: "Part / Op Setup" }).click();
@@ -175,6 +204,7 @@ test("shows loading and success transitions during part creation", async ({ page
 test("shows failure transition when part creation fails", async ({ page }) => {
   await mockApi(page, { createPartMode: "error" });
   await page.goto("/");
+  await loginAsAdmin(page);
 
   await page.getByRole("button", { name: "Admin" }).click();
   await page.getByRole("button", { name: "Part / Op Setup" }).click();
@@ -211,6 +241,7 @@ test("reuses original base prefix and increments family run index for duplicate 
     ]
   });
   await page.goto("/");
+  await loginAsAdmin(page);
 
   await page.getByRole("button", { name: "Admin" }).click();
   await page.getByRole("button", { name: "Job Management" }).click();
@@ -228,6 +259,7 @@ test("reuses original base prefix and increments family run index for duplicate 
 test("allows admins to import tools via CSV from the Data Imports tab", async ({ page }) => {
   await mockApi(page, { enableImports: true });
   await page.goto("/");
+  await loginAsAdmin(page);
 
   await page.getByRole("button", { name: "Admin" }).click();
   await page.getByRole("button", { name: "Data Imports" }).click();

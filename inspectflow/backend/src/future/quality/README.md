@@ -1,0 +1,21 @@
+# Future Quality Foundations (`QUAL-FAI-v2`, `QUAL-EXPORT-v1`)
+
+## Scope
+Standalone R2 scaffolding for:
+- `BL-034`: first-article profile-driven rendering foundation
+- `BL-035`: export profile/template pack engine foundation
+
+## Modules
+- `exportProfileEngine.js`
+  - template compiler with formatter registry
+  - profile validation and template registry resolution
+  - first-article export render helper returning generated artifacts
+
+## Safe-by-default behavior
+- No UI route wiring.
+- No backend route wiring.
+- No persistence mutations.
+
+## Contract linkage
+- Engine contract ID: `QUAL-FAI-v2`
+- Export compatibility contract ID: `QUAL-EXPORT-v1`

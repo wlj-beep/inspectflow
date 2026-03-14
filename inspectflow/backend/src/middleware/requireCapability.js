@@ -1,13 +1,14 @@
 import { query } from "../db.js";
+import { getActorRole } from "./authSession.js";
 
 const VALID_ROLES = ["Operator", "Quality", "Supervisor", "Admin"];
 
 function roleFromRequest(req) {
-  const role = req.header("x-user-role");
+  const role = getActorRole(req);
   if (!role) {
-    const err = new Error("missing_role");
-    err.status = 400;
-    err.code = "missing_role";
+    const err = new Error("unauthenticated");
+    err.status = 401;
+    err.code = "unauthenticated";
     throw err;
   }
   if (!VALID_ROLES.includes(role)) {

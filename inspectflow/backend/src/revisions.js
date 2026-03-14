@@ -90,10 +90,11 @@ export async function loadCurrentPartSetup(client, partId) {
   if (!partRes.rows[0]) return null;
 
   const opsRes = await client.query(
-    `SELECT id, op_number, label
-     FROM operations
-     WHERE part_id=$1
-     ORDER BY CASE WHEN op_number ~ '^[0-9]+$' THEN op_number::int ELSE NULL END ASC, op_number ASC`,
+    `SELECT o.id, o.op_number, o.label, o.work_center_id, wc.code AS work_center_code, wc.name AS work_center_name
+     FROM operations o
+     LEFT JOIN work_centers wc ON wc.id = o.work_center_id
+     WHERE o.part_id=$1
+     ORDER BY CASE WHEN o.op_number ~ '^[0-9]+$' THEN o.op_number::int ELSE NULL END ASC, o.op_number ASC`,
     [partId]
   );
   const opIds = opsRes.rows.map((row) => row.id);
@@ -148,6 +149,9 @@ export async function loadCurrentPartSetup(client, partId) {
     id: row.id,
     opNumber: row.op_number,
     label: row.label,
+    workCenterId: row.work_center_id ?? null,
+    workCenterCode: row.work_center_code || null,
+    workCenterName: row.work_center_name || null,
     dimensions: dimsByOp[row.id] || []
   }));
 
@@ -165,6 +169,9 @@ function toSnapshotValue(partSetup) {
     operations: (partSetup.operations || []).map((op) => ({
       opNumber: op.opNumber,
       label: op.label,
+      workCenterId: op.workCenterId == null ? null : Number(op.workCenterId),
+      workCenterCode: op.workCenterCode || null,
+      workCenterName: op.workCenterName || null,
       dimensions: (op.dimensions || []).map((dim) => ({
         name: dim.name,
         nominal: Number(dim.nominal),
@@ -312,6 +319,9 @@ export async function hydrateSnapshotOperations(client, snapshot) {
     id: null,
     opNumber: String(op?.opNumber || ""),
     label: String(op?.label || ""),
+    workCenterId: op?.workCenterId == null ? null : Number(op.workCenterId),
+    workCenterCode: op?.workCenterCode ? String(op.workCenterCode) : null,
+    workCenterName: op?.workCenterName ? String(op.workCenterName) : null,
     dimensions: (Array.isArray(op?.dimensions) ? op.dimensions : []).map((dim, dimIdx) => {
       const ids = Array.isArray(dim?.toolIds)
         ? dim.toolIds.map((id) => Number(id)).filter((id) => Number.isInteger(id))

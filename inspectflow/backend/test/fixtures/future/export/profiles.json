@@ -1,0 +1,17 @@
+[
+  {
+    "id": "as9102-basic",
+    "name": "AS9102 Basic",
+    "version": "0.1.0",
+    "templateIds": ["fai-summary-v1", "fai-line-v1"],
+    "defaults": {
+      "lot": "UNSPECIFIED"
+    }
+  },
+  {
+    "id": "customer-a-line-only",
+    "name": "Customer A Line",
+    "version": "0.1.0",
+    "templateIds": ["fai-line-v1"]
+  }
+]

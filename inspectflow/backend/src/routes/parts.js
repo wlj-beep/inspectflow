@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { query, transaction } from "../db.js";
 import { requireAnyCapability, requireCapability } from "../middleware/requireCapability.js";
+import { getActorRole } from "../middleware/authSession.js";
 import {
   createPartSetupRevision,
   ensurePartSetupBaselineRevision,
@@ -35,7 +36,7 @@ function mapRevisionMeta(row) {
 }
 
 function requestRole(req) {
-  return String(req.header("x-user-role") || "").trim() || null;
+  return getActorRole(req);
 }
 
 router.get("/", requireAnyCapability(["view_operator", "view_admin", "view_records"]), async (req, res, next) => {

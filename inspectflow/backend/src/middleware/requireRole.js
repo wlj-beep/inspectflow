@@ -1,3 +1,5 @@
+import { getActorRole } from "./authSession.js";
+
 const ROLE_ORDER = ["Operator", "Quality", "Supervisor", "Admin"];
 
 function roleMeets(required, actual) {
@@ -9,8 +11,8 @@ function roleMeets(required, actual) {
 
 export function requireRole(minRole) {
   return (req, res, next) => {
-    const role = req.header("x-user-role");
-    if (!role) return res.status(400).json({ error: "missing_role" });
+    const role = getActorRole(req);
+    if (!role) return res.status(401).json({ error: "unauthenticated" });
     if (!roleMeets(minRole, role)) return res.status(403).json({ error: "forbidden" });
     next();
   };

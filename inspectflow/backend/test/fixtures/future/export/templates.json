@@ -1,0 +1,10 @@
+{
+  "fai-summary-v1": {
+    "description": "Human-readable first article summary",
+    "content": "Part: {{part.id}}\nRevision: {{part.revision | upper}}\nLot: {{lot}}\nInspector: {{inspector.name}}\nMeasured: {{stats.measured}}\nPass Rate: {{stats.passRate | percent}}"
+  },
+  "fai-line-v1": {
+    "description": "Flat CSV-like row output",
+    "content": "{{part.id}},{{part.revision | upper}},{{lot}},{{stats.measured}},{{stats.failed}}"
+  }
+}

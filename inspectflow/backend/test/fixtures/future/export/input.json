@@ -1,0 +1,15 @@
+{
+  "part": {
+    "id": "P-1001",
+    "revision": "b"
+  },
+  "lot": "LOT-77",
+  "inspector": {
+    "name": "Alex"
+  },
+  "stats": {
+    "measured": 40,
+    "failed": 1,
+    "passRate": 0.975
+  }
+}

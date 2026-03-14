@@ -1,6 +1,14 @@
 import { apiFetch, apiFetchText } from "./client.js";
 
 export const api = {
+  auth: {
+    users: () => apiFetch("/api/auth/users"),
+    login: (payload) => apiFetch("/api/auth/login", { method: "POST", body: payload }),
+    logout: () => apiFetch("/api/auth/logout", { method: "POST" }),
+    me: () => apiFetch("/api/auth/me"),
+    session: () => apiFetch("/api/auth/session"),
+    setPassword: (payload) => apiFetch("/api/auth/set-password", { method: "POST", body: payload })
+  },
   users: {
     list: (role) => apiFetch("/api/users", { role }),
     create: (payload, role) => apiFetch("/api/users", { method: "POST", body: payload, role }),
@@ -31,7 +39,14 @@ export const api = {
     list: (partId, role) => apiFetch(`/api/operations${partId ? `?partId=${encodeURIComponent(partId)}` : ""}`, { role }),
     create: (payload, role) => apiFetch("/api/operations", { method: "POST", body: payload, role }),
     update: (id, payload, role) => apiFetch(`/api/operations/${id}`, { method: "PUT", body: payload, role }),
-    remove: (id, role) => apiFetch(`/api/operations/${id}`, { method: "DELETE", role })
+    remove: (id, role) => apiFetch(`/api/operations/${id}`, { method: "DELETE", role }),
+    assignWorkCenter: (id, payload, role) => apiFetch(`/api/operations/${id}/work-center`, { method: "PUT", body: payload, role }),
+    workCenterHistory: (id, role) => apiFetch(`/api/operations/${id}/work-center-history`, { role }),
+    listWorkCenters: (role) => apiFetch("/api/operations/work-centers", { role }),
+    createWorkCenter: (payload, role) => apiFetch("/api/operations/work-centers", { method: "POST", body: payload, role }),
+    updateWorkCenter: (id, payload, role) => apiFetch(`/api/operations/work-centers/${id}`, { method: "PUT", body: payload, role }),
+    removeWorkCenter: (id, payload, role) => apiFetch(`/api/operations/work-centers/${id}`, { method: "DELETE", body: payload, role }),
+    workCenterAudit: (id, role) => apiFetch(`/api/operations/work-centers/${id}/history`, { role })
   },
   dimensions: {
     list: (operationId, role) => apiFetch(`/api/dimensions${operationId ? `?operationId=${encodeURIComponent(operationId)}` : ""}`, { role }),
@@ -48,6 +63,8 @@ export const api = {
     create: (payload, role) => apiFetch("/api/jobs", { method: "POST", body: payload, role }),
     update: (id, payload, role) => apiFetch(`/api/jobs/${id}`, { method: "PUT", body: payload, role }),
     remove: (id, role) => apiFetch(`/api/jobs/${id}`, { method: "DELETE", role }),
+    quantityAdjustments: (id, role) => apiFetch(`/api/jobs/${id}/quantity-adjustments`, { role }),
+    adjustQuantity: (id, payload, role) => apiFetch(`/api/jobs/${id}/quantity-adjustments`, { method: "POST", body: payload, role }),
     lock: (id, userId, role) => apiFetch(`/api/jobs/${id}/lock`, { method: "POST", body: { userId }, role }),
     unlock: (id, userId, role) =>
       apiFetch(`/api/jobs/${id}/unlock`, {
@@ -63,7 +80,12 @@ export const api = {
     },
     get: (id, role) => apiFetch(`/api/records/${id}`, { role }),
     submit: (payload, role) => apiFetch("/api/records", { method: "POST", body: payload, role }),
+    upsertPieceComment: (id, payload, role) => apiFetch(`/api/records/${id}/piece-comment`, { method: "PUT", body: payload, role }),
     editValue: (id, payload, role) => apiFetch(`/api/records/${id}/value`, { method: "PUT", body: payload, role }),
+    trace: (filters = {}, role) => {
+      const qs = new URLSearchParams(filters).toString();
+      return apiFetch(`/api/records/trace${qs ? `?${qs}` : ""}`, { role });
+    },
     exportCsv: (id, role) => apiFetchText(`/api/records/${id}/export`, { role })
   },
   roles: {

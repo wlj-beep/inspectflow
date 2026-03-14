@@ -54,6 +54,41 @@ CREATE TABLE IF NOT EXISTS operations (
   UNIQUE (part_id, op_number)
 );
 
+CREATE TABLE IF NOT EXISTS work_centers (
+  id SERIAL PRIMARY KEY,
+  code TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  description TEXT,
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS work_center_audit_log (
+  id SERIAL PRIMARY KEY,
+  work_center_id INTEGER REFERENCES work_centers(id) ON DELETE SET NULL,
+  operation_id INTEGER REFERENCES operations(id) ON DELETE SET NULL,
+  action TEXT NOT NULL CHECK (action IN ('create','update','delete','assign')),
+  before_value JSONB,
+  after_value JSONB,
+  reason TEXT,
+  changed_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  changed_by_role TEXT,
+  changed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS operation_work_center_history (
+  id SERIAL PRIMARY KEY,
+  operation_id INTEGER NOT NULL REFERENCES operations(id) ON DELETE CASCADE,
+  part_id TEXT NOT NULL REFERENCES parts(id) ON DELETE CASCADE,
+  before_work_center_id INTEGER REFERENCES work_centers(id) ON DELETE SET NULL,
+  after_work_center_id INTEGER REFERENCES work_centers(id) ON DELETE SET NULL,
+  changed_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  changed_by_role TEXT,
+  reason TEXT NOT NULL,
+  changed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS dimensions (
   id SERIAL PRIMARY KEY,
   operation_id INTEGER NOT NULL REFERENCES operations(id),
@@ -92,12 +127,52 @@ CREATE TABLE IF NOT EXISTS records (
   part_id TEXT NOT NULL REFERENCES parts(id),
   operation_id INTEGER NOT NULL REFERENCES operations(id),
   lot TEXT NOT NULL,
+  serial_number TEXT,
   qty INTEGER NOT NULL,
   timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   operator_user_id INTEGER NOT NULL REFERENCES users(id),
   status TEXT NOT NULL CHECK (status IN ('complete','incomplete')),
   oot BOOLEAN NOT NULL DEFAULT FALSE,
   comment TEXT
+);
+
+CREATE TABLE IF NOT EXISTS record_piece_comments (
+  id SERIAL PRIMARY KEY,
+  record_id INTEGER NOT NULL REFERENCES records(id) ON DELETE CASCADE,
+  piece_number INTEGER NOT NULL CHECK (piece_number > 0),
+  comment TEXT NOT NULL,
+  serial_number TEXT,
+  created_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_by_role TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (record_id, piece_number)
+);
+
+CREATE TABLE IF NOT EXISTS record_piece_comment_audit (
+  id SERIAL PRIMARY KEY,
+  piece_comment_id INTEGER REFERENCES record_piece_comments(id) ON DELETE SET NULL,
+  record_id INTEGER NOT NULL REFERENCES records(id) ON DELETE CASCADE,
+  piece_number INTEGER NOT NULL CHECK (piece_number > 0),
+  user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  user_role TEXT,
+  before_comment TEXT,
+  before_serial_number TEXT,
+  after_comment TEXT,
+  after_serial_number TEXT,
+  reason TEXT NOT NULL,
+  timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS job_quantity_adjustments (
+  id SERIAL PRIMARY KEY,
+  job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+  before_qty INTEGER NOT NULL CHECK (before_qty > 0),
+  after_qty INTEGER NOT NULL CHECK (after_qty > 0),
+  reason TEXT NOT NULL,
+  actor_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  actor_role TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS record_values (
@@ -197,6 +272,29 @@ CREATE TABLE IF NOT EXISTS role_capabilities (
   PRIMARY KEY (role, capability)
 );
 
+CREATE TABLE IF NOT EXISTS auth_local_credentials (
+  user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  password_salt TEXT NOT NULL,
+  password_hash TEXT NOT NULL,
+  failed_attempts INTEGER NOT NULL DEFAULT 0,
+  locked_until TIMESTAMPTZ,
+  password_updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  must_rotate_password BOOLEAN NOT NULL DEFAULT FALSE
+);
+
+CREATE TABLE IF NOT EXISTS auth_sessions (
+  id BIGSERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  session_token_hash TEXT NOT NULL UNIQUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  expires_at TIMESTAMPTZ NOT NULL,
+  revoked_at TIMESTAMPTZ,
+  revoked_reason TEXT,
+  ip_address TEXT,
+  user_agent TEXT
+);
+
 CREATE TABLE IF NOT EXISTS user_sessions (
   id SERIAL PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(id),
@@ -266,6 +364,10 @@ ALTER TABLE dimensions ADD CONSTRAINT dimensions_input_mode_check CHECK (input_m
 ALTER TABLE record_tools DROP CONSTRAINT IF EXISTS record_tools_pkey;
 ALTER TABLE record_tools ADD CONSTRAINT record_tools_pkey PRIMARY KEY (record_id, dimension_id, tool_id);
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS part_revision_code TEXT NOT NULL DEFAULT 'A';
+ALTER TABLE operations ADD COLUMN IF NOT EXISTS work_center_id INTEGER;
+ALTER TABLE operations DROP CONSTRAINT IF EXISTS operations_work_center_id_fkey;
+ALTER TABLE operations ADD CONSTRAINT operations_work_center_id_fkey FOREIGN KEY (work_center_id) REFERENCES work_centers(id) ON DELETE SET NULL;
+ALTER TABLE records ADD COLUMN IF NOT EXISTS serial_number TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_part_setup_revisions_part_latest
 ON part_setup_revisions (part_id, revision_index DESC);
@@ -277,3 +379,23 @@ CREATE INDEX IF NOT EXISTS idx_import_runs_created
 ON import_runs (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_import_unresolved_status
 ON import_unresolved_items (status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_operations_work_center_id
+ON operations (work_center_id);
+CREATE INDEX IF NOT EXISTS idx_work_centers_active
+ON work_centers (active, code);
+CREATE INDEX IF NOT EXISTS idx_work_center_audit_log_work_center
+ON work_center_audit_log (work_center_id, changed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_operation_work_center_history_operation
+ON operation_work_center_history (operation_id, changed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_record_piece_comments_record
+ON record_piece_comments (record_id, piece_number);
+CREATE INDEX IF NOT EXISTS idx_record_piece_comments_serial
+ON record_piece_comments (serial_number);
+CREATE INDEX IF NOT EXISTS idx_record_piece_comment_audit_record
+ON record_piece_comment_audit (record_id, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_job_quantity_adjustments_job
+ON job_quantity_adjustments (job_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_records_serial_number
+ON records (serial_number);
+CREATE INDEX IF NOT EXISTS idx_auth_sessions_user_active
+ON auth_sessions (user_id, revoked_at, expires_at DESC);

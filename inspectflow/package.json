@@ -8,7 +8,16 @@
     "test": "npm run test:api && npm run test:ui",
     "test:api": "npm run test --prefix backend",
     "test:ui": "npm run test:ui --prefix frontend",
-    "db:test:setup": "npm run db:test:setup --prefix backend"
+    "db:test:setup": "npm run db:test:setup --prefix backend",
+    "deploy:onprem:install": "bash deploy/onprem/install.sh",
+    "deploy:onprem:start": "bash deploy/onprem/start.sh",
+    "deploy:onprem:stop": "bash deploy/onprem/stop.sh",
+    "deploy:onprem:health": "bash deploy/onprem/healthcheck.sh",
+    "deploy:onprem:rollback": "bash deploy/onprem/rollback.sh",
+    "backup:create": "bash scripts/backup/backup.sh",
+    "backup:restore": "bash scripts/backup/restore.sh",
+    "backup:verify": "bash scripts/backup/verify-restore.sh",
+    "backup:run-scheduled": "bash scripts/backup/run-scheduled-backup.sh"
   },
   "devDependencies": {
     "concurrently": "^9.0.1"

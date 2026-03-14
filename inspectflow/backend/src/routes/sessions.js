@@ -1,16 +1,23 @@
 import { Router } from "express";
 import { query } from "../db.js";
 import { requireAnyCapability } from "../middleware/requireCapability.js";
+import { getActorUserId } from "../middleware/authSession.js";
 
 const router = Router();
 
 router.post("/start", requireAnyCapability(["view_operator", "view_admin"]), async (req, res, next) => {
   try {
     const { userId } = req.body || {};
-    if (!userId) return res.status(400).json({ error: "user_required" });
+    const actorUserId = getActorUserId(req);
+    const suppliedUserId = Number(userId);
+    const sessionUserId = Number.isInteger(actorUserId) ? actorUserId : suppliedUserId;
+    if (!Number.isInteger(sessionUserId)) return res.status(400).json({ error: "user_required" });
+    if (Number.isInteger(actorUserId) && Number.isInteger(suppliedUserId) && suppliedUserId !== actorUserId) {
+      return res.status(403).json({ error: "auth_user_mismatch" });
+    }
     const { rows } = await query(
       "INSERT INTO user_sessions (user_id) VALUES ($1) RETURNING *",
-      [userId]
+      [sessionUserId]
     );
     res.status(201).json(rows[0]);
   } catch (err) {
@@ -21,7 +28,13 @@ router.post("/start", requireAnyCapability(["view_operator", "view_admin"]), asy
 router.post("/end", requireAnyCapability(["view_operator", "view_admin"]), async (req, res, next) => {
   try {
     const { userId } = req.body || {};
-    if (!userId) return res.status(400).json({ error: "user_required" });
+    const actorUserId = getActorUserId(req);
+    const suppliedUserId = Number(userId);
+    const sessionUserId = Number.isInteger(actorUserId) ? actorUserId : suppliedUserId;
+    if (!Number.isInteger(sessionUserId)) return res.status(400).json({ error: "user_required" });
+    if (Number.isInteger(actorUserId) && Number.isInteger(suppliedUserId) && suppliedUserId !== actorUserId) {
+      return res.status(403).json({ error: "auth_user_mismatch" });
+    }
     const { rows } = await query(
       `WITH latest AS (
          SELECT id
@@ -34,7 +47,7 @@ router.post("/end", requireAnyCapability(["view_operator", "view_admin"]), async
        SET end_ts=NOW()
        WHERE id IN (SELECT id FROM latest)
        RETURNING *`,
-      [userId]
+      [sessionUserId]
     );
     if (!rows[0]) return res.status(404).json({ error: "no_open_session" });
     res.json(rows[0]);
