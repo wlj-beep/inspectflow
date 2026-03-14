@@ -780,7 +780,7 @@ function MissingPieceModal({ pieces, missingPieces, onSave, onCancel }) {
   );
 }
 
-function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, currentUserId, currentRole, onLockJob, onUnlockJob, dataStatus, usersById }) {
+function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, currentUserId, currentRole, onLockJob, onUnlockJob, onRefreshData, dataStatus, usersById }) {
   const [step,setStep]=useState("lookup");
   const [jobInput,setJobInput]=useState("");
   const [currentJob,setCurrentJob]=useState(null);
@@ -799,6 +799,11 @@ function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, currentUser
   const [issueErr,setIssueErr]=useState("");
   const [issueOk,setIssueOk]=useState("");
   const [reportingIssue,setReportingIssue]=useState(false);
+  const [importCsv,setImportCsv]=useState("");
+  const [importingCsv,setImportingCsv]=useState(false);
+  const [importErr,setImportErr]=useState("");
+  const [lastSubmitSource,setLastSubmitSource]=useState("manual");
+  const importFileRef=useRef(null);
   const idleRef=useRef(null);
   const currentUserName = usersById?.[String(currentUserId)] || "";
 
@@ -961,6 +966,9 @@ function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, currentUser
     });
     setCurrentJob(job);setValues(dd?.values||{});setToolSel(ts);
     setUnlocked(dd?.unlocked||{});setMissing(dd?.missing||{});setComment(dd?.comment||"");
+    setImportCsv("");
+    setImportErr("");
+    setLastSubmitSource("manual");
     setStep("entry");
   }
   function buildRecord(status,rm){
@@ -974,6 +982,7 @@ function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, currentUser
     setSubmitting(true);setSubmitErr("");
     try{
       await onSubmit(buildRecord("complete"),currentJob.jobNumber);
+      setLastSubmitSource("manual");
       setStep("success");
     }catch(err){
       setSubmitErr(err?.message||"Submit failed.");
@@ -986,6 +995,7 @@ function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, currentUser
     setSubmitting(true);setSubmitErr("");
     try{
       await onSubmit(buildRecord("incomplete",r),currentJob.jobNumber);
+      setLastSubmitSource("manual");
       setStep("success");
     }catch(err){
       setSubmitErr(err?.message||"Submit failed.");
@@ -994,6 +1004,45 @@ function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, currentUser
     }
   }
   function handleDraft(){onDraft({jobNumber:currentJob.jobNumber,draftData:{values,toolSel,unlocked,missing,comment}});setStep("saved");}
+  function triggerImportUpload(){
+    if(importFileRef.current) importFileRef.current.click();
+  }
+  function handleImportUpload(e){
+    const file=e.target.files?.[0];
+    if(!file) return;
+    const reader=new FileReader();
+    reader.onload=()=>setImportCsv(String(reader.result||""));
+    reader.readAsText(file);
+    e.target.value="";
+  }
+  async function handleCsvMeasurementImport(){
+    if(!currentJob?.jobNumber) return;
+    if(!importCsv.trim()){
+      setImportErr("Paste or upload CSV content first.");
+      return;
+    }
+    if(!currentUserId){
+      setImportErr("Select a current user before importing.");
+      return;
+    }
+    setImportErr("");
+    setImportingCsv(true);
+    try{
+      await api.imports.jobMeasurementsCsv(currentJob.jobNumber, {
+        csvText: importCsv,
+        operatorUserId: Number(currentUserId),
+        operationId: currentJob.operationId,
+        partId: currentJob.partNumber
+      }, currentRole || "Operator");
+      if(onRefreshData) await onRefreshData();
+      setLastSubmitSource("csv");
+      setStep("success");
+    }catch(err){
+      setImportErr(err?.message || "Measurement CSV import failed.");
+    }finally{
+      setImportingCsv(false);
+    }
+  }
   async function handleIssueSubmit(){
     if(dataStatus!=="live"){
       setIssueErr("Issue reporting requires live data mode.");
@@ -1123,6 +1172,7 @@ function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, currentUser
 
   if(step==="entry") return (
     <div>
+      <input ref={importFileRef} type="file" accept=".csv,text/csv" style={{display:"none"}} onChange={handleImportUpload}/>
       {showModal&&<MissingPieceModal pieces={incompletePieces} missingPieces={missing} onSave={handleMissingSave} onCancel={()=>setShowModal(false)}/>}
       <div className="job-strip">
         <div className="strip-field"><div className="strip-label">Job #</div><div className="strip-val">{currentJob.jobNumber}</div></div>
@@ -1339,6 +1389,19 @@ function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, currentUser
         </div>
       )}
       <div className="card">
+        <div className="card-head"><div className="card-title">Operation CSV Import</div></div>
+        <div className="card-body">
+          <p className="text-muted" style={{marginTop:0,fontSize:".74rem"}}>Upload a single operation measurement CSV for this loaded job. This is operator-facing ingest for data from CMM/other local systems.</p>
+          <textarea value={importCsv} onChange={e=>setImportCsv(e.target.value)} rows={5} placeholder="piece_number,dimension_name,value,is_oot,tool_it_nums,missing_reason,nc_num,details" style={{fontFamily:"var(--mono)",fontSize:".72rem"}}/>
+          <div className="gap1 mt1">
+            <button className="btn btn-ghost btn-sm" onClick={()=>setImportCsv("piece_number,dimension_name,value,is_oot,tool_it_nums,missing_reason,nc_num,details\n1,Bore Diameter,0.6250,false,IT-0031,,,")}>Load Sample</button>
+            <button className="btn btn-ghost btn-sm" onClick={triggerImportUpload}>Upload CSV</button>
+            <button className="btn btn-primary btn-sm" disabled={importingCsv} onClick={handleCsvMeasurementImport}>{importingCsv?"Importing…":"Import & Close Job"}</button>
+          </div>
+          {importErr&&<p className="err-text mt1">{importErr}</p>}
+        </div>
+      </div>
+      <div className="card">
         <div className="card-head"><div className="card-title">{hasOOT?"OOT Comment (Required)":"Comments"}</div></div>
         <div className="card-body">
           <textarea value={comment} onChange={e=>setComment(e.target.value)}
@@ -1391,7 +1454,7 @@ function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, currentUser
   return (
     <div className="success-card">
       <div style={{fontSize:"2rem"}}>✔</div>
-      <div className="success-title">Record Submitted — Job Closed</div>
+      <div className="success-title">{lastSubmitSource==="csv" ? "CSV Imported — Job Closed" : "Record Submitted — Job Closed"}</div>
       <p className="text-muted">Job <strong style={{color:"var(--accent2)"}}>{currentJob?.jobNumber}</strong> · {currentJob?.lot} · Op {currentJob?.operation}</p>
       {hasOOT&&<p className="text-warn" style={{fontSize:".8rem"}}>OOT recorded — notify supervisor.</p>}
       <div className="gap1 mt1"><button className="btn btn-ghost" onClick={reset}>Enter Another Job</button></div>
@@ -2827,41 +2890,104 @@ function AdminIssueReports({ currentRole, currentUserId }) {
   );
 }
 
-function AdminImports({ currentRole, canManageTools, canManageParts, onRefreshData }) {
+function AdminImports({ currentRole, canManageTools, canManageParts, canManageJobs, onRefreshData }) {
   const [templates,setTemplates]=useState(null);
   const [loadingTemplates,setLoadingTemplates]=useState(false);
   const [toolsCsv,setToolsCsv]=useState("");
   const [partDimsCsv,setPartDimsCsv]=useState("");
+  const [jobsCsv,setJobsCsv]=useState("");
+  const [measurementsCsv,setMeasurementsCsv]=useState("");
   const [running,setRunning]=useState("");
   const [err,setErr]=useState("");
   const [result,setResult]=useState("");
   const [activeUploadTarget,setActiveUploadTarget]=useState("tools");
   const fileInputRef=useRef(null);
+  const [integrations,setIntegrations]=useState([]);
+  const [loadingIntegrations,setLoadingIntegrations]=useState(false);
+  const [integrationBusy,setIntegrationBusy]=useState("");
+  const [integrationForm,setIntegrationForm]=useState({
+    name:"",
+    sourceType:"api_pull",
+    importType:"jobs",
+    endpointUrl:"",
+    pollIntervalMinutes:"",
+    enabled:true
+  });
+  const [unresolved,setUnresolved]=useState([]);
+  const [loadingUnresolved,setLoadingUnresolved]=useState(false);
+  const [unresolvedBusy,setUnresolvedBusy]=useState("");
+  const [resolveEdits,setResolveEdits]=useState({});
 
   useEffect(()=>{
     let active=true;
-    async function loadTemplates(){
+    async function loadAll(){
       setLoadingTemplates(true);
+      setLoadingIntegrations(true);
+      setLoadingUnresolved(true);
       try{
-        const rows=await api.imports.templates(currentRole || "Admin");
+        const [rows, integrationRows, unresolvedRows]=await Promise.all([
+          api.imports.templates(currentRole || "Admin"),
+          api.imports.integrations(currentRole || "Admin"),
+          api.imports.unresolved(currentRole || "Admin", { status:"open", limit:100 })
+        ]);
         if(!active) return;
         setTemplates(rows);
+        setIntegrations(integrationRows||[]);
+        setUnresolved(unresolvedRows||[]);
       }catch{
         if(!active) return;
       }finally{
-        if(active) setLoadingTemplates(false);
+        if(active){
+          setLoadingTemplates(false);
+          setLoadingIntegrations(false);
+          setLoadingUnresolved(false);
+        }
       }
     }
-    loadTemplates();
+    loadAll();
     return ()=>{ active=false; };
   },[currentRole]);
 
+  async function refreshIntegrations(){
+    setLoadingIntegrations(true);
+    try{
+      const rows=await api.imports.integrations(currentRole || "Admin");
+      setIntegrations(rows||[]);
+    }finally{
+      setLoadingIntegrations(false);
+    }
+  }
+
+  async function refreshUnresolved(){
+    setLoadingUnresolved(true);
+    try{
+      const rows=await api.imports.unresolved(currentRole || "Admin", { status:"open", limit:100 });
+      setUnresolved(rows||[]);
+    }finally{
+      setLoadingUnresolved(false);
+    }
+  }
+
   function buildTemplateCsv(kind){
-    const headers=kind==="tools" ? (templates?.tools?.headers || []) : (templates?.partDimensions?.headers || []);
+    const headers=kind==="tools"
+      ? (templates?.tools?.headers || [])
+      : kind==="partDimensions"
+        ? (templates?.partDimensions?.headers || [])
+        : kind==="jobs"
+          ? (templates?.jobs?.headers || [])
+          : kind==="measurements"
+            ? (templates?.measurements?.headers || [])
+            : (templates?.operatorMeasurement?.headers || []);
     if(!headers.length) return "";
     const sampleRow=kind==="tools"
       ? ["Outside Micrometer","Variable","IT-1001","0-4 in","true","true"]
-      : ["1234","Hydraulic Cylinder Body","010","Rough Turn","Outer Diameter","1.0000","0.0050","0.0050","in","first_middle_last","","single","IT-0042|IT-0018"];
+      : kind==="partDimensions"
+        ? ["1234","Hydraulic Cylinder Body","010","Rough Turn","Outer Diameter","1.0000","0.0050","0.0050","in","first_middle_last","","single","IT-0042|IT-0018"]
+        : kind==="jobs"
+          ? ["J-IMP-1001","1234","A","","020","Lot X",12,"open"]
+          : kind==="measurements"
+            ? ["batch-001","J-10042","1234","A","020",1,"Bore Diameter","0.6250","false",1,"complete","Imported from CMM","IT-0031","","",""]
+            : [1,"Bore Diameter","0.6250","false","IT-0031","","",""];
     return `${headers.join(",")}\n${sampleRow.slice(0, headers.length).join(",")}`;
   }
 
@@ -2875,14 +3001,28 @@ function AdminImports({ currentRole, canManageTools, canManageParts, onRefreshDa
     const url=URL.createObjectURL(blob);
     const a=document.createElement("a");
     a.href=url;
-    a.download=kind==="tools" ? "tools-import-template.csv" : "part-dimensions-import-template.csv";
+    a.download=kind==="tools"
+      ? "tools-import-template.csv"
+      : kind==="partDimensions"
+        ? "part-dimensions-import-template.csv"
+        : kind==="jobs"
+          ? "jobs-import-template.csv"
+          : kind==="measurements"
+            ? "measurements-import-template.csv"
+            : "operator-measurements-import-template.csv";
     a.click();
     URL.revokeObjectURL(url);
   }
 
   async function runImport(kind){
     if(running) return;
-    const csvText=(kind==="tools" ? toolsCsv : partDimsCsv).trim();
+    const csvText=(kind==="tools"
+      ? toolsCsv
+      : kind==="partDimensions"
+        ? partDimsCsv
+        : kind==="jobs"
+          ? jobsCsv
+          : measurementsCsv).trim();
     if(!csvText){
       setErr("Paste CSV text or upload a CSV file first.");
       return;
@@ -2893,9 +3033,14 @@ function AdminImports({ currentRole, canManageTools, canManageParts, onRefreshDa
     try{
       const response=kind==="tools"
         ?await api.imports.toolsCsv(csvText, currentRole || "Admin")
-        :await api.imports.partDimensionsCsv(csvText, currentRole || "Admin");
+        :kind==="partDimensions"
+          ?await api.imports.partDimensionsCsv(csvText, currentRole || "Admin")
+          :kind==="jobs"
+            ?await api.imports.jobsCsv(csvText, currentRole || "Admin")
+            :await api.imports.measurementsBulk({ csvText }, currentRole || "Admin");
       setResult(JSON.stringify(response, null, 2));
       if(onRefreshData) await onRefreshData();
+      await refreshUnresolved();
     }catch(e){
       setErr(e?.message || "Import failed.");
     }finally{
@@ -2915,10 +3060,108 @@ function AdminImports({ currentRole, canManageTools, canManageParts, onRefreshDa
     reader.onload=()=>{
       const text=String(reader.result || "");
       if(activeUploadTarget==="tools") setToolsCsv(text);
-      else setPartDimsCsv(text);
+      else if(activeUploadTarget==="partDimensions") setPartDimsCsv(text);
+      else if(activeUploadTarget==="jobs") setJobsCsv(text);
+      else setMeasurementsCsv(text);
     };
     reader.readAsText(file);
     e.target.value="";
+  }
+
+  async function saveIntegration(){
+    if(integrationBusy) return;
+    if(!integrationForm.name.trim()){
+      setErr("Integration name is required.");
+      return;
+    }
+    setErr("");
+    setIntegrationBusy("save");
+    try{
+      await api.imports.createIntegration({
+        name:integrationForm.name.trim(),
+        sourceType:integrationForm.sourceType,
+        importType:integrationForm.importType,
+        endpointUrl:integrationForm.endpointUrl.trim()||null,
+        pollIntervalMinutes:integrationForm.pollIntervalMinutes?Number(integrationForm.pollIntervalMinutes):null,
+        enabled:integrationForm.enabled
+      }, currentRole || "Admin");
+      setIntegrationForm({ name:"", sourceType:"api_pull", importType:"jobs", endpointUrl:"", pollIntervalMinutes:"", enabled:true });
+      await refreshIntegrations();
+    }catch(e){
+      setErr(e?.message || "Unable to save integration.");
+    }finally{
+      setIntegrationBusy("");
+    }
+  }
+
+  async function pullIntegration(integrationId){
+    if(integrationBusy) return;
+    setErr("");
+    setResult("");
+    setIntegrationBusy(String(integrationId));
+    try{
+      const response=await api.imports.pullIntegration(integrationId, {}, currentRole || "Admin");
+      setResult(JSON.stringify(response, null, 2));
+      if(onRefreshData) await onRefreshData();
+      await Promise.all([refreshIntegrations(), refreshUnresolved()]);
+    }catch(e){
+      setErr(e?.message || "Integration pull failed.");
+    }finally{
+      setIntegrationBusy("");
+    }
+  }
+
+  function editForUnresolved(item){
+    if(resolveEdits[item.id]) return resolveEdits[item.id];
+    const inferred=item.payload?.inferred || {};
+    return {
+      jobId: inferred.jobId || "",
+      operationId: inferred.operationId || "",
+      partId: inferred.partId || "",
+      operatorUserId: inferred.operatorUserId || "",
+      dimensionId: inferred.dimensionId || "",
+      dimensionName: inferred.dimensionName || "",
+      pieceNumber: inferred.pieceNumber || "",
+      value: inferred.value || "",
+      status: inferred.status || "",
+      comment: inferred.comment || "",
+      missingReason: inferred.missingReason || "",
+      ncNum: inferred.ncNum || "",
+      details: inferred.details || ""
+    };
+  }
+
+  function setUnresolvedEdit(id, patch){
+    const item=unresolved.find(u=>u.id===id);
+    const base=item?editForUnresolved(item):{};
+    setResolveEdits(prev=>({ ...prev, [id]: { ...base, ...prev[id], ...patch } }));
+  }
+
+  async function resolveUnresolved(item){
+    if(unresolvedBusy) return;
+    const edit=editForUnresolved(item);
+    setUnresolvedBusy(`resolve_${item.id}`);
+    try{
+      await api.imports.resolveUnresolved(item.id, { assignment: edit }, currentRole || "Admin");
+      await Promise.all([refreshUnresolved(), onRefreshData ? onRefreshData() : Promise.resolve()]);
+    }catch(e){
+      setErr(e?.message || "Unable to resolve item.");
+    }finally{
+      setUnresolvedBusy("");
+    }
+  }
+
+  async function ignoreUnresolved(item){
+    if(unresolvedBusy) return;
+    setUnresolvedBusy(`ignore_${item.id}`);
+    try{
+      await api.imports.ignoreUnresolved(item.id, {}, currentRole || "Admin");
+      await refreshUnresolved();
+    }catch(e){
+      setErr(e?.message || "Unable to ignore item.");
+    }finally{
+      setUnresolvedBusy("");
+    }
   }
 
   return (
@@ -2928,7 +3171,7 @@ function AdminImports({ currentRole, canManageTools, canManageParts, onRefreshDa
         <div className="card-head">
           <div className="card-title">Data Imports</div>
           <div className="text-muted" style={{fontSize:".72rem"}}>
-            {loadingTemplates ? "Loading templates…" : "Use templates to import tools and part dimensions via CSV."}
+            {loadingTemplates ? "Loading templates…" : "Use templates to import tools, part dimensions, jobs, and measurement data via CSV."}
           </div>
         </div>
         <div className="card-body">
@@ -2967,6 +3210,149 @@ function AdminImports({ currentRole, canManageTools, canManageParts, onRefreshDa
                   </button>
                 </div>
                 {!canManageParts && <div className="text-muted" style={{fontSize:".72rem",marginTop:".4rem"}}>Permission required: `manage_parts`.</div>}
+              </div>
+            </div>
+          </div>
+          <div className="row2 mt1">
+            <div className="card" style={{margin:0}}>
+              <div className="card-head"><div className="card-title">Jobs CSV Import</div></div>
+              <div className="card-body">
+                <p className="text-muted" style={{marginTop:0,fontSize:".74rem"}}>Create or update jobs with part/revision/operation validation and row-level error feedback.</p>
+                <textarea value={jobsCsv} onChange={e=>setJobsCsv(e.target.value)} rows={8} placeholder="Paste jobs CSV here…" style={{fontFamily:"var(--mono)",fontSize:".72rem"}}/>
+                <div className="gap1 mt1">
+                  <button className="btn btn-ghost btn-sm" onClick={()=>downloadTemplate("jobs")}>Download Template</button>
+                  <button className="btn btn-ghost btn-sm" onClick={()=>setJobsCsv(buildTemplateCsv("jobs"))}>Load Sample</button>
+                  <button className="btn btn-ghost btn-sm" onClick={()=>triggerUpload("jobs")}>Upload CSV</button>
+                  <button className="btn btn-primary btn-sm" disabled={!canManageJobs || running==="jobs"} onClick={()=>runImport("jobs")}>
+                    {running==="jobs" ? "Importing…" : "Run Job Import"}
+                  </button>
+                </div>
+                {!canManageJobs && <div className="text-muted" style={{fontSize:".72rem",marginTop:".4rem"}}>Permission required: `manage_jobs`.</div>}
+              </div>
+            </div>
+            <div className="card" style={{margin:0}}>
+              <div className="card-head"><div className="card-title">Measurement Bulk Import</div></div>
+              <div className="card-body">
+                <p className="text-muted" style={{marginTop:0,fontSize:".74rem"}}>Ingest multi-job and multi-operation measurement rows from CMM/API/webhook exports. Ambiguous rows route to Unresolved Imports.</p>
+                <textarea value={measurementsCsv} onChange={e=>setMeasurementsCsv(e.target.value)} rows={8} placeholder="Paste measurement CSV here…" style={{fontFamily:"var(--mono)",fontSize:".72rem"}}/>
+                <div className="gap1 mt1">
+                  <button className="btn btn-ghost btn-sm" onClick={()=>downloadTemplate("measurements")}>Download Template</button>
+                  <button className="btn btn-ghost btn-sm" onClick={()=>setMeasurementsCsv(buildTemplateCsv("measurements"))}>Load Sample</button>
+                  <button className="btn btn-ghost btn-sm" onClick={()=>triggerUpload("measurements")}>Upload CSV</button>
+                  <button className="btn btn-primary btn-sm" disabled={!canManageJobs || running==="measurements"} onClick={()=>runImport("measurements")}>
+                    {running==="measurements" ? "Importing…" : "Run Measurement Import"}
+                  </button>
+                </div>
+                {!canManageJobs && <div className="text-muted" style={{fontSize:".72rem",marginTop:".4rem"}}>Permission required: `manage_jobs`.</div>}
+              </div>
+            </div>
+          </div>
+          <div className="card mt1" style={{margin:0}}>
+            <div className="card-head">
+              <div className="card-title">Import Integrations (API / Webhook / Excel)</div>
+              <div className="text-muted" style={{fontSize:".72rem"}}>{loadingIntegrations ? "Loading…" : `${integrations.length} configured`}</div>
+            </div>
+            <div className="card-body">
+              <div className="row3">
+                <div className="field"><label>Name</label><input value={integrationForm.name} onChange={e=>setIntegrationForm(p=>({...p,name:e.target.value}))} placeholder="e.g. Customer A Jobs Feed"/></div>
+                <div className="field"><label>Source</label>
+                  <select value={integrationForm.sourceType} onChange={e=>setIntegrationForm(p=>({...p,sourceType:e.target.value}))}>
+                    <option value="api_pull">API Pull</option>
+                    <option value="webhook">Webhook</option>
+                    <option value="excel_sheet">Live Excel Sheet</option>
+                  </select>
+                </div>
+                <div className="field"><label>Import Type</label>
+                  <select value={integrationForm.importType} onChange={e=>setIntegrationForm(p=>({...p,importType:e.target.value}))}>
+                    <option value="tools">Tools</option>
+                    <option value="part_dimensions">Part Dimensions</option>
+                    <option value="jobs">Jobs</option>
+                    <option value="measurements">Measurements</option>
+                  </select>
+                </div>
+              </div>
+              <div className="row3 mt1">
+                <div className="field"><label>Endpoint URL</label><input value={integrationForm.endpointUrl} onChange={e=>setIntegrationForm(p=>({...p,endpointUrl:e.target.value}))} placeholder="https://example.com/feed.csv"/></div>
+                <div className="field"><label>Poll Interval (min)</label><input type="number" min="1" value={integrationForm.pollIntervalMinutes} onChange={e=>setIntegrationForm(p=>({...p,pollIntervalMinutes:e.target.value}))} placeholder="15"/></div>
+                <div className="field" style={{display:"flex",alignItems:"flex-end"}}>
+                  <label style={{display:"flex",gap:".45rem",alignItems:"center",marginBottom:".3rem"}}>
+                    <input type="checkbox" checked={integrationForm.enabled!==false} onChange={e=>setIntegrationForm(p=>({...p,enabled:e.target.checked}))}/>
+                    Enabled
+                  </label>
+                </div>
+              </div>
+              <div className="mt1">
+                <button className="btn btn-primary btn-sm" disabled={!canManageJobs || integrationBusy==="save"} onClick={saveIntegration}>
+                  {integrationBusy==="save" ? "Saving…" : "Add Integration"}
+                </button>
+              </div>
+              <table className="data-table mt1">
+                <thead><tr><th>Name</th><th>Source</th><th>Type</th><th>Endpoint</th><th>Poll</th><th>Last Run</th><th>Status</th><th>Action</th></tr></thead>
+                <tbody>
+                  {integrations.length===0&&<tr><td colSpan={8}><div className="empty-state">No integrations configured.</div></td></tr>}
+                  {integrations.map(integ=>(
+                    <tr key={integ.id}>
+                      <td style={{fontWeight:600}}>{integ.name}</td>
+                      <td className="mono" style={{fontSize:".74rem"}}>{integ.source_type}</td>
+                      <td className="mono" style={{fontSize:".74rem"}}>{integ.import_type}</td>
+                      <td className="mono" style={{fontSize:".7rem",maxWidth:"340px",whiteSpace:"normal"}}>{integ.endpoint_url || "—"}</td>
+                      <td className="mono">{integ.poll_interval_minutes || "—"}</td>
+                      <td className="mono" style={{fontSize:".7rem"}}>{integ.last_run_at ? fmtTs(integ.last_run_at) : "—"}</td>
+                      <td>{integ.last_status ? <span className={`badge ${integ.last_status==="success"?"badge-ok":integ.last_status==="partial"?"badge-pend":"badge-incomplete"}`}>{integ.last_status}</span> : "—"}</td>
+                      <td>
+                        <button className="btn btn-ghost btn-sm" disabled={!canManageJobs || integrationBusy===String(integ.id)} onClick={()=>pullIntegration(integ.id)}>
+                          {integrationBusy===String(integ.id) ? "Running…" : "Pull Now"}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div className="card mt1" style={{margin:0}}>
+            <div className="card-head">
+              <div className="card-title">Unresolved Imports</div>
+              <div className="text-muted" style={{fontSize:".72rem"}}>{loadingUnresolved ? "Loading…" : `${unresolved.length} open`}</div>
+            </div>
+            <div className="card-body">
+              <p className="text-muted" style={{marginTop:0,fontSize:".74rem"}}>Rows with low confidence or missing mappings appear here. Override fields and resolve manually, or ignore if not needed.</p>
+              <div className="mt1" style={{display:"flex",flexDirection:"column",gap:".65rem"}}>
+                {unresolved.length===0 && <div className="empty-state">No unresolved import rows.</div>}
+                {unresolved.map(item=>{
+                  const edit=editForUnresolved(item);
+                  const busyResolve=unresolvedBusy===`resolve_${item.id}`;
+                  const busyIgnore=unresolvedBusy===`ignore_${item.id}`;
+                  return (
+                    <div key={item.id} style={{border:"1px solid var(--border)",borderRadius:"8px",padding:".65rem"}}>
+                      <div style={{display:"flex",justifyContent:"space-between",gap:".5rem",alignItems:"center"}}>
+                        <div style={{fontSize:".76rem"}}>
+                          <span className="mono">#{item.id}</span> · <span className="text-warn">{item.reason}</span> · line {item.line_number || "?"}
+                        </div>
+                        <div className="mono" style={{fontSize:".68rem",opacity:.7}}>conf {item.confidence || "n/a"}</div>
+                      </div>
+                      <div className="row3 mt1">
+                        <input value={edit.jobId} onChange={e=>setUnresolvedEdit(item.id,{jobId:e.target.value})} placeholder="job id"/>
+                        <input value={edit.operationId} onChange={e=>setUnresolvedEdit(item.id,{operationId:e.target.value})} placeholder="operation id"/>
+                        <input value={edit.partId} onChange={e=>setUnresolvedEdit(item.id,{partId:e.target.value})} placeholder="part id"/>
+                      </div>
+                      <div className="row3 mt1">
+                        <input value={edit.dimensionId} onChange={e=>setUnresolvedEdit(item.id,{dimensionId:e.target.value})} placeholder="dimension id"/>
+                        <input value={edit.dimensionName} onChange={e=>setUnresolvedEdit(item.id,{dimensionName:e.target.value})} placeholder="dimension name"/>
+                        <input value={edit.pieceNumber} onChange={e=>setUnresolvedEdit(item.id,{pieceNumber:e.target.value})} placeholder="piece #"/>
+                      </div>
+                      <div className="row3 mt1">
+                        <input value={edit.value} onChange={e=>setUnresolvedEdit(item.id,{value:e.target.value})} placeholder="value"/>
+                        <input value={edit.operatorUserId} onChange={e=>setUnresolvedEdit(item.id,{operatorUserId:e.target.value})} placeholder="operator user id"/>
+                        <input value={edit.status} onChange={e=>setUnresolvedEdit(item.id,{status:e.target.value})} placeholder="complete/incomplete"/>
+                      </div>
+                      <div className="mt1" style={{display:"flex",gap:".45rem"}}>
+                        <button className="btn btn-primary btn-sm" disabled={busyResolve} onClick={()=>resolveUnresolved(item)}>{busyResolve?"Resolving…":"Resolve"}</button>
+                        <button className="btn btn-ghost btn-sm" disabled={busyIgnore} onClick={()=>ignoreUnresolved(item)}>{busyIgnore?"Ignoring…":"Ignore"}</button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>
@@ -3307,7 +3693,7 @@ function AdminView({ parts, jobs, records, toolLibrary, toolLocations, users, us
   const canManageJobs=hasCap("manage_jobs");
   const canViewAdmin=hasCap("view_admin");
   const canViewIssueReports=hasCap("view_admin");
-  const canViewImports=canManageParts || canManageTools;
+  const canViewImports=canManageParts || canManageTools || canManageJobs;
   useEffect(()=>{
     if(!canViewAdmin) setTab("jobs");
     if(!canManageUsers && tab==="users") setTab("jobs");
@@ -3347,7 +3733,7 @@ function AdminView({ parts, jobs, records, toolLibrary, toolLocations, users, us
       {tab==="jobs"&&canViewJobs&&<AdminJobs parts={parts} jobs={jobs} usersById={usersById} onCreateJob={onCreateJob} canManageJobs={canManageJobs} onUnlockJob={onUnlockJob}/>}
       {tab==="records"&&canViewRecords&&<AdminRecords records={records} parts={parts} toolLibrary={toolLibrary} usersById={usersById} loadRecordDetail={loadRecordDetail} canEdit={canEdit} onEditValue={onEditValue}/>}
       {tab==="issues"&&canViewIssueReports&&<AdminIssueReports currentRole={currentRole} currentUserId={currentUserId}/>}
-      {tab==="imports"&&canViewImports&&<AdminImports currentRole={currentRole} canManageTools={canManageTools} canManageParts={canManageParts} onRefreshData={onRefreshData}/>}
+      {tab==="imports"&&canViewImports&&<AdminImports currentRole={currentRole} canManageTools={canManageTools} canManageParts={canManageParts} canManageJobs={canManageJobs} onRefreshData={onRefreshData}/>}
       {tab==="parts"&&canManageParts&&<AdminParts parts={parts} toolLibrary={toolLibrary} onCreatePart={onCreatePart} onUpdatePart={onUpdatePart} onBulkUpdateParts={onBulkUpdateParts} onCreateOp={onCreateOp} onCreateDim={onCreateDim} onUpdateDim={onUpdateDim} onRemoveDim={onRemoveDim} onDirtyChange={dirty=>setDirtyByTab(p=>({...p,parts:dirty}))}/>}
       {tab==="tools"&&canManageTools&&<AdminTools toolLibrary={toolLibrary} toolLocations={toolLocations} onCreateTool={onCreateTool} onUpdateTool={onUpdateTool} onCreateToolLocation={onCreateToolLocation} onUpdateToolLocation={onUpdateToolLocation} onRemoveToolLocation={onRemoveToolLocation}/>}
       {tab==="users"&&canManageUsers&&<AdminUsers users={users} roleCaps={roleCaps} onCreateUser={onCreateUser} onUpdateUser={onUpdateUser} onRemoveUser={onRemoveUser} onDirtyChange={dirty=>setDirtyByTab(p=>({...p,users:dirty}))}/>}
@@ -4117,7 +4503,7 @@ export default function App() {
         <div className="page">
           <TransitionBanner state={transitionState}/>
           {view==="operator" && (
-            <OperatorView parts={parts} jobs={jobs} toolLibrary={toolLibrary} onSubmit={handleSubmit} onDraft={handleDraft} currentUserId={currentUserId} currentRole={currentRole} onLockJob={handleLockJob} onUnlockJob={handleUnlockJob} dataStatus={dataStatus} usersById={usersById}/>
+            <OperatorView parts={parts} jobs={jobs} toolLibrary={toolLibrary} onSubmit={handleSubmit} onDraft={handleDraft} currentUserId={currentUserId} currentRole={currentRole} onLockJob={handleLockJob} onUnlockJob={handleUnlockJob} onRefreshData={reloadLiveData} dataStatus={dataStatus} usersById={usersById}/>
           )}
           {view==="records" && (
             <AdminRecords records={records} parts={parts} toolLibrary={toolLibrary} usersById={usersById} loadRecordDetail={loadRecordDetail} canEdit={canEditRecords} onEditValue={handleEditRecordValue}/>

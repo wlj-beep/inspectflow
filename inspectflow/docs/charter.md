@@ -1,31 +1,41 @@
-# InspectFlow Project Charter
+# InspectFlow Product Charter
 
 ## Purpose
-Build a production-ready, on‑prem manufacturing inspection system that replaces paper-based measurement collection with a simple, readable, and reliable digital workflow. The MVP mirrors the demo workflows while adding role-based access (without authentication) and data durability on a local network.
+Build and operate a local-first manufacturing inspection platform that is commercially sellable as a perpetual business product while preserving strict customer data control.
 
-## Goals
-- Deliver an on‑prem web app (React UI + Node/Express API + Postgres).
-- Preserve demo workflows and UX concepts while improving clarity and readability.
-- Ensure durable writes for all submitted data.
-- Provide role-based access control without login in MVP.
+## Product Direction
+- Pivot and extend the current codebase rather than rewrite from scratch.
+- Deliver in release waves (`R1`, `R2`, `R3`, `R4`) with explicit compatibility gates.
+- Keep core workflows stable while adding paid expansion modules.
 
-## Non-Goals (MVP)
-- Hardware/tool integrations (CMM, gauges, OPC, etc.).
-- ERP/MES integrations.
-- SSO/AD authentication.
-- Multi-site or multi-tenant support.
+## Release Objectives
+- `R1`: commercialization foundation, traceability/compliance depth, deployment/update/backup reliability.
+- `R2`: enterprise quality and integration hardening.
+- `R3`: analytics and multi-site intelligence controls.
+- `R4`: platform and ecosystem extensibility.
 
-## Users and Roles
-- Operator: Measurement entry only.
-- Supervisor: Can edit operator-entered values, manage jobs/tools, and review incomplete submissions.
-- Admin: Manages parts/operations/dimensions and user role list.
+## Commercial Defaults
+- Per-site perpetual core license.
+- Seat-pack commercial packaging.
+- R1 soft seat enforcement only (warnings/visibility/audit, no hard lockouts).
+- Perpetual core updates included.
+- Major paid modules and editions sold separately.
+
+## Users and Operational Roles
+- Operator: execute measurement workflows and report production issues.
+- Supervisor: review and correct submissions, manage production continuity.
+- Quality: verify measurement correctness, run traceability and quality outputs.
+- Admin/Engineer: configure setup/routing/users/roles and govern system integrity.
 
 ## Success Criteria
-- Operators can complete end-to-end inspection flows identical to demo behavior.
-- Supervisors can review and edit with audit history.
-- Admin can define parts, operations, dimensions, tools, and user roles.
-- Data is safely stored locally after each submit/edit.
+1. Customers can run the system fully within their own network, including offline scenarios.
+2. Traceability, correction lineage, and export outputs are production-ready.
+3. Deployment, update, backup, and restore workflows are reliable and supportable.
+4. Release-to-release changes preserve compatibility and reduce operational risk.
+5. Parallel team delivery is possible through explicit stream ownership and contracts.
 
-## Constraints
-- Data must remain on customer’s local network.
-- Demo remains frozen; all development forks into a new workspace.
+## Non-Negotiable Constraints
+- Customer production data remains customer-controlled.
+- Diagnostics telemetry is strict opt-in and excludes measurement payloads.
+- Core product updates remain available without subscription requirement.
+- Paid modules cannot compromise core workflow stability.

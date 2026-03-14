@@ -85,6 +85,20 @@ export const api = {
   imports: {
     templates: (role) => apiFetch("/api/imports/templates", { role }),
     toolsCsv: (csvText, role) => apiFetch("/api/imports/tools/csv", { method: "POST", body: { csvText }, role }),
-    partDimensionsCsv: (csvText, role) => apiFetch("/api/imports/part-dimensions/csv", { method: "POST", body: { csvText }, role })
+    partDimensionsCsv: (csvText, role) => apiFetch("/api/imports/part-dimensions/csv", { method: "POST", body: { csvText }, role }),
+    jobsCsv: (csvText, role) => apiFetch("/api/imports/jobs/csv", { method: "POST", body: { csvText }, role }),
+    measurementsBulk: (payload, role) => apiFetch("/api/imports/measurements/bulk", { method: "POST", body: payload, role }),
+    jobMeasurementsCsv: (jobId, payload, role) => apiFetch(`/api/imports/jobs/${encodeURIComponent(jobId)}/measurements/csv`, { method: "POST", body: payload, role }),
+    integrations: (role) => apiFetch("/api/imports/integrations", { role }),
+    createIntegration: (payload, role) => apiFetch("/api/imports/integrations", { method: "POST", body: payload, role }),
+    updateIntegration: (id, payload, role) => apiFetch(`/api/imports/integrations/${id}`, { method: "PUT", body: payload, role }),
+    pullIntegration: (id, payload, role) => apiFetch(`/api/imports/integrations/${id}/pull`, { method: "POST", body: payload, role }),
+    runs: (role, limit = 50) => apiFetch(`/api/imports/runs?limit=${encodeURIComponent(limit)}`, { role }),
+    unresolved: (role, filters = {}) => {
+      const qs = new URLSearchParams(filters).toString();
+      return apiFetch(`/api/imports/unresolved${qs ? `?${qs}` : ""}`, { role });
+    },
+    resolveUnresolved: (id, payload, role) => apiFetch(`/api/imports/unresolved/${id}/resolve`, { method: "POST", body: payload, role }),
+    ignoreUnresolved: (id, payload, role) => apiFetch(`/api/imports/unresolved/${id}/ignore`, { method: "POST", body: payload, role })
   }
 };

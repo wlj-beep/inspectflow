@@ -1,17 +1,49 @@
 # InspectFlow Docs
 
+## Reading Order
+1. `target-state.md`
+2. `charter.md`
+3. `mvp-scope.md`
+4. `architecture.md`
+5. `architecture-risks.md`
+6. `backlog-framework.md`
+7. `backlog.md`
+8. `coordination-plan.md`
+9. `deployment-governance.md`
+10. `test-plan.md`
+11. `roadmap-v2-v3-beyond.md`
+12. `conflict-audit-2026-03.md`
+
+## Core Product Docs
+- Target State: `target-state.md`
 - Charter: `charter.md`
-- MVP Scope: `mvp-scope.md`
+- R1 Scope: `mvp-scope.md`
 - Architecture: `architecture.md`
-- Architecture Diagrams: `architecture-diagrams.md`
 - Architecture Risks: `architecture-risks.md`
-- ADRs: `adr/`
 - Data Model: `data-model.md`
-- Delivery Plan: `delivery-plan.md`
-- Agent Roles: `agent-roles.md`
-- Coordination Plan: `coordination-plan.md`
-- Backlog: `backlog.md`
 - Integration Strategy: `integration-strategy.md`
-- Import Templates: `templates/`
 - Backup Plan: `backup-plan.md`
+- Delivery Plan: `delivery-plan.md`
+
+## Planning and Governance
+- Backlog Framework: `backlog-framework.md`
+- Backlog (Active): `backlog.md`
+- Backlog Snapshot (v1 baseline): `backlog-v1-baseline-2026-03.md`
+- Coordination Plan: `coordination-plan.md`
+- Deployment Governance: `deployment-governance.md`
 - Test Plan: `test-plan.md`
+- Roadmap v2/v3/beyond: `roadmap-v2-v3-beyond.md`
+- Conflict Audit: `conflict-audit-2026-03.md`
+
+## Stream Interface Contracts
+- Platform: `stream-contracts-plat.md`
+- Operations: `stream-contracts-ops.md`
+- Quality: `stream-contracts-qual.md`
+- Integrations: `stream-contracts-int.md`
+- Analytics: `stream-contracts-ana.md`
+- Commercialization: `stream-contracts-comm.md`
+
+## Supporting Docs
+- ADRs: `adr/`
+- Agent Roles: `agent-roles.md`
+- Import Templates: `templates/`

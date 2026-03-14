@@ -1,0 +1,4 @@
+job_id,part_id,part_revision,operation_id,op_number,lot,qty,status
+J-20001,1234,A,,010,Lot C,12,open
+J-20002,1234,A,,020,Lot C,12,open
+J-20003,1234,A,,030,Lot C,12,draft

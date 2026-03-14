@@ -1,24 +1,24 @@
-# MVP Scope
+# R1 Scope (Former MVP Scope)
 
-## Included
-- Job lookup and load flow with operator selection.
-- Measurement entry grid with sampling plans.
-- Go/No-Go tool behavior (Pass/Fail toggles).
-- OOT detection with required comment and warning banner.
-- Incomplete handling with missing piece modal and partial submit.
-- Admin tabs: Jobs, Records, Parts/Operations/Dimensions, Tool Library, Users.
-- Role-based UI access without authentication.
-- Supervisor edits with audit trail (before/after + reason).
-- Single-operator lock per job.
-- Manual creation of parts, operations, dimensions, tools, and jobs.
+This file defines the R1 foundation release scope and forward-compatibility boundaries.
 
-## Excluded (Backlog)
-- Hardware/tool integrations.
-- ERP/MES/job import integrations.
-- Authentication/SSO.
-- Multi-site support.
-- Automated backup scheduling.
+## Included in R1
+- Secure local auth/session foundation replacing role-header trust as a security boundary.
+- Operator, supervisor, quality, and admin workflows with full traceability and audit lineage.
+- Work center and operation-routing controls suitable for production setup governance.
+- Per-piece comments and quantity-adjustment history for production and quality context.
+- CSV exports and starter AS9102-oriented quality output templates.
+- Server-first on-prem deployment path with browser/PWA clients.
+- Offline-capable update process and automated local backup/restore workflows.
+- Soft commercial entitlement and seat visibility controls.
 
-## UX Direction
-- Keep the demo’s dark industrial aesthetic but prioritize simplicity and readability.
-- Provide clear labels, instructions, and explicit states (OK/OOT/Incomplete).
+## Explicitly Deferred Beyond R1
+- Advanced analytics suites and KPI intelligence (R3).
+- Full multi-site aggregation and governance (R3).
+- Extension SDK and partner ecosystem surfaces (R4).
+- Optional hard-seat enforcement modes as paid controls (R2+).
+
+## Forward-Compatibility Constraints
+- R1 changes must preserve additive contracts for R2/R3 expansion.
+- No schema or API changes that block moduleized quality/integration/analytics additions.
+- Core data flows must remain stable under module enable/disable scenarios.

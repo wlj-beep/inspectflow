@@ -1,45 +1,63 @@
 # Architecture
 
-## Overview
-On‑prem, single-site deployment:
-- React frontend (browser-based)
-- Node/Express API server
-- Postgres database
+## Current State (Working Tree Baseline)
+- Frontend: React app with large legacy shell component and API adapters.
+- Backend: Node/Express monolith route layer with Postgres persistence.
+- Deployment: single-site on-prem assumptions with localhost-first tooling.
+- Access control: capability checks are implemented, but request role-header trust is not a production security boundary.
+- Data capabilities: records, audit logs, revisions, import pipelines, unresolved-item workflows.
 
-MVP is intentionally unauthenticated; the API relies on the `x-user-role` header for capability gating. This is a workflow convenience, not a security boundary.
+## Target State
+- Server-first local network architecture with secure auth/session enforcement.
+- Modular frontend architecture by domain area (operator, jobs, quality, admin, imports).
+- Backend service boundaries by stream (`PLAT`, `OPS`, `QUAL`, `INT`, `ANA`, `COMM`).
+- Contracted interfaces for cross-team delivery and release-level backward compatibility.
+- Operational platform features: install/update/backup/restore with auditable controls.
+- Module-aware runtime where paid modules extend but do not destabilize core behavior.
 
-## Data Flow
-1. Operator selects current user (role-bound) and job.
-2. UI loads part/operation/dimensions and renders measurement grid.
-3. Operator submits results; server persists record and updates job status.
-4. Supervisor reviews records, edits values if needed, and audit entries are recorded.
+## Current vs Target Delta
+1. Security
+- Current: role header indicates capability context.
+- Target: authenticated identity, role capability enforcement, entitlement-aware policy layer.
 
-## Role-Based Access (No Auth in MVP)
-- Current user is selected from a managed user list.
-- UI gates navigation and actions based on role:
-  - Operator: entry only
-  - Supervisor: edit + review
-  - Admin: parts/ops/tools/users
+2. Composition
+- Current: high route and UI concentration in monolithic files.
+- Target: service/domain modularization with contract boundaries.
 
-Server-side enforcement uses `role_capabilities` to validate access for:
-- Admin CRUD (parts, operations, dimensions, tools, users, roles)
-- Job management and lock overrides
-- Record submission and supervisor edits
+3. Commercialization
+- Current: no explicit licensing/entitlement runtime policy.
+- Target: site license metadata, seat-pack visibility controls, module activation contracts.
 
-## Job Locking
-- When a job is loaded for entry, it is locked to a single active user session.
-- Unlock on submit, save draft, or explicit release.
-- Operators may only unlock their own locks; admins/supervisors can force unlock for stuck jobs.
+4. Operations
+- Current: manual-oriented reliability practices.
+- Target: standardized deployment packs, offline update bundles, automated backup/restore verification.
 
-## Validation & Data Integrity
-- API validates record payload shape, reference integrity (dimensions/tools), and OOT comment requirements.
-- Writes that update records and audit log entries are transactional to keep before/after history consistent.
+## Migration Path (Pivot, Not Rebuild)
+### Phase A (R1 Foundation)
+- Introduce auth/session and entitlement read contracts.
+- Extract backend route logic into domain services by stream.
+- Begin frontend shell decomposition by domain slices.
+- Add work center/routing and traceability/export completeness.
 
-## Backup & Durability
-- All submissions and edits are durable writes to Postgres.
-- MVP provides manual export; production requires automated local backups.
+### Phase B (R2 Expansion)
+- Harden integration adapters and idempotent external keys.
+- Add enterprise quality depth (first article and export profiles).
+- Add optional AD/SSO integration path and paid hard-seat controls.
 
-## Forward Compatibility (Post-MVP)
-- Authentication/SSO: replace `x-user-role` header with authenticated identity + authorization layer.
-- Integrations: define import boundaries for ERP/MES and tool data capture without altering core inspection flow.
-- Multi-site: separate site boundaries and data partitions before any tenancy model change.
+### Phase C (R3 Intelligence)
+- Add analytics marts and KPI contracts.
+- Add multi-site aggregation boundaries and governance controls.
+
+### Phase D (R4 Platform)
+- Add extension SDK boundaries and partner integration surfaces.
+- Introduce edge interoperability model for standalone edition.
+
+## Stream/Contract Ownership
+- `PLAT` (Team Atlas): auth, deployment/update, backup/restore.
+- `OPS` (Team Forge): job and routing operations.
+- `QUAL` (Team Helix): traceability and quality outputs.
+- `INT` (Team Bridge): ingestion and connectors.
+- `ANA` (Team Signal): analytics and risk intelligence.
+- `COMM` (Team Ledger): license and entitlement policies.
+
+See `stream-contracts-*.md` for authoritative interface details.

@@ -1,66 +1,58 @@
-# Integration Strategy (Post-MVP + MVP Onramp)
+# Integration Strategy
 
-## Why This Is High Priority
-Customers will request inbound/outbound integrations for:
-- Tool master/calibration systems
-- ERP/MRP job and operation data
-- Dimension/tolerance sources (for example drawing/inspection extraction outputs)
+## Purpose
+Define a release-aware integration path that supports customer data ownership and incremental enterprise connectivity without destabilizing core workflows.
 
-To avoid rework, integration seams must be part of the current architecture, even if full external connectivity is phased.
+## Principles
+1. Canonical contracts first, adapters second.
+2. Local-first processing remains default.
+3. Idempotency and replay safety are required for production imports.
+4. Integration failures must be observable and recoverable.
 
-## MVP Onramp Implemented
-- CSV ingestion endpoints:
-  - `POST /api/imports/tools/csv`
-  - `POST /api/imports/part-dimensions/csv`
-- Import templates:
-  - `docs/templates/tools-import-template.csv`
-  - `docs/templates/part-dimensions-import-template.csv`
-- Template metadata endpoint:
-  - `GET /api/imports/templates`
+## Current Baseline
+Implemented integration surfaces include:
+- CSV ingestion paths for tools, part dimensions, jobs, and measurements.
+- Integration configuration and pull/webhook run orchestration.
+- Run logs and unresolved-item workflows for ambiguous measurement rows.
 
-These enable immediate customer bootstrap via managed file imports while preserving current UI workflows.
+## Release Phasing
 
-## Near-Term Refactor Targets
-1. Introduce import service boundaries
-- Move parsing and validation from route handlers into service modules (`services/imports/*`).
-- Standardize row-level error objects for partial-failure reporting.
+### R1 (Foundation)
+- Consolidate current ingest behavior behind `INT-INGEST-v1`.
+- Standardize row-level error schema and unresolved handoff semantics.
+- Keep mixed-mode support: UI/manual flows + import flows.
 
-2. Add idempotent external keys
-- Add optional `external_id` columns to tools/jobs/parts/operations/dimensions.
-- Use external keys for merge/update safety during repeated imports.
+### R2 (Enterprise Hardening)
+- Implement `INT-CONNECTOR-v2` with retry, replay, and failure-policy controls.
+- Add idempotent external keys via `INT-IDEMPOTENCY-v2`.
+- Add adapter packs for ERP/MES sources while preserving canonical contracts.
+- Provide governance controls for import conflict policy and setup revision coupling.
 
-3. Add import job tracking
-- Persist import runs (`imports` table) with status, counts, failures, actor, and source metadata.
-- Support dry-run validation mode before commit.
+### R3 (Intelligence and Scale)
+- Feed analytics contracts with validated ingestion provenance.
+- Add cross-site ingestion controls aligned with site partition policy.
 
-4. Add outbound webhook/event envelope
-- Emit canonical domain events for:
-  - Job created/updated/closed
-  - Record submitted/edited
-  - Tool updated
-  - Part setup updated
-- Start with local event log + replay endpoint, then optional webhook delivery.
+## Contract Boundary
+- Canonical envelope fields:
+  - source type,
+  - import type,
+  - external key,
+  - actor/provenance,
+  - payload version,
+  - ingest timestamp,
+  - idempotency token.
 
-## ERP Integration Path
-- Define canonical inbound contract for jobs:
-  - part/revision, operation, lot, qty, due/start windows, priority.
-- Add source adapter layer:
-  - `adapters/erp/sap/*`
-  - `adapters/erp/msfo/*`
-  - shared normalization pipeline.
-- Preserve mixed-mode support:
-  - Manual UI job creation remains available.
-  - Source-tracked jobs are marked with provenance metadata.
+Adapters must map source-specific payloads into this envelope before domain processing.
 
-## Dimension Ingestion Path
-- Support CSV now (implemented) and XLSX adapter next.
-- Keep operation assignment explicit in import schema (`op_number`, `op_label`) to prevent ambiguous mapping.
-- Future adapters:
-  - SolidWorks Inspection exports
-  - Other feature-extraction outputs normalized into the same contract.
+## Reliability Requirements
+- At-least-once delivery semantics for connector execution.
+- Deduplication and replay safety at canonical ingest stage.
+- Deterministic unresolved-item routing for ambiguous rows.
+- Run-state visibility suitable for support and audit review.
 
-## Open Design Decisions
-- Conflict policy: overwrite vs require approval for existing setup changes.
-- Revision coupling: imports that affect setup-critical fields must create revisions (once revision system is implemented).
-- Webhook delivery guarantees: at-least-once with idempotency key is recommended.
+## Open Decisions (Managed by Release Gates)
+- Exact overwrite/merge policies per domain object.
+- Connector authentication profile templates by customer environment.
+- Export webhook guarantees for downstream systems.
 
+All open decisions must be resolved as backlog items with stream ownership.
