@@ -1,36 +1,27 @@
-# Launch Checklist (Hub + Controllers, No Builder Interference)
+# Launch Checklist (Multi-Agent)
 
-Use this checklist when builders are already running and you need to activate oversight.
+Use this checklist before starting any non-trivial implementation run.
 
 ## Preconditions
-1. Confirm active builder count is `<= 4` from `STATUS.md`.
-2. Confirm builder ownership is unchanged (no reassignment by controllers).
-3. Confirm controller charter is read-only.
+1. Confirm the target `BL-###` row is claimed in `STATUS.md`.
+2. Confirm dependencies for the item are satisfied or explicitly blocked.
+3. Confirm acceptance criteria are clear in `docs/backlog.md`.
+4. Confirm multi-agent mode is enabled and Codex has been restarted.
 
 ## Start Sequence
-1. Start or retain one `Control Hub` thread.
-2. Start `Controller T`, `Controller D`, `Controller R` threads.
-3. Paste prompts from `docs/operations/controller-prompts.md`.
+1. Open one controller session.
+2. Prepare sub-agent task packets using `docs/operations/next-step-packet-template.md`.
+3. Spawn sub-agents for independent tracks only.
+4. Require structured output contract from every sub-agent.
 
-## Baseline Cycle 0
-1. Use `docs/operations/cycles/2026-03-14-C0-ledger.md` as initial merged ledger.
-2. Dispatch builder packets:
-   - `docs/operations/cycles/2026-03-14-C0-builder-packet-atlas.md`
-   - `docs/operations/cycles/2026-03-14-C0-builder-packet-bridge.md`
-   - `docs/operations/cycles/2026-03-14-C0-builder-packet-helix.md`
-   - `docs/operations/cycles/2026-03-14-C0-builder-packet-signal-forge.md`
-3. Schedule next cycle in 2 hours if any builder remains active.
+## Merge and Gate
+1. Collect all sub-agent outputs.
+2. Resolve overlap and conflicts.
+3. Run final verification pass.
+4. Publish run report using `docs/operations/cycle-control-ledger-template.md`.
+5. Set gate status (`Green | Yellow | Red`) and list required mitigation.
 
-## Operating Rules
-- Controllers do not edit files or claim backlog items.
-- Hub sets gate state and escalations only.
-- Red gate freezes new starts immediately.
-- Yellow gate permits in-flight work but blocks scope expansion for impacted BL items.
-
-## Recurrence
-- Every 2 hours while builders are active:
-  1. Collect controller reports
-  2. Publish merged ledger
-  3. Publish refreshed builder packets
-  4. Record gate state changes
-
+## Closure
+1. Update `STATUS.md`.
+2. Update `docs/backlog.md` if item state or acceptance notes changed.
+3. Append completion entry to `WORKLOG.md` when the item is done.

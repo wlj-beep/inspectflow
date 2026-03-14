@@ -4,6 +4,8 @@
 - `BL-039` analytics mart scaffolding (`ANA-MART-v3`).
 - `BL-040` KPI contract scaffolding (`ANA-KPI-v3`).
 
+Authoritative path: active analytics scaffolding lives in `backend/src/services/analytics/*`; `backend/src/future/analytics/*` is retained as legacy/experimental.
+
 ## New Isolated Modules
 - `backend/src/services/analytics/martSchema.js`
   - Draft mart schema metadata for:
@@ -40,4 +42,3 @@
 ## Safety Notes
 - No runtime analytics wiring included in this slice.
 - No destructive schema operations proposed or executed.
-

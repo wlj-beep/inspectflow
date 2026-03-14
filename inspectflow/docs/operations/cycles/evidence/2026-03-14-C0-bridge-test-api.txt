@@ -1,0 +1,46 @@
+
+> inspectflow@0.1.0 test:api
+> npm run test --prefix backend
+
+
+> inspectflow-backend@0.1.0 test
+> NODE_ENV=test npm run db:test:setup && NODE_ENV=test vitest run
+
+
+> inspectflow-backend@0.1.0 db:test:setup
+> npm run db:migrate:test && npm run db:seed:test
+
+
+> inspectflow-backend@0.1.0 db:migrate:test
+> NODE_ENV=test node src/scripts/migrate.js
+
+Schema applied.
+
+> inspectflow-backend@0.1.0 db:seed:test
+> NODE_ENV=test node src/scripts/seed.js
+
+Seeded local credentials for 10 users.
+Seed applied.
+
+ RUN  v2.1.9 /Users/joshlane/Documents/Playground 2/inspectflow/backend
+
+ ✓ test/future-analytics-anomaly.test.js (6 tests) 13ms
+ ✓ test/future-quality-export-engine.test.js (4 tests) 4ms
+ ✓ test/integration-runtime-policy.test.js (4 tests) 7ms
+ ✓ test/integration-connector-runtime.test.js (4 tests) 19ms
+ ✓ test/integration-envelope.test.js (5 tests) 22ms
+ ✓ test/future-idempotency-envelope.test.js (4 tests) 3ms
+ ✓ test/future-analytics-kpi.test.js (4 tests) 6ms
+ ✓ test/analytics-contracts.test.js (4 tests) 2ms
+ ✓ test/future-integration-policy.test.js (4 tests) 2ms
+ ✓ test/revisions.test.js (2 tests) 4ms
+ ✓ test/permissions.test.js (4 tests) 73ms
+ ✓ test/smoke.test.js (2 tests) 32ms
+ ✓ test/auth.test.js (3 tests) 234ms
+ ✓ test/backlog-validation.test.js (25 tests) 567ms
+
+ Test Files  14 passed (14)
+      Tests  75 passed (75)
+   Start at  17:18:12
+   Duration  1.97s (transform 591ms, setup 0ms, collect 3.34s, tests 989ms, environment 3ms, prepare 1.32s)
+

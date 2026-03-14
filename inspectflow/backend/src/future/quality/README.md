@@ -10,6 +10,12 @@ Standalone R2 scaffolding for:
   - template compiler with formatter registry
   - profile validation and template registry resolution
   - first-article export render helper returning generated artifacts
+  - export pack validator (`validateExportProfilePack`)
+  - deterministic compatibility snapshot helper (`createExportCompatibilitySnapshot`)
+- `riskEscalation.js`
+  - anomaly event -> quality escalation record transformer
+  - trace-evidence link builder
+  - escalation contract validator for workflow handoff safety
 
 ## Safe-by-default behavior
 - No UI route wiring.
@@ -19,3 +25,4 @@ Standalone R2 scaffolding for:
 ## Contract linkage
 - Engine contract ID: `QUAL-FAI-v2`
 - Export compatibility contract ID: `QUAL-EXPORT-v1`
+- Escalation workflow contract ID: `QUAL-RISK-WORKFLOW-v1` (bridges `ANA-RISK-v3` and `QUAL-TRACE-v1`)

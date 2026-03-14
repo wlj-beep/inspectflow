@@ -6,6 +6,8 @@
 - `BL-033` ERP/job adapter contract-path scaffolding.
 - `BL-038` integration observability/support bundle scaffolding.
 
+Authoritative path: active integration scaffolding lives in `backend/src/services/*`; `backend/src/future/integration/*` is retained as legacy/experimental.
+
 ## New Isolated Modules
 - `backend/src/services/integration/canonicalEnvelope.js`
   - Canonical envelope normalization + validation aligned to `INT-INGEST-v1`.
@@ -14,6 +16,9 @@
   - Deterministic stable stringify, idempotency hash generation, external entity key utility, in-memory duplicate ledger.
 - `backend/src/services/integration/connectorRunPolicy.js`
   - Error classification (`network`, `remote_service`, `contract`, `unknown`), deterministic backoff/jitter, retry decision output, replay metadata format.
+- `backend/src/services/integration/connectorRuntime.js`
+  - Contract-safe runtime orchestrator for envelope validation, idempotency dedupe checks, retry loop execution, replay metadata capture, and support bundle output.
+  - Isolated and not wired into live routes/scheduler paths.
 - `backend/src/services/integration/erpJobAdapter.js`
   - ERP job row normalization to canonical contract envelope for `jobs` imports.
   - Batch mapper emits accepted/rejected line-level contract outputs.
@@ -24,6 +29,7 @@
 ## Test Coverage Added
 - `backend/test/integration-envelope.test.js`
 - `backend/test/integration-runtime-policy.test.js`
+- `backend/test/integration-connector-runtime.test.js`
 
 ## Runtime Wiring Prerequisites
 1. Route-level integration:
@@ -42,4 +48,3 @@
 ## Safety Notes
 - Features are scaffolding-only and not wired into active runtime paths.
 - All support output remains metadata-only by design.
-

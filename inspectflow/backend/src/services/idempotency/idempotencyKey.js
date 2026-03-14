@@ -49,6 +49,14 @@ export function createIdempotencyKey({
   return `idem_v1_${digest}`;
 }
 
+export function createPayloadFingerprint(payload) {
+  const stable = stableStringify(payload ?? null);
+  return {
+    hash: createHash("sha256").update(stable).digest("hex"),
+    bytes: Buffer.byteLength(stable, "utf8")
+  };
+}
+
 export function createIdempotencyLedger(seedKeys = []) {
   const keys = new Set(seedKeys.filter(Boolean));
 
@@ -74,4 +82,3 @@ export function checkAndRegisterIdempotencyKey({ key, ledger }) {
   }
   return ledger.register(key);
 }
-

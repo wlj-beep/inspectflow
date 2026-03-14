@@ -1,15 +1,16 @@
 # Coordination Plan
 
 ## Goals
-- Enable parallel development across specialized teams.
-- Preserve one canonical queue and stable backlog IDs.
+- Enable parallel delivery across specialized streams.
+- Preserve one canonical ranked queue and stable backlog IDs.
 - Prevent interface drift and integration conflicts.
+- Keep execution focused on end-to-end backlog completion.
 
 ## Canonical Artifacts
 - `STATUS.md`: active ranked queue.
 - `docs/backlog.md`: release-aware backlog with metadata.
 - `docs/backlog-framework.md`: required metadata and scoring model.
-- `docs/stream-contracts-*.md`: cross-team interface contracts.
+- `docs/stream-contracts-*.md`: cross-stream interface contracts.
 - `WORKLOG.md`: historical completion record.
 
 ## Stream Ownership
@@ -23,26 +24,26 @@
 Each backlog item has exactly one owning stream/team.
 
 ## Working Rules
-1. No coding without a valid claimed/queued backlog item.
+1. No coding without a valid claimed backlog item in `STATUS.md`.
 2. `STATUS.md` remains schema-stable and globally ranked.
-3. Stream/team tags are included in `Work Item` text only.
-4. Cross-team work must reference a contract ID.
+3. Stream/team tags appear in `Work Item` text only.
+4. Cross-stream work must reference a contract ID.
 5. Breaking contract changes require version bump and release approval.
 6. Completed work updates backlog state and appends `WORKLOG.md`.
-7. Parallel execution is capped at `4` builders unless coordinator approval expands capacity.
-8. Non-coding oversight uses a read-only control plane per `docs/operations/persistent-agent-cadence.md`.
+7. Multi-agent execution is mandatory for non-trivial work: one controller plus parallel sub-agents.
+8. Sub-agent scopes must be independent and BL-mapped.
+9. Every finding/deliverable must include evidence (`file:line`, command/test output, or explicit reproduction steps).
 
 ## Workflow Mode
 - Default workflow is PR-based with protected `main`.
 - For solo offline execution, direct push mode may be enabled temporarily per `docs/direct-push-mode.md`.
 
-## Parallel Delivery Model
-- Teams may run in parallel when dependencies are contract-satisfied.
-- Contract-providing team owns interface test fixtures.
-- Consuming teams cannot bypass unresolved dependency items.
-- A persistent `Control Hub` plus controllers `T/D/R` run two-hour cycles while builders are active.
-- Controllers do not mutate repo state; they only issue BL-mapped findings and mitigation actions.
-- Hub owns gate status (`Green/Yellow/Red`) and stop-the-line escalation.
+## Multi-Agent Delivery Model
+- Use one controller session to orchestrate bounded sub-agent tasks.
+- Default cap: up to `4` concurrent implementation sub-agents plus one verifier/doc pass.
+- If scope crosses multiple streams, assign one sub-agent per stream boundary.
+- Controller owns deduplication, merge sequencing, and blocker escalation.
+- Controllers and sub-agents may edit code when their assigned track requires it; read-only oversight-only topology is retired.
 
 ## Intake and Prioritization
 - New requests are mapped to release (`R1`-`R4`) and stream.
@@ -60,12 +61,11 @@ Each backlog item has exactly one owning stream/team.
 - Contract updates documented.
 - Queue/backlog state updated.
 - Worklog entry added for completed deliverables.
+- Latest multi-agent run report has no unresolved Red gate for the delivered BL IDs.
 
-## Oversight Cadence
-- Operating model: `1` hub + `4` builders + `3` read-only controllers.
-- Cycle interval: every `2` hours, plus event-triggered checks on blockers.
-- Stop-the-line policy: no new starts while any Red gate is open.
-- Templates and launch prompts are in:
-  - `docs/operations/controller-prompts.md`
-  - `docs/operations/cycle-control-ledger-template.md`
-  - `docs/operations/next-step-packet-template.md`
+## Operating Assets
+- `docs/operations/multi-agent-playbook.md`
+- `docs/operations/controller-prompts.md`
+- `docs/operations/cycle-control-ledger-template.md`
+- `docs/operations/next-step-packet-template.md`
+- `docs/operations/launch-checklist.md`

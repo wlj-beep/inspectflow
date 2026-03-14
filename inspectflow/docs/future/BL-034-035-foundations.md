@@ -9,6 +9,8 @@
 - Config-driven template registry.
 - Profile-to-template compatibility validation.
 - First-article artifact rendering with formatter hooks.
+- Pack-level validation contract (`validateExportProfilePack`).
+- Deterministic compatibility checksum snapshots (`createExportCompatibilitySnapshot`).
 
 2. Fixture-backed profile/template packs
 - `backend/test/fixtures/future/export/*`

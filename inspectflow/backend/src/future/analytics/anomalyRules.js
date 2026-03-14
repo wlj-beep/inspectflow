@@ -1,4 +1,7 @@
+import crypto from "node:crypto";
+
 export const RISK_CONTRACT_ID = "ANA-RISK-v3";
+const RISK_EVENT_VERSION = "1.0";
 
 const SEVERITY_ORDER = {
   low: 1,
@@ -6,6 +9,20 @@ const SEVERITY_ORDER = {
   high: 3,
   critical: 4
 };
+const MATCH_MODES = new Set(["all", "any"]);
+
+function stableStringify(value) {
+  if (value === null || typeof value !== "object") {
+    return JSON.stringify(value);
+  }
+
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => stableStringify(entry)).join(",")}]`;
+  }
+
+  const keys = Object.keys(value).sort();
+  return `{${keys.map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(",")}}`;
+}
 
 function normalizeNumber(value, fieldName) {
   if (typeof value !== "number" || !Number.isFinite(value)) {
@@ -67,9 +84,13 @@ function evaluateCondition(condition, metrics) {
 
 export function evaluateAnomalyRule(rule, metrics, context = {}) {
   const conditions = Array.isArray(rule?.when) ? rule.when : [];
+  const match = String(rule?.match ?? "all").toLowerCase();
 
   if (!rule?.id || !rule?.name || conditions.length === 0) {
     throw new Error("rule requires id, name, and at least one condition");
+  }
+  if (!MATCH_MODES.has(match)) {
+    throw new Error(`rule match must be one of: ${Array.from(MATCH_MODES).join(", ")}`);
   }
 
   const evaluations = conditions.map((condition) => {
@@ -83,13 +104,15 @@ export function evaluateAnomalyRule(rule, metrics, context = {}) {
     };
   });
 
-  const triggered = evaluations.every((entry) => entry.pass);
+  const triggered =
+    match === "all" ? evaluations.every((entry) => entry.pass) : evaluations.some((entry) => entry.pass);
 
   return {
     contractId: RISK_CONTRACT_ID,
     ruleId: rule.id,
     name: rule.name,
     severity: rule.severity ?? "medium",
+    match,
     triggered,
     evaluations,
     context
@@ -106,6 +129,57 @@ export function evaluateAnomalyRules({ rules = SAMPLE_ANOMALY_RULES, metrics = {
     contractId: RISK_CONTRACT_ID,
     triggered,
     evaluated
+  };
+}
+
+export function createRiskDedupeKey({ ruleId, severity, subject = {}, occurredAtBucket }) {
+  const fingerprint = {
+    ruleId: String(ruleId ?? ""),
+    severity: String(severity ?? "medium"),
+    subject,
+    occurredAtBucket: String(occurredAtBucket ?? "")
+  };
+
+  return crypto.createHash("sha256").update(stableStringify(fingerprint)).digest("hex");
+}
+
+export function buildRiskEventEnvelope(evaluation, options = {}) {
+  if (!evaluation || typeof evaluation !== "object") {
+    throw new Error("evaluation is required");
+  }
+  if (!evaluation.ruleId) {
+    throw new Error("evaluation.ruleId is required");
+  }
+
+  const occurredAtIso = options.occurredAt ? new Date(options.occurredAt).toISOString() : new Date().toISOString();
+  const hourBucket = occurredAtIso.slice(0, 13);
+  const subject = options.subject && typeof options.subject === "object" ? options.subject : {};
+  const dedupeKey =
+    options.dedupeKey ??
+    createRiskDedupeKey({
+      ruleId: evaluation.ruleId,
+      severity: evaluation.severity,
+      subject,
+      occurredAtBucket: hourBucket
+    });
+
+  return {
+    contractId: RISK_CONTRACT_ID,
+    eventVersion: RISK_EVENT_VERSION,
+    eventType: "quality.anomaly.detected",
+    dedupeKey,
+    occurredAt: occurredAtIso,
+    rule: {
+      id: evaluation.ruleId,
+      name: evaluation.name,
+      severity: evaluation.severity
+    },
+    subject,
+    evidence: {
+      triggered: Boolean(evaluation.triggered),
+      evaluations: Array.isArray(evaluation.evaluations) ? evaluation.evaluations : [],
+      context: evaluation.context ?? {}
+    }
   };
 }
 

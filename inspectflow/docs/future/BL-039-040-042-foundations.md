@@ -17,6 +17,13 @@
 3. Anomaly rule evaluator
 - `backend/src/future/analytics/anomalyRules.js`
 - Rule condition evaluation library with sample rules.
+- Rule match-mode support (`all`/`any`) for future workflow variants.
+- Risk event envelope + dedupe-key helper for later escalation pipeline wiring.
+
+4. Quality escalation workflow bridge
+- `backend/src/future/quality/riskEscalation.js`
+- Maps `ANA-RISK-v3` event envelopes to `QUAL-RISK-WORKFLOW-v1` escalation records.
+- Produces `QUAL-TRACE-v1` evidence-link scaffolding for later case management integration.
 
 ## Not integrated yet
 - No live dashboard API wiring.

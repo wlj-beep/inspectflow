@@ -1,5 +1,18 @@
 import React, { useState, useRef, useEffect } from "react";
 import { api } from "../api/index.js";
+import { createJobflowAdapter } from "../domains/jobflow/adapter.js";
+import { CAPABILITY_DEFS, DEFAULT_ROLE_CAPS } from "../domains/jobflow/constants.js";
+import {
+  buildPartsFromApi,
+  getOperatorName,
+  mapJobsFromApi,
+  mapRecordDetailFromApi,
+  mapRecordsFromApi,
+  mapToolLibrary,
+  mapToolLocations
+} from "../domains/jobflow/mappers.js";
+
+const jobflowAdapter = createJobflowAdapter(api);
 
 const TOOL_TYPES = ["Variable","Go/No-Go","Attribute"];
 const SAMPLING_OPTIONS = [
@@ -10,25 +23,6 @@ const SAMPLING_OPTIONS = [
   { value:"100pct",    label:"100%"          },
   { value:"custom_interval", label:"Custom Every Nth" }
 ];
-const CAPABILITY_DEFS = [
-  { key:"view_operator", label:"Operator View", desc:"Access measurement entry" },
-  { key:"submit_records", label:"Submit Records", desc:"Submit inspection results" },
-  { key:"view_admin", label:"Admin Area", desc:"Access admin screens" },
-  { key:"view_jobs", label:"View Jobs", desc:"View job management list" },
-  { key:"manage_jobs", label:"Manage Jobs", desc:"Create or modify jobs" },
-  { key:"view_records", label:"View Records", desc:"View inspection records" },
-  { key:"edit_records", label:"Edit Records", desc:"Supervisor edits with audit log" },
-  { key:"manage_parts", label:"Manage Parts", desc:"Edit parts/operations/dimensions" },
-  { key:"manage_tools", label:"Manage Tools", desc:"Add/edit tool library" },
-  { key:"manage_users", label:"Manage Users", desc:"Add/edit users" },
-  { key:"manage_roles", label:"Manage Roles", desc:"Edit role permissions" }
-];
-const DEFAULT_ROLE_CAPS = {
-  Operator: ["view_operator","submit_records","view_records"],
-  Quality: ["view_admin","view_jobs","view_records","edit_records"],
-  Supervisor: ["view_admin","view_jobs","manage_jobs","view_records","edit_records"],
-  Admin: ["view_admin","view_jobs","manage_jobs","view_records","edit_records","manage_parts","manage_tools","manage_users","manage_roles"]
-};
 const COMMON_TOOL_TEMPLATES = [
   { name:"Outside Micrometer", type:"Variable" },
   { name:"Inside Micrometer", type:"Variable" },
@@ -275,173 +269,6 @@ function nextRevisionCode(value){
 function isToolSelectable(t){
   if(!t) return false;
   return t.active !== false && t.visible !== false;
-}
-
-function mapToolLibrary(apiTools){
-  const out={};
-  for(const t of apiTools||[]){
-    const id=String(t.id);
-    out[id]={
-      id,
-      name:t.name,
-      type:t.type,
-      itNum:t.it_num ?? t.itNum,
-      size:t.size ?? "",
-      calibrationDueDate:t.calibration_due_date ?? t.calibrationDueDate ?? "",
-      currentLocationId:t.current_location_id ?? t.currentLocationId ?? null,
-      currentLocationName:t.current_location_name ?? t.currentLocationName ?? "",
-      currentLocationType:t.current_location_type ?? t.currentLocationType ?? "",
-      homeLocationId:t.home_location_id ?? t.homeLocationId ?? null,
-      homeLocationName:t.home_location_name ?? t.homeLocationName ?? "",
-      homeLocationType:t.home_location_type ?? t.homeLocationType ?? "",
-      active:t.active ?? true,
-      visible:t.visible ?? true
-    };
-  }
-  return out;
-}
-
-function mapToolLocations(apiLocations){
-  return (apiLocations||[]).map((loc)=>({
-    id:Number(loc.id),
-    name:loc.name,
-    locationType:loc.location_type ?? loc.locationType
-  }));
-}
-
-function buildPartsFromApi(partDetails){
-  const partsObj={};
-  const opIdToNumber={};
-  for(const part of partDetails||[]){
-    const opsObj={};
-    for(const op of part.operations||[]){
-      const normalizedOp=normalizeOpNumber(op.opNumber) || String(op.opNumber);
-      opIdToNumber[String(op.id)]=normalizedOp;
-      const dims=(op.dimensions||[]).map(d=>({
-        id:String(d.id),
-        name:d.name,
-        nominal:Number(d.nominal),
-        tolPlus:Number(d.tolPlus ?? d.tol_plus),
-        tolMinus:Number(d.tolMinus ?? d.tol_minus),
-        unit:d.unit,
-        sampling:d.sampling,
-        samplingInterval:Number(d.samplingInterval ?? d.sampling_interval) || null,
-        inputMode:d.input_mode ?? d.inputMode ?? "single",
-        tools:(d.toolIds||d.tools?.map(t=>t.id)||[]).map(id=>String(id))
-      }));
-      opsObj[normalizedOp]={ id:String(op.id), label:op.label, dimensions:dims };
-    }
-    const currentRevision=part.selectedRevision || part.currentRevision || null;
-    partsObj[part.id]={
-      partNumber:part.id,
-      description:part.description,
-      currentRevision,
-      nextRevision:part.nextRevision || (currentRevision ? nextRevisionCode(currentRevision) : "A"),
-      revisions:Array.isArray(part.revisions) ? part.revisions : [],
-      readOnlyRevision:!!part.readOnlyRevision,
-      operations:opsObj
-    };
-  }
-  return { partsObj, opIdToNumber };
-}
-
-function mapJobsFromApi(apiJobs, opIdToNumber){
-  const out={};
-  for(const j of apiJobs||[]){
-    const rawOp=opIdToNumber[String(j.operation_id)]||String(j.operation_id);
-    const opNum=normalizeOpNumber(rawOp) || String(rawOp);
-    out[j.id]={
-      jobNumber:j.id,
-      partNumber:j.part_id,
-      partRevision:j.part_revision_code || j.partRevision || "A",
-      operation:opNum,
-      operationId:j.operation_id,
-      lot:j.lot,
-      qty:j.qty,
-      status:j.status,
-      lockOwnerUserId:j.lock_owner_user_id || null,
-      lockTimestamp:j.lock_timestamp || null
-    };
-  }
-  return out;
-}
-
-function mapRecordsFromApi(apiRecords, opIdToNumber, usersById){
-  return (apiRecords||[]).map(r=>({
-    id:String(r.id),
-    jobNumber:r.job_id,
-    partNumber:r.part_id,
-    operation:opIdToNumber[String(r.operation_id)]||String(r.operation_id),
-    lot:r.lot,
-    qty:r.qty,
-    timestamp:fmtTs(r.timestamp),
-    operator:usersById?.[String(r.operator_user_id)]||"",
-    operatorUserId:r.operator_user_id,
-    values:{},
-    tools:{},
-    missingPieces:{},
-    oot:!!r.oot,
-    status:r.status,
-    comment:r.comment||""
-  }));
-}
-
-function mapRecordDetailFromApi(r, opIdToNumber, usersById){
-  const values={};
-  for(const v of r.values||[]){
-    values[`${v.dimension_id}_${v.piece_number}`]=v.value;
-  }
-  const tools={};
-  for(const t of r.tools||[]){
-    const dimId=String(t.dimension_id);
-    if(!tools[dimId]) tools[dimId]=[];
-    tools[dimId].push({
-      toolId:String(t.tool_id),
-      itNum:t.it_num,
-      toolName:t.tool_name,
-      toolType:t.tool_type
-    });
-  }
-  const missingPieces={};
-  for(const m of r.missingPieces||[]){
-    missingPieces[String(m.piece_number)]={ reason:m.reason, ncNum:m.nc_num, details:m.details };
-  }
-  const opNumber=opIdToNumber?.[String(r.operation_id)]||String(r.operation_id||"");
-  const auditLog=(r.auditLog||[]).map(a=>({
-    id:String(a.id),
-    userId:a.user_id,
-    userName:usersById?.[String(a.user_id)]||`User #${a.user_id}`,
-    field:a.field,
-    beforeValue:a.before_value,
-    afterValue:a.after_value,
-    reason:a.reason,
-    timestamp:fmtTs(a.timestamp)
-  }));
-  return {
-    id:String(r.id),
-    jobNumber:r.job_id,
-    partNumber:r.part_id,
-    operation:opNumber,
-    lot:r.lot,
-    qty:r.qty,
-    timestamp:fmtTs(r.timestamp),
-    operator:usersById?.[String(r.operator_user_id)]||"",
-    operatorUserId:r.operator_user_id,
-    values,
-    tools,
-    missingPieces,
-    oot:!!r.oot,
-    status:r.status,
-    comment:r.comment||"",
-    auditLog
-  };
-}
-
-function getOperatorName(record, usersById){
-  if(!record) return "";
-  if(record.operator) return record.operator;
-  const id = record.operatorUserId ?? record.operator_user_id;
-  return usersById?.[String(id)] || (id ? `User #${id}` : "");
 }
 
 function TypeBadge({ type, small }){
@@ -3807,7 +3634,7 @@ export default function App({ authUser = null, onLogout = null }) {
 
   useEffect(()=>{
     let active=true;
-    api.users.list(currentRole || "Operator")
+    jobflowAdapter.users.list(currentRole || "Operator")
       .then(rows=>{
         if(!active)return;
         const localUsers = Array.isArray(rows) && rows.length ? rows : INITIAL_USERS;
@@ -3844,7 +3671,7 @@ export default function App({ authUser = null, onLogout = null }) {
       if(dataStatus!=="live"){ setRoleCaps(DEFAULT_ROLE_CAPS); return; }
       if(currentRole!=="Admin"){ return; }
       try{
-        const rows = await api.roles.list(currentRole);
+        const rows = await jobflowAdapter.roles.list(currentRole);
         if(!active) return;
         const map={...DEFAULT_ROLE_CAPS};
         for(const r of rows||[]){
@@ -3882,10 +3709,10 @@ export default function App({ authUser = null, onLogout = null }) {
     const prev=prevUserRef.current;
     const next=currentUserId;
     if(prev && prev!==next){
-      api.sessions.end(Number(prev), currentRole).catch(()=>{});
+      jobflowAdapter.sessions.end(Number(prev), currentRole).catch(()=>{});
     }
     if(next && next!==prev){
-      api.sessions.start(Number(next), currentRole).catch(()=>{});
+      jobflowAdapter.sessions.start(Number(next), currentRole).catch(()=>{});
     }
     prevUserRef.current=next;
   },[currentUserId,dataStatus,currentRole]);
@@ -3897,17 +3724,14 @@ export default function App({ authUser = null, onLogout = null }) {
       setDataErr("");
       try{
         const role=currentRole||"Admin";
-        const [toolsList, toolLocationsList, partsList] = await Promise.all([
-          api.tools.list(role),
-          api.toolLocations.list(role),
-          api.parts.list(role)
-        ]);
-        const partDetails = await Promise.all((partsList||[]).map(p=>api.parts.get(p.id, role)));
+        const {
+          toolsList,
+          toolLocationsList,
+          partDetails,
+          jobsList,
+          recordsList
+        } = await jobflowAdapter.loadBootstrap(role);
         const { partsObj, opIdToNumber: opMap } = buildPartsFromApi(partDetails);
-        const [jobsList, recordsList] = await Promise.all([
-          api.jobs.list({}, role),
-          api.records.list({}, role)
-        ]);
         if(!active) return;
         setToolLibrary(mapToolLibrary(toolsList));
         setToolLocations(mapToolLocations(toolLocationsList));
@@ -3931,17 +3755,14 @@ export default function App({ authUser = null, onLogout = null }) {
     setDataErr("");
     try{
       const role=currentRole || "Admin";
-      const [toolsList, toolLocationsList, partsList] = await Promise.all([
-        api.tools.list(role),
-        api.toolLocations.list(role),
-        api.parts.list(role)
-      ]);
-      const partDetails = await Promise.all((partsList||[]).map(p=>api.parts.get(p.id, role)));
+      const {
+        toolsList,
+        toolLocationsList,
+        partDetails,
+        jobsList,
+        recordsList
+      } = await jobflowAdapter.loadBootstrap(role);
       const { partsObj, opIdToNumber: opMap } = buildPartsFromApi(partDetails);
-      const [jobsList, recordsList] = await Promise.all([
-        api.jobs.list({}, role),
-        api.records.list({}, role)
-      ]);
       setToolLibrary(mapToolLibrary(toolsList));
       setToolLocations(mapToolLocations(toolLocationsList));
       setParts(partsObj);
@@ -4476,7 +4297,7 @@ export default function App({ authUser = null, onLogout = null }) {
   }
   async function loadRecordDetail(id){
     const role=currentRole||"Admin";
-    const detail=await api.records.get(id, role);
+    const detail=await jobflowAdapter.records.get(id, role);
     return mapRecordDetailFromApi(detail, opIdToNumber, usersById);
   }
   const dataChipLabel = dataStatus==="live" ? "Live Data" : dataStatus==="loading" ? "Loading" : "Local Demo";

@@ -7,6 +7,12 @@ import {
   ensurePartSetupBaselineRevision,
   getPartRevisionByCode
 } from "../revisions.js";
+import { executeConnectorRuntime } from "../services/integration/connectorRuntime.js";
+import { mapErpJobBatchToCanonical } from "../services/integration/erpJobAdapter.js";
+import { buildIntegrationSupportBundle } from "../services/observability/integrationSupportBundle.js";
+import {
+  createPayloadFingerprint
+} from "../services/idempotency/idempotencyKey.js";
 
 const router = Router();
 
@@ -183,12 +189,407 @@ function parseSourceType(value) {
   return v;
 }
 
+function parseAdapterPack(value) {
+  const v = canonicalHeader(value);
+  if (!v) return null;
+  if (["erp_job_v1", "erp_jobs_v1", "erp_job", "erp_jobs"].includes(v)) {
+    return "erp_job_v1";
+  }
+  return null;
+}
+
+function resolveAdapterPack({ importType, payload = null, options = {} }) {
+  const normalizedImportType = parseImportType(importType);
+  if (normalizedImportType !== "jobs") return null;
+
+  const fromOptions = parseAdapterPack(options?.adapterPack || options?.adapter_pack || options?.adapter);
+  if (fromOptions) return fromOptions;
+  if (payload && typeof payload === "object") {
+    const fromPayload = parseAdapterPack(payload.adapterPack || payload.adapter_pack || payload.adapter);
+    if (fromPayload) return fromPayload;
+  }
+  return null;
+}
+
+function mapAdapterRejectedToErrors(rejected = []) {
+  return rejected.map((item) => ({
+    line: Number(item?.line || 0) || null,
+    error: `adapter_rejected:${(Array.isArray(item?.errors) ? item.errors : []).join(",") || "invalid_row"}`
+  }));
+}
+
+function adaptErpJobsPayload({
+  payload,
+  sourceType,
+  triggerMode = "manual",
+  integrationId = null
+}) {
+  const rawRows = rowsFromPayload(payload);
+  const mapped = mapErpJobBatchToCanonical(rawRows, {
+    sourceType,
+    triggerMode,
+    integrationId,
+    adapter: "erp_job_v1"
+  });
+
+  const rows = mapped.accepted.map((item) => {
+    const entity = item?.envelope?.payload?.entity || {};
+    return {
+      job_id: entity.id || "",
+      part_id: entity.partId || "",
+      part_revision: entity.partRevision || "A",
+      op_number: entity.opNumber || "",
+      lot: entity.lot || "",
+      qty: entity.qty ?? "",
+      status: entity.status || "open",
+      external_id: item?.envelope?.externalKey || null
+    };
+  });
+
+  return {
+    adapterPack: "erp_job_v1",
+    total: mapped.total,
+    acceptedCount: mapped.accepted.length,
+    rejectedCount: mapped.rejected.length,
+    rejected: mapped.rejected,
+    payload: { rows }
+  };
+}
+
+function applyAdapterResultToImportResult(result, adapterResult) {
+  if (!adapterResult) return result;
+
+  const normalized = {
+    ...result,
+    totalRows: Number(adapterResult.total || result?.totalRows || 0),
+    failed: Number(result?.failed || 0) + Number(adapterResult.rejectedCount || 0),
+    errors: [
+      ...(Array.isArray(result?.errors) ? result.errors : []),
+      ...mapAdapterRejectedToErrors(adapterResult.rejected)
+    ],
+    adapter: {
+      adapterPack: adapterResult.adapterPack,
+      total: Number(adapterResult.total || 0),
+      accepted: Number(adapterResult.acceptedCount || 0),
+      rejected: Number(adapterResult.rejectedCount || 0)
+    }
+  };
+  return normalized;
+}
+
 function safeErrorCode(err) {
   return String(err?.message || "unknown_error")
     .toLowerCase()
     .replace(/[^a-z0-9_:-]+/g, "_")
     .replace(/^_+|_+$/g, "")
     .slice(0, 160) || "unknown_error";
+}
+
+function deriveRunStatus(result) {
+  const failed = Number(result?.failed || 0);
+  const inserted = Number(result?.inserted || 0);
+  const updated = Number(result?.updated || 0);
+  return failed > 0 ? (inserted > 0 || updated > 0 ? "partial" : "error") : "success";
+}
+
+function normalizeTriggerMode(triggerMode) {
+  const value = String(triggerMode || "manual").trim().toLowerCase();
+  if (["manual", "scheduled", "webhook"].includes(value)) return value;
+  return "manual";
+}
+
+function nonEmptyString(value) {
+  const normalized = String(value ?? "").trim();
+  return normalized ? normalized : null;
+}
+
+function readPayloadToken(payload, keys = []) {
+  if (!payload || typeof payload !== "object") return null;
+  for (const key of keys) {
+    const normalized = nonEmptyString(payload[key]);
+    if (normalized) return normalized;
+  }
+  return null;
+}
+
+function buildRuntimeEnvelopeInput({
+  sourceType,
+  importType,
+  payload,
+  triggerMode,
+  integrationId = null,
+  adapterName = null,
+  actorRole = null,
+  payloadFingerprint = createPayloadFingerprint(payload)
+}) {
+  const normalizedSourceType = parseSourceType(sourceType) || "api_pull";
+  const normalizedImportType = parseImportType(importType);
+  const normalizedTriggerMode = normalizeTriggerMode(triggerMode);
+  const normalizedActorRole = nonEmptyString(actorRole);
+
+  const idempotencyToken = readPayloadToken(payload, [
+    "idempotencyToken",
+    "idempotency_token",
+    "deliveryId",
+    "delivery_id",
+    "eventId",
+    "event_id"
+  ]) || `tok_${payloadFingerprint.hash.slice(0, 24)}`;
+
+  const externalKeyHint = readPayloadToken(payload, [
+    "externalKey",
+    "external_key",
+    "batchKey",
+    "batch_key",
+    "batchId",
+    "batch_id",
+    "eventId",
+    "event_id"
+  ]);
+  const scopedSource = integrationId ? `integration_${integrationId}` : "adhoc";
+  const externalKey = externalKeyHint || [
+    normalizedImportType || "import",
+    normalizedSourceType || "source",
+    normalizedTriggerMode,
+    scopedSource,
+    payloadFingerprint.hash.slice(0, 24)
+  ].join(":");
+
+  return {
+    sourceType: normalizedSourceType,
+    importType: normalizedImportType,
+    externalKey,
+    actor: normalizedActorRole
+      ? { type: "user", id: normalizedActorRole.toLowerCase(), display: normalizedActorRole }
+      : { type: "system", id: null, display: null },
+    provenance: {
+      integrationId,
+      triggerMode: normalizedTriggerMode,
+      adapter: adapterName || (integrationId ? "configured_import_integration" : "direct_import_webhook")
+    },
+    payloadVersion: "1.0",
+    ingestTimestamp: readPayloadToken(payload, ["ingestTimestamp", "ingest_timestamp"]) || new Date().toISOString(),
+    idempotencyToken,
+    payload,
+    payloadFingerprint
+  };
+}
+
+function normalizeRuntimeImportResult(result) {
+  return {
+    status: deriveRunStatus(result),
+    totalRows: Number(result?.totalRows || 0),
+    inserted: Number(result?.inserted || 0),
+    updated: Number(result?.updated || 0),
+    failed: Number(result?.failed || 0),
+    unresolvedCount: Number(result?.unresolvedCount || 0),
+    errors: Array.isArray(result?.errors) ? result.errors : [],
+    unresolvedItems: Array.isArray(result?.unresolvedItems) ? result.unresolvedItems : []
+  };
+}
+
+function mergeRunErrors({ resultErrors = [], runtimeErrors = [] }) {
+  const merged = [];
+  for (const item of resultErrors) {
+    merged.push(item);
+  }
+  for (const item of runtimeErrors) {
+    merged.push({
+      code: item?.code || "runtime_error",
+      error: item?.message || item?.code || "runtime_error",
+      retryable: Boolean(item?.retryable),
+      statusCode: item?.statusCode ?? null
+    });
+  }
+  return merged;
+}
+
+function importResponseStatusCode(result) {
+  if (result?.duplicate) return 200;
+  const inserted = Number(result?.inserted || 0);
+  const updated = Number(result?.updated || 0);
+  const failed = Number(result?.failed || 0);
+  const totalProcessed = inserted + updated + failed;
+  if (totalProcessed <= 0) return 200;
+  return failed >= totalProcessed ? 400 : 200;
+}
+
+function truncateText(value, max = 240) {
+  const normalized = nonEmptyString(value);
+  return normalized ? normalized.slice(0, max) : null;
+}
+
+function buildExternalEntityRefs({ importType, payload, sourceType }) {
+  const normalizedImportType = parseImportType(importType);
+  const normalizedSourceType = parseSourceType(sourceType) || "api_pull";
+  const refs = [];
+
+  if (normalizedImportType === "measurements" && Array.isArray(payload?.records)) {
+    const records = rowsFromMeasurementRecords(payload.records);
+    for (const row of records) {
+      const jobId = truncateText(firstValue(row, ["job_id", "job", "job_number", "work_order", "workorder"]), 120);
+      const opRef = truncateText(firstValue(row, ["operation_ref", "op_number", "operation", "op"]), 32);
+      const pieceNumber = parsePositiveInteger(firstValue(row, ["piece_number", "piece", "sample", "part_piece"]));
+      const dimensionName = truncateText(firstValue(row, ["dimension_name", "dimension", "feature", "characteristic", "char"]), 160);
+      const recordKey = truncateText(firstValue(row, ["record_key", "batch_key", "group_key"]), 160);
+      const externalId = truncateText(
+        firstValue(row, ["external_id", "external_key", "record_key", "batch_key", "group_key"]) || (
+          jobId && opRef && pieceNumber && (dimensionName || firstValue(row, ["dimension_id", "dim_id"]))
+            ? `${jobId}:${opRef}:${dimensionName || firstValue(row, ["dimension_id", "dim_id"])}:${pieceNumber}`
+            : null
+        ),
+        240
+      );
+      if (!externalId) continue;
+
+      refs.push({
+        importType: normalizedImportType,
+        entityType: "measurement",
+        externalId,
+        sourceType: normalizedSourceType,
+        internalRef: {
+          jobId,
+          operationRef: opRef,
+          pieceNumber: pieceNumber || null,
+          dimensionName,
+          recordKey
+        }
+      });
+    }
+    return refs;
+  }
+
+  const rows = rowsFromPayload(payload);
+  if (!rows.length) return refs;
+
+  if (normalizedImportType === "jobs") {
+    for (const row of rows) {
+      const jobId = truncateText(firstValue(row, ["job_id", "id", "job_number", "job"]), 120);
+      const partId = truncateText(firstValue(row, ["part_id", "part_number"]), 120);
+      const opNumber = normalizeOperationNumber(firstValue(row, ["op_number", "operation", "operation_number"])) || null;
+      const externalId = truncateText(
+        firstValue(row, ["external_id", "external_key", "job_id", "id", "job_number", "job"]),
+        240
+      );
+      if (!externalId) continue;
+
+      refs.push({
+        importType: normalizedImportType,
+        entityType: "job",
+        externalId,
+        sourceType: normalizedSourceType,
+        internalRef: {
+          jobId,
+          partId,
+          opNumber
+        }
+      });
+    }
+    return refs;
+  }
+
+  if (normalizedImportType === "tools") {
+    for (const row of rows) {
+      const name = truncateText(firstValue(row, ["name"]), 160);
+      const itNum = truncateText(firstValue(row, ["it_num", "itnum", "it_number", "it"]).toUpperCase(), 120);
+      const externalId = truncateText(
+        firstValue(row, ["external_id", "external_key", "it_num", "itnum", "it_number", "name"]),
+        240
+      );
+      if (!externalId) continue;
+
+      refs.push({
+        importType: normalizedImportType,
+        entityType: "tool",
+        externalId,
+        sourceType: normalizedSourceType,
+        internalRef: {
+          name,
+          itNum
+        }
+      });
+    }
+    return refs;
+  }
+
+  if (normalizedImportType === "part_dimensions") {
+    for (const row of rows) {
+      const partId = truncateText(firstValue(row, ["part_id", "part_number"]), 120);
+      const opNumber = normalizeOperationNumber(firstValue(row, ["op_number", "operation", "operation_number"])) || null;
+      const dimensionName = truncateText(firstValue(row, ["dimension_name", "name"]), 160);
+      const fallbackId = partId && opNumber && dimensionName
+        ? `${partId}:${opNumber}:${dimensionName}`
+        : null;
+      const externalId = truncateText(
+        firstValue(row, ["external_id", "external_key", "dimension_external_id"]) || fallbackId,
+        240
+      );
+      if (!externalId) continue;
+
+      refs.push({
+        importType: normalizedImportType,
+        entityType: "dimension",
+        externalId,
+        sourceType: normalizedSourceType,
+        internalRef: {
+          partId,
+          opNumber,
+          dimensionName
+        }
+      });
+    }
+    return refs;
+  }
+
+  return refs;
+}
+
+async function registerIdempotencyLedgerEntry({
+  idempotencyKey,
+  sourceType,
+  importType,
+  externalKey,
+  payloadFingerprint
+}) {
+  const { rows } = await query(
+    `INSERT INTO import_idempotency_ledger
+       (idempotency_key, source_type, import_type, external_key, payload_hash, payload_bytes)
+     VALUES ($1,$2,$3,$4,$5,$6)
+     ON CONFLICT (idempotency_key) DO UPDATE
+       SET last_seen_at=NOW(),
+           hit_count=import_idempotency_ledger.hit_count + 1
+     RETURNING id, hit_count`,
+    [
+      idempotencyKey,
+      sourceType,
+      importType,
+      externalKey,
+      payloadFingerprint?.hash || "",
+      Number(payloadFingerprint?.bytes || 0)
+    ]
+  );
+  const row = rows[0] || {};
+  const hitCount = Number(row.hit_count || 1);
+  return {
+    duplicate: hitCount > 1,
+    key: idempotencyKey,
+    ledgerId: Number(row.id || 0),
+    hitCount
+  };
+}
+
+async function finalizeIdempotencyLedgerEntry({ idempotencyKey, runId, runStatus }) {
+  if (!idempotencyKey) return;
+  await query(
+    `UPDATE import_idempotency_ledger
+     SET first_run_id=COALESCE(first_run_id, $2),
+         last_run_id=$2,
+         first_status=COALESCE(first_status, $3),
+         last_status=$3,
+         last_seen_at=NOW()
+     WHERE idempotency_key=$1`,
+    [idempotencyKey, runId || null, runStatus || null]
+  );
 }
 
 function inferMeasurementValue(raw) {
@@ -1083,21 +1484,98 @@ async function persistUnresolvedItems(items, meta = {}) {
   }
 }
 
-function summarizeForRun(result) {
-  return {
+async function persistExternalEntityRefs(items, meta = {}) {
+  if (!Array.isArray(items) || !items.length) return;
+  for (const item of items) {
+    const importType = parseImportType(item.importType || meta.importType);
+    const entityType = truncateText(item.entityType, 80);
+    const externalId = truncateText(item.externalId, 240);
+    if (!importType || !entityType || !externalId) continue;
+
+    await query(
+      `INSERT INTO import_external_entity_refs
+         (import_type, entity_type, external_id, source_type, latest_internal_ref, first_run_id, last_run_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$6)
+       ON CONFLICT (import_type, entity_type, external_id) DO UPDATE
+         SET source_type=EXCLUDED.source_type,
+             latest_internal_ref=EXCLUDED.latest_internal_ref,
+             last_seen_at=NOW(),
+             hit_count=import_external_entity_refs.hit_count + 1,
+             last_run_id=EXCLUDED.last_run_id`,
+      [
+        importType,
+        entityType,
+        externalId,
+        parseSourceType(item.sourceType || meta.sourceType) || "api_pull",
+        item.internalRef || {},
+        meta.runId || null
+      ]
+    );
+  }
+}
+
+function summarizeForRun(result, runtime = null) {
+  const summary = {
     totalRows: Number(result?.totalRows || 0),
     inserted: Number(result?.inserted || 0),
     updated: Number(result?.updated || 0),
     failed: Number(result?.failed || 0),
-    unresolvedCount: Number(result?.unresolvedCount || 0)
+    unresolvedCount: Number(result?.unresolvedCount || 0),
+    externalRefCount: Number(result?.externalRefCount || 0),
+    adapter: result?.adapter || null
   };
+
+  if (runtime) {
+    summary.runtime = {
+      status: String(runtime.status || "success"),
+      duplicate: Boolean(runtime.duplicate),
+      attemptCount: Array.isArray(runtime.attempts) ? runtime.attempts.length : 0,
+      attempts: Array.isArray(runtime.attempts) ? runtime.attempts : [],
+      idempotencyKey: runtime.idempotencyKey || null,
+      replayMetadata: runtime.replayMetadata || null,
+      supportBundle: runtime.supportBundle || null
+    };
+  }
+
+  return summary;
 }
 
-async function insertRunLog({ integrationId = null, sourceType, importType, triggerMode, result }) {
-  const summary = summarizeForRun(result);
-  const status = summary.failed > 0
-    ? (summary.inserted > 0 || summary.updated > 0 ? "partial" : "error")
-    : "success";
+function deriveSupportBundleFromRunRow(runRow) {
+  const existing = runRow?.summary?.runtime?.supportBundle;
+  if (existing && typeof existing === "object") {
+    return existing;
+  }
+
+  return buildIntegrationSupportBundle({
+    run: {
+      id: runRow?.id || null,
+      status: runRow?.status || "unknown",
+      triggerMode: runRow?.trigger_mode || null,
+      sourceType: runRow?.source_type || null,
+      importType: runRow?.import_type || null,
+      startedAt: runRow?.created_at || null,
+      finishedAt: runRow?.created_at || null
+    },
+    envelope: {
+      sourceType: runRow?.source_type || null,
+      importType: runRow?.import_type || null,
+      payloadVersion: "1.0",
+      provenance: {
+        integrationId: runRow?.integration_id || null,
+        triggerMode: runRow?.trigger_mode || null,
+        adapter: runRow?.summary?.adapter?.adapterPack || null
+      }
+    },
+    attempts: runRow?.summary?.runtime?.attempts || [],
+    unresolvedItems: [],
+    errors: Array.isArray(runRow?.errors) ? runRow.errors : []
+  });
+}
+
+async function insertRunLog({ integrationId = null, sourceType, importType, triggerMode, result, runtime = null }) {
+  const summary = summarizeForRun(result, runtime);
+  const status = runtime?.status || deriveRunStatus(summary);
+  const errors = Array.isArray(result?.errors) ? result.errors : [];
 
   const runRes = await query(
     `INSERT INTO import_runs
@@ -1115,7 +1593,7 @@ async function insertRunLog({ integrationId = null, sourceType, importType, trig
       summary.updated,
       summary.failed,
       JSON.stringify(summary),
-      JSON.stringify(result?.errors || [])
+      JSON.stringify(errors)
     ]
   );
 
@@ -1193,16 +1671,121 @@ async function fetchIntegrationPayload(integration) {
   return { csvText: text };
 }
 
+async function executeConnectorManagedImport({
+  integrationId = null,
+  sourceType,
+  importType,
+  triggerMode = "manual",
+  payload,
+  role = "Admin",
+  options = {}
+}) {
+  const adapterPack = resolveAdapterPack({ importType, payload, options });
+  const adapterResult = adapterPack === "erp_job_v1"
+    ? adaptErpJobsPayload({
+        payload,
+        sourceType,
+        triggerMode,
+        integrationId
+      })
+    : null;
+  const runtimePayload = adapterResult?.payload || payload;
+
+  const payloadFingerprint = createPayloadFingerprint(runtimePayload);
+  const envelopeInput = buildRuntimeEnvelopeInput({
+    sourceType,
+    importType,
+    payload: runtimePayload,
+    triggerMode,
+    integrationId,
+    adapterName: adapterResult?.adapterPack || null,
+    actorRole: role,
+    payloadFingerprint
+  });
+  const externalRefs = buildExternalEntityRefs({
+    importType: envelopeInput.importType,
+    payload: runtimePayload,
+    sourceType: envelopeInput.sourceType
+  });
+
+  const runtime = await executeConnectorRuntime({
+    envelopeInput,
+    ledger: {
+      register: async (idempotencyKey) => registerIdempotencyLedgerEntry({
+        idempotencyKey,
+        sourceType: envelopeInput.sourceType,
+        importType: envelopeInput.importType,
+        externalKey: envelopeInput.externalKey,
+        payloadFingerprint
+      })
+    },
+    jitterSeed: integrationId
+      ? `integration:${integrationId}:${normalizeTriggerMode(triggerMode)}`
+      : `${parseSourceType(sourceType)}:${parseImportType(importType)}:${normalizeTriggerMode(triggerMode)}`,
+    executeImport: async ({ envelope }) => {
+      const imported = await runImportByType({
+        importType: envelope.importType,
+        payload: envelope.payload,
+        sourceType: envelope.sourceType,
+        role,
+        options
+      });
+      return normalizeRuntimeImportResult(imported);
+    }
+  });
+
+  const normalized = normalizeRuntimeImportResult(runtime.result || {});
+  normalized.errors = mergeRunErrors({
+    resultErrors: normalized.errors,
+    runtimeErrors: runtime.errors
+  });
+  const adaptedNormalized = applyAdapterResultToImportResult(normalized, adapterResult);
+  adaptedNormalized.externalRefCount = externalRefs.length;
+
+  return {
+    result: {
+      ...adaptedNormalized,
+      duplicate: Boolean(runtime.duplicate),
+      idempotencyKey: runtime.idempotencyKey || null,
+      runtimeAttempts: Array.isArray(runtime.attempts) ? runtime.attempts : [],
+      replayMetadata: runtime.replayMetadata || null,
+      supportBundle: runtime.supportBundle || null
+    },
+    runtime,
+    externalRefs
+  };
+}
+
+function integrationLastMessage(result, runtime, status) {
+  if (status === "error") {
+    const runtimeCode = runtime?.errors?.[0]?.code;
+    const rowError = result?.errors?.[0]?.error;
+    return runtimeCode || rowError || "failed";
+  }
+
+  const attemptCount = Array.isArray(runtime?.attempts) ? runtime.attempts.length : 0;
+  return [
+    `rows=${Number(result?.totalRows || 0)}`,
+    `inserted=${Number(result?.inserted || 0)}`,
+    `updated=${Number(result?.updated || 0)}`,
+    `failed=${Number(result?.failed || 0)}`,
+    `attempts=${attemptCount}`,
+    `duplicate=${Boolean(runtime?.duplicate)}`
+  ].join(" ");
+}
+
 async function runConfiguredIntegration(integration, { triggerMode = "manual", payloadOverride = null, role = "Admin" } = {}) {
   const sourceType = String(integration.source_type);
   const importType = String(integration.import_type);
 
   const payload = payloadOverride || await fetchIntegrationPayload(integration);
-  const result = await runImportByType({
+  const { result, runtime, externalRefs } = await executeConnectorManagedImport({
+    integrationId: integration.id,
+    sourceType,
     importType,
     payload,
-    sourceType,
     role,
+    triggerMode,
     options: integration.options || {}
   });
 
@@ -1211,12 +1794,23 @@ async function runConfiguredIntegration(integration, { triggerMode = "manual", p
     sourceType,
     importType,
     triggerMode,
-    result
+    result,
+    runtime
   });
 
   await persistUnresolvedItems(result.unresolvedItems || [], {
     runId: run.runId,
     sourceType
+  });
+  await persistExternalEntityRefs(externalRefs || [], {
+    runId: run.runId,
+    sourceType,
+    importType
+  });
+  await finalizeIdempotencyLedgerEntry({
+    idempotencyKey: result.idempotencyKey,
+    runId: run.runId,
+    runStatus: run.status
   });
 
   await query(
@@ -1229,9 +1823,7 @@ async function runConfiguredIntegration(integration, { triggerMode = "manual", p
     [
       integration.id,
       run.status,
-      run.status === "error"
-        ? (result?.errors?.[0]?.error || "failed")
-        : `rows=${result.totalRows} inserted=${result.inserted} updated=${result.updated} failed=${result.failed}`
+      integrationLastMessage(result, runtime, run.status)
     ]
   );
 
@@ -1375,7 +1967,7 @@ router.post("/measurements/bulk", requireCapability("manage_jobs"), async (req, 
       sourceType: "api_pull"
     });
 
-    const status = result.failed >= (result.inserted + result.failed) ? 400 : 200;
+    const status = importResponseStatusCode(result);
     res.status(status).json({
       ...result,
       runId: run.runId,
@@ -1436,7 +2028,7 @@ router.post("/jobs/:jobId/measurements/csv", requireCapability("submit_records")
       sourceType: "operator_csv"
     });
 
-    const statusCode = result.failed >= (result.inserted + result.failed) ? 400 : 200;
+    const statusCode = importResponseStatusCode(result);
     res.status(statusCode).json({
       ...result,
       runId: run.runId,
@@ -1446,6 +2038,30 @@ router.post("/jobs/:jobId/measurements/csv", requireCapability("submit_records")
     if (safeErrorCode(err) === "csv_no_rows") {
       return res.status(400).json({ error: "csv_no_rows" });
     }
+    next(err);
+  }
+});
+
+router.post("/adapters/erp-jobs/preview", requireCapability("view_admin"), async (req, res, next) => {
+  try {
+    const sourceType = parseSourceType(req.body?.sourceType || "api_pull") || "api_pull";
+    const triggerMode = normalizeTriggerMode(req.body?.triggerMode || "manual");
+    const integrationId = parsePositiveInteger(req.body?.integrationId);
+    const adapter = adaptErpJobsPayload({
+      payload: req.body || {},
+      sourceType,
+      triggerMode,
+      integrationId
+    });
+    res.json({
+      contractId: "INT-INGEST-v1",
+      adapterPack: adapter.adapterPack,
+      totalRows: adapter.total,
+      accepted: adapter.acceptedCount,
+      rejected: adapter.rejectedCount,
+      rejectedRows: adapter.rejected
+    });
+  } catch (err) {
     next(err);
   }
 });
@@ -1589,7 +2205,7 @@ router.post("/integrations/:id/pull", requireCapability("view_admin"), async (re
       role: requestRole(req) || "Admin"
     });
 
-    const statusCode = result.failed >= (result.inserted + result.failed) ? 400 : 200;
+    const statusCode = importResponseStatusCode(result);
     res.status(statusCode).json(result);
   } catch (err) {
     next(err);
@@ -1605,6 +2221,53 @@ router.get("/runs", requireCapability("view_admin"), async (req, res, next) => {
       [safeLimit]
     );
     res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/runs/:id/support-bundle", requireCapability("view_admin"), async (req, res, next) => {
+  try {
+    const runId = parsePositiveInteger(req.params.id);
+    if (!runId) return res.status(400).json({ error: "invalid_run_id" });
+
+    const runRes = await query(
+      `SELECT id, integration_id, source_type, import_type, trigger_mode, status, summary, errors, created_at
+       FROM import_runs
+       WHERE id=$1`,
+      [runId]
+    );
+    const run = runRes.rows[0];
+    if (!run) return res.status(404).json({ error: "not_found" });
+
+    res.json({
+      runId: run.id,
+      supportBundle: deriveSupportBundleFromRunRow(run)
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/support-bundles", requireCapability("view_admin"), async (req, res, next) => {
+  try {
+    const safeLimit = Math.min(100, Math.max(1, Number(req.query.limit) || 25));
+    const { rows } = await query(
+      `SELECT id, integration_id, source_type, import_type, trigger_mode, status, summary, errors, created_at
+       FROM import_runs
+       ORDER BY id DESC
+       LIMIT $1`,
+      [safeLimit]
+    );
+    const payload = rows.map((run) => ({
+      runId: run.id,
+      status: run.status,
+      sourceType: run.source_type,
+      importType: run.import_type,
+      createdAt: run.created_at,
+      supportBundle: deriveSupportBundleFromRunRow(run)
+    }));
+    res.json(payload);
   } catch (err) {
     next(err);
   }
@@ -1748,36 +2411,59 @@ router.post("/webhooks/:importType", async (req, res, next) => {
       }
     }
 
+    const directRuntime = integration ? null : await executeConnectorManagedImport({
+      integrationId: null,
+      sourceType: "webhook",
+      importType,
+      triggerMode: "webhook",
+      payload: req.body,
+      role: "Admin"
+    });
+
     const result = integration
       ? await runConfiguredIntegration(integration, {
           triggerMode: "webhook",
           payloadOverride: req.body,
           role: "Admin"
         })
-      : await runImportByType({
-          importType,
-          payload: req.body,
-          sourceType: "webhook",
-          role: "Admin"
-        });
+      : directRuntime.result;
 
     if (!integration) {
+      const runtime = {
+        status: result.status,
+        duplicate: result.duplicate,
+        attempts: result.runtimeAttempts,
+        idempotencyKey: result.idempotencyKey,
+        replayMetadata: result.replayMetadata,
+        errors: []
+      };
       const run = await insertRunLog({
         integrationId: null,
         sourceType: "webhook",
         importType,
         triggerMode: "webhook",
-        result
+        result,
+        runtime
       });
       await persistUnresolvedItems(result.unresolvedItems || [], {
         runId: run.runId,
         sourceType: "webhook"
       });
+      await persistExternalEntityRefs(directRuntime.externalRefs || [], {
+        runId: run.runId,
+        sourceType: "webhook",
+        importType
+      });
+      await finalizeIdempotencyLedgerEntry({
+        idempotencyKey: result.idempotencyKey,
+        runId: run.runId,
+        runStatus: run.status
+      });
       result.runId = run.runId;
       result.runStatus = run.status;
     }
 
-    const statusCode = result.failed >= (result.inserted + result.failed) ? 400 : 200;
+    const statusCode = importResponseStatusCode(result);
     res.status(statusCode).json(result);
   } catch (err) {
     if (safeErrorCode(err) === "csv_no_rows") {

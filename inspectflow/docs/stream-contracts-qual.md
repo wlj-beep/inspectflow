@@ -1,7 +1,7 @@
 # Stream Contract: QUAL (Team Helix)
 
 ## Scope
-Quality and traceability: correction workflows, chain-of-events reporting, export packs, first-article support, and quality risk workflows.
+Quality and traceability: correction workflows, chain-of-events reporting, export packs, first-article support, and quality risk workflow integration. QUAL consumes ANA risk events; ANA owns risk contract semantics.
 
 ## Provides
 - `QUAL-TRACE-v1`: part/job/lot/piece trace query contract.
@@ -12,6 +12,7 @@ Quality and traceability: correction workflows, chain-of-events reporting, expor
 - `OPS-JOBFLOW-v1` for lifecycle context.
 - `INT-INGEST-v1` for externally ingested measurements.
 - `PLAT-AUTH-v1` for role-safe correction authority.
+- `ANA-RISK-v3` for ANA-owned risk event workflows consumed by QUAL escalation flows.
 
 ## Versioning Policy
 - Export schema changes require explicit versioned contract updates.

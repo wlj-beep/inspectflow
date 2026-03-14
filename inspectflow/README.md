@@ -1,6 +1,6 @@
 # InspectFlow
 
-Production MVP scaffold (on‑prem web app)..
+Production MVP scaffold (on-prem web app)..
 
 ## Structure
 - `frontend/` React UI (Vite-compatible scaffold)
@@ -49,7 +49,9 @@ Playwright requires browser binaries:
 - This workspace is the active build target.
 
 ## Coordination and Deployment
-- `docs/coordination-plan.md` defines agent roles, artifacts, and working rules.
+- `docs/coordination-plan.md` defines queue governance and multi-agent delivery rules.
+- `docs/operations/multi-agent-playbook.md` is the canonical operating playbook.
+- `docs/operations/controller-prompts.md` provides reusable controller/sub-agent prompt templates.
 - `STATUS.md` is the canonical global ranked queue for active backlog work.
 - `docs/backlog.md` stores detailed backlog items keyed by `BL-###`.
 - `WORKLOG.md` stores completed work history.

@@ -1,0 +1,11 @@
+
+ RUN  v2.1.9 /Users/joshlane/Documents/Playground 2/inspectflow/backend
+
+ ✓ test/analytics-contracts.test.js (5 tests) 2ms
+ ✓ test/future-analytics-kpi.test.js (5 tests) 3ms
+
+ Test Files  2 passed (2)
+      Tests  10 passed (10)
+   Start at  17:24:17
+   Duration  212ms (transform 27ms, setup 0ms, collect 38ms, tests 6ms, environment 0ms, prepare 62ms)
+

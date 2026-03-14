@@ -1,8 +1,8 @@
-# InspectFlow Agent Instructions (Context Window Priority)
+# InspectFlow Agent Instructions (Multi-Agent First)
 
-InspectFlow is an on‑prem manufacturing inspection system that replaces paper-based measurement collection with a simple, readable, and reliable digital workflow. The MVP mirrors the demo workflows while adding role-based access (without authentication) and durable local storage via Postgres. Data stays on the customer’s local network.
+InspectFlow is an on-prem manufacturing inspection system that replaces paper-based measurement collection with a simple, readable, and reliable digital workflow. Core delivery priority is stable execution against ranked backlog work with clear evidence.
 
-These instructions optimize context usage. Read in order and use the criteria below to decide how far to go.
+These instructions are optimized for context usage and forward progress.
 
 ## 1) Always Read First (Small, High Signal)
 - `README.md`
@@ -15,94 +15,93 @@ These instructions optimize context usage. Read in order and use the criteria be
 
 Criteria:
 - Small bug fix or doc tweak: Section 1 is usually sufficient.
-- Feature work or behavior changes: read Section 1 + the relevant parts of Section 2.
+- Feature work or behavior changes: read Section 1 plus relevant files from Section 2.
 
-Coordination requirement:
-- No coding without prior claim in `STATUS.md`.
+Hard requirement:
+- No coding without a prior claim in `STATUS.md`.
 
-## 2) Then Read Based on Task
-- Backend API or data behavior:
+## 2) Task-Scoped Reading
+- Backend/API/data behavior:
   - `backend/src/index.js`
   - `backend/src/routes/*.js`
   - `backend/db/schema.sql`
   - `backend/db/seed.sql`
-- Frontend UI behavior:
+- Frontend/UI behavior:
   - `frontend/src/App.jsx`
   - `frontend/src/api/client.js`
-  - `frontend/src/legacy/InspectFlowDemo.jsx` (large file: read only the specific region you need)
+  - `frontend/src/legacy/InspectFlowDemo.jsx` (only the region you edit)
 - Data model reference:
   - `docs/data-model.md`
 - UI direction/workstream:
   - `docs/frontend-notes.md`
 
-## 3) Avoid Unless Required
-- Do not load the full legacy UI file unless you are actively editing it.
+## 3) Multi-Agent Execution Protocol (Default and Exclusive)
+Use Codex multi-agent mode for all non-trivial work.
+
+1. Claim one backlog item (`BL-###`) in `STATUS.md`.
+2. Start one controller session and spawn parallel sub-agents for independent tracks.
+3. Keep scopes non-overlapping (for example: API, UI, tests, docs/contracts).
+4. Require each sub-agent output to include:
+   - `BL-###`
+   - files touched or reviewed
+   - evidence (`file:line`, command/test output)
+   - blockers and next action
+5. Controller merges results, resolves conflicts, and drives completion.
+6. Before handoff, update `STATUS.md`, `docs/backlog.md` (if state changed), and `WORKLOG.md` (on completion).
+
+Canonical operations docs:
+- `docs/operations/multi-agent-playbook.md`
+- `docs/operations/controller-prompts.md`
+- `docs/operations/launch-checklist.md`
+
+## 4) Avoid Unless Required
+- Do not load the full legacy UI file unless actively editing it.
 - Avoid scanning `node_modules` or build artifacts.
 
-## 4) Runtime/Testing Defaults
-- Local dev is localhost-first:
-  - Frontend: `http://localhost:5173`
-  - API: `http://localhost:4000`
+## 5) Runtime/Testing Defaults
+- Frontend: `http://localhost:5173`
+- API: `http://localhost:4000`
 - Run both services: `npm run dev` from repo root.
 - Smoke tests:
-  - `npm run test` (root) runs API + UI smoke.
-  - `npx playwright install` is a prerequisite for UI tests and must be run at least once.
+  - `npm run test` (root) runs API and UI smoke.
+  - `npx playwright install` is required at least once for UI tests.
 - Test DB:
-  - Use `DATABASE_URL_TEST` in `backend/.env` for repeatable tests.
+  - Use `DATABASE_URL_TEST` in `backend/.env`.
 
-## 5) Code Style / Conventions
+## 6) Code Style and Conventions
 - ESModules (`import`/`export`), semicolons, double quotes.
-- 2‑space indentation and concise functions.
+- 2-space indentation and concise functions.
 - Follow nearby file patterns and naming conventions.
-- Do not introduce new lint/format tooling unless explicitly requested.
+- Do not introduce new lint/format tooling unless requested.
 
-## 6) Security Note (Important)
-⚠️ Protected APIs now use local authenticated session identity as the security boundary.
-- `x-user-role` may appear in legacy clients but should not be treated as authoritative in production.
-- Compatibility header mode is opt-in via `ALLOW_LEGACY_ROLE_HEADER=true` and is intended for controlled transition/testing only.
+## 7) Security Note (Important)
+Protected APIs use local authenticated session identity as the security boundary.
+- `x-user-role` may appear in legacy clients but is not authoritative in production.
+- Compatibility header mode is opt-in via `ALLOW_LEGACY_ROLE_HEADER=true`.
 
-## 7) Do‑Not‑Touch / Caution
-- Avoid editing `frontend/src/legacy/InspectFlowDemo.jsx` unless explicitly asked.
+## 8) Caution
+- Avoid editing `frontend/src/legacy/InspectFlowDemo.jsx` unless explicitly requested.
 - Change DB schema only with explicit request and a migration plan.
 
-## 8) Implementation Constraints
-- R1 includes local auth/session; protected route enforcement must use authenticated identity.
-- Legacy UI role selection is not an authentication substitute.
-- Keep `docs/test-plan.md` aligned with major behavioral changes.
-
-## 9) Git / Workflow
-- No commit conventions specified.
-- Do not create branches or commits unless explicitly asked.
-
-## 10) When In Doubt
-- Prefer docs over code for intent; use code for exact behavior.
-- If a task spans frontend + backend, read both entrypoints before proposing a change.
-
-## 11) Forward Progress / Decision Gates
-- Default behavior: proceed with implementation using reasonable assumptions.
-- Stop only when blocked (missing critical info) or when a major product/architecture decision requires user input.
-- When you proceed with assumptions, state them clearly in the response.
-
-## 12) Thread Hygiene / Context Windows
-- Start a new thread when:
-  - Switching to a different feature/area (frontend ↔ backend, testing ↔ UX, etc.).
-  - The request is unrelated to the thread’s main purpose.
-  - The thread is long and context is being repeatedly re‑explained.
-  - Earlier assumptions no longer hold.
-- Stay in the same thread when:
-  - Iterating on the same feature or file set.
-  - The active plan still applies.
-  - You want continuity for a single milestone.
-- Assistant behavior:
-  - If a request appears to drift from the thread’s main purpose, call it out and prompt the user to start a new thread.
-
-## 13) Global Priority + Claim Workflow
-- `STATUS.md` is the canonical global execution queue.
-- `docs/backlog.md` is the detailed backlog spec keyed by stable `BL-###` IDs.
+## 9) Global Queue Rules
+- `STATUS.md` is the canonical execution queue.
+- `docs/backlog.md` is the detailed backlog keyed by `BL-###` IDs.
 - `WORKLOG.md` is the immutable completion log.
 - Start from the highest-ranked eligible item in `STATUS.md`.
-- Claim work before implementation by setting `Status`, `Owner`, and `Updated`.
-- Soft claim policy: one lead owner is required; collaborators are allowed only when explicitly listed in `Owner`.
-- Only the Coordinator may change global `Rank` or `Priority`.
+- Only the coordinator may change global `Rank` or `Priority`.
 - Stale handoff rule: if `Updated` is older than 24 hours, another agent may claim the item after adding a handoff note in `STATUS.md`.
-- Completion flow: remove/close the active queue entry in `STATUS.md`, then append a dated result in `WORKLOG.md`.
+
+## 10) Forward Progress and Stop Conditions
+- Default behavior: proceed with reasonable assumptions.
+- Stop only when blocked by missing critical information or when a major product/architecture decision is required.
+- State assumptions explicitly in the response.
+
+## 11) Thread Hygiene
+Start a new thread when:
+- Switching to a different feature area.
+- The request is unrelated to the thread's main purpose.
+- The thread is long and key assumptions keep changing.
+
+Stay in the same thread when:
+- Iterating on the same feature or file set.
+- The current plan still applies.

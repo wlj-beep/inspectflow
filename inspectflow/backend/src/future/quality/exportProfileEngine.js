@@ -1,4 +1,8 @@
+import crypto from "node:crypto";
+
 const PLACEHOLDER_PATTERN = /{{\s*([^}|]+?)\s*(?:\|\s*([a-zA-Z0-9_]+))?\s*}}/g;
+const ID_PATTERN = /^[a-z0-9][a-z0-9_-]*$/i;
+const VERSION_PATTERN = /^\d+\.\d+\.\d+$/;
 
 const DEFAULT_FORMATTERS = {
   upper: (value) => String(value ?? "").toUpperCase(),
@@ -59,6 +63,19 @@ function normalizeTemplateEntries(templateEntries) {
   throw new Error("templates must be an array or object map");
 }
 
+function stableStringify(value) {
+  if (value === null || typeof value !== "object") {
+    return JSON.stringify(value);
+  }
+
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => stableStringify(entry)).join(",")}]`;
+  }
+
+  const keys = Object.keys(value).sort();
+  return `{${keys.map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(",")}}`;
+}
+
 export function createTemplateRegistry(templateEntries, formatters = DEFAULT_FORMATTERS) {
   const templates = normalizeTemplateEntries(templateEntries);
   const registry = new Map();
@@ -104,6 +121,12 @@ function normalizeProfile(profile) {
   if (!id || !name || templateIds.length === 0) {
     throw new Error("profile requires id, name, and templateIds");
   }
+  if (!ID_PATTERN.test(id)) {
+    throw new Error(`profile id must match ${ID_PATTERN}`);
+  }
+  if (!VERSION_PATTERN.test(version)) {
+    throw new Error("profile version must match MAJOR.MINOR.PATCH");
+  }
 
   return {
     id,
@@ -114,7 +137,89 @@ function normalizeProfile(profile) {
   };
 }
 
+export function validateExportProfilePack({ profiles = [], templates = {} }) {
+  const errors = [];
+  let templateEntries = [];
+
+  try {
+    templateEntries = normalizeTemplateEntries(templates);
+  } catch (error) {
+    errors.push(error instanceof Error ? error.message : String(error));
+  }
+
+  const templateIds = new Set();
+  for (const template of templateEntries) {
+    const id = String(template?.id ?? "").trim();
+    const content = String(template?.content ?? "");
+
+    if (!id) {
+      errors.push("template id is required");
+      continue;
+    }
+    if (!ID_PATTERN.test(id)) {
+      errors.push(`template id must match ${ID_PATTERN}: ${id}`);
+    }
+    if (templateIds.has(id)) {
+      errors.push(`duplicate template id: ${id}`);
+    }
+    templateIds.add(id);
+
+    if (!content.trim()) {
+      errors.push(`template ${id} content is required`);
+    }
+  }
+
+  const profileIds = new Set();
+  for (const profile of profiles) {
+    const id = String(profile?.id ?? "").trim();
+    const version = String(profile?.version ?? "").trim();
+    const name = String(profile?.name ?? "").trim();
+    const refs = Array.isArray(profile?.templateIds) ? profile.templateIds : [];
+
+    if (!id || !name) {
+      errors.push("profile requires id and name");
+      continue;
+    }
+    if (!ID_PATTERN.test(id)) {
+      errors.push(`profile id must match ${ID_PATTERN}: ${id}`);
+    }
+    if (!VERSION_PATTERN.test(version)) {
+      errors.push(`profile ${id} version must match MAJOR.MINOR.PATCH`);
+    }
+    if (profileIds.has(id)) {
+      errors.push(`duplicate profile id: ${id}`);
+    }
+    profileIds.add(id);
+
+    if (refs.length === 0) {
+      errors.push(`profile ${id} must reference at least one template`);
+      continue;
+    }
+
+    for (const templateId of refs) {
+      const normalized = String(templateId ?? "").trim();
+      if (!templateIds.has(normalized)) {
+        errors.push(`profile ${id} references missing template ${normalized}`);
+      }
+    }
+  }
+
+  return {
+    ok: errors.length === 0,
+    errors,
+    contractId: "QUAL-FAI-v2",
+    exportContractId: "QUAL-EXPORT-v1",
+    profileCount: profileIds.size,
+    templateCount: templateIds.size
+  };
+}
+
 export function createExportProfileEngine({ profiles, templates, formatters = {} }) {
+  const validation = validateExportProfilePack({ profiles, templates });
+  if (!validation.ok) {
+    throw new Error(`invalid export profile pack: ${validation.errors.join("; ")}`);
+  }
+
   const formatterRegistry = {
     ...DEFAULT_FORMATTERS,
     ...formatters
@@ -149,7 +254,7 @@ export function createExportProfileEngine({ profiles, templates, formatters = {}
   };
 }
 
-export function renderFirstArticleExport(engine, { profileId, input, context = {} }) {
+export function renderFirstArticleExport(engine, { profileId, input, context = {}, generatedAt }) {
   if (!engine?.hasProfile || !engine?.templateRegistry) {
     throw new Error("invalid export profile engine instance");
   }
@@ -177,8 +282,29 @@ export function renderFirstArticleExport(engine, { profileId, input, context = {
     profileId: profile.id,
     profileName: profile.name,
     profileVersion: profile.version,
-    generatedAt: new Date().toISOString(),
+    generatedAt: generatedAt ?? new Date().toISOString(),
     artifacts
+  };
+}
+
+export function createExportCompatibilitySnapshot({ profileId, profileVersion, artifacts, fixtureId = "default" }) {
+  const snapshot = {
+    contractId: "QUAL-EXPORT-v1",
+    fixtureId,
+    profileId,
+    profileVersion,
+    artifacts: Array.isArray(artifacts)
+      ? artifacts.map((artifact) => ({
+          templateId: artifact.templateId,
+          content: String(artifact.content ?? "")
+        }))
+      : []
+  };
+
+  const checksum = crypto.createHash("sha256").update(stableStringify(snapshot)).digest("hex");
+  return {
+    ...snapshot,
+    checksum
   };
 }
 

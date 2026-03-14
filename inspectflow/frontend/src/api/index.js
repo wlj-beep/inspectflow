@@ -109,6 +109,7 @@ export const api = {
     toolsCsv: (csvText, role) => apiFetch("/api/imports/tools/csv", { method: "POST", body: { csvText }, role }),
     partDimensionsCsv: (csvText, role) => apiFetch("/api/imports/part-dimensions/csv", { method: "POST", body: { csvText }, role }),
     jobsCsv: (csvText, role) => apiFetch("/api/imports/jobs/csv", { method: "POST", body: { csvText }, role }),
+    previewErpJobsAdapter: (payload, role) => apiFetch("/api/imports/adapters/erp-jobs/preview", { method: "POST", body: payload, role }),
     measurementsBulk: (payload, role) => apiFetch("/api/imports/measurements/bulk", { method: "POST", body: payload, role }),
     jobMeasurementsCsv: (jobId, payload, role) => apiFetch(`/api/imports/jobs/${encodeURIComponent(jobId)}/measurements/csv`, { method: "POST", body: payload, role }),
     integrations: (role) => apiFetch("/api/imports/integrations", { role }),
@@ -116,11 +117,34 @@ export const api = {
     updateIntegration: (id, payload, role) => apiFetch(`/api/imports/integrations/${id}`, { method: "PUT", body: payload, role }),
     pullIntegration: (id, payload, role) => apiFetch(`/api/imports/integrations/${id}/pull`, { method: "POST", body: payload, role }),
     runs: (role, limit = 50) => apiFetch(`/api/imports/runs?limit=${encodeURIComponent(limit)}`, { role }),
+    supportBundles: (role, limit = 25) => apiFetch(`/api/imports/support-bundles?limit=${encodeURIComponent(limit)}`, { role }),
+    runSupportBundle: (id, role) => apiFetch(`/api/imports/runs/${encodeURIComponent(id)}/support-bundle`, { role }),
     unresolved: (role, filters = {}) => {
       const qs = new URLSearchParams(filters).toString();
       return apiFetch(`/api/imports/unresolved${qs ? `?${qs}` : ""}`, { role });
     },
     resolveUnresolved: (id, payload, role) => apiFetch(`/api/imports/unresolved/${id}/resolve`, { method: "POST", body: payload, role }),
     ignoreUnresolved: (id, payload, role) => apiFetch(`/api/imports/unresolved/${id}/ignore`, { method: "POST", body: payload, role })
+  },
+  analytics: {
+    martStatus: (role) => apiFetch("/api/analytics/marts/status", { role }),
+    rebuildMarts: (payload, role) => apiFetch("/api/analytics/marts/rebuild", { method: "POST", body: payload, role }),
+    kpiDefinitions: (role) => apiFetch("/api/analytics/kpis/definitions", { role }),
+    kpiDashboard: (filters = {}, role) => {
+      const qs = new URLSearchParams(filters).toString();
+      return apiFetch(`/api/analytics/kpis/dashboard${qs ? `?${qs}` : ""}`, { role });
+    },
+    calibrationImpact: (filters = {}, role) => {
+      const qs = new URLSearchParams(filters).toString();
+      return apiFetch(`/api/analytics/performance/calibration-impact${qs ? `?${qs}` : ""}`, { role });
+    },
+    refreshCalibrationImpact: (payload, role) => apiFetch("/api/analytics/performance/calibration-impact/refresh", { method: "POST", body: payload, role }),
+    riskEvents: (filters = {}, role) => {
+      const qs = new URLSearchParams(filters).toString();
+      return apiFetch(`/api/analytics/risk-events${qs ? `?${qs}` : ""}`, { role });
+    },
+    acknowledgeRiskEvent: (id, payload, role) => apiFetch(`/api/analytics/risk-events/${encodeURIComponent(id)}/acknowledge`, { method: "POST", body: payload, role }),
+    escalateRiskEventToIssue: (id, payload, role) => apiFetch(`/api/analytics/risk-events/${encodeURIComponent(id)}/escalate-issue`, { method: "POST", body: payload, role }),
+    resolveRiskEvent: (id, payload, role) => apiFetch(`/api/analytics/risk-events/${encodeURIComponent(id)}/resolve`, { method: "POST", body: payload, role })
   }
 };

@@ -50,6 +50,20 @@ Adapters must map source-specific payloads into this envelope before domain proc
 - Deterministic unresolved-item routing for ambiguous rows.
 - Run-state visibility suitable for support and audit review.
 
+## Runtime Execution Contract (`INT-CONNECTOR-v2`)
+- Configured integration pulls and webhook imports execute through connector runtime orchestration.
+- Runtime status is deterministic:
+  - `success`: no row failures.
+  - `partial`: at least one failure and at least one successful insert/update.
+  - `error`: terminal failure with no successful row persistence.
+- Duplicate replay attempts short-circuit via idempotency keys and return `duplicate=true` with no additional row writes.
+- Run logs persist runtime attempt metadata (attempt count/details, idempotency key, replay metadata) in `import_runs.summary.runtime`.
+
+## Idempotency and External-ID Contract (`INT-IDEMPOTENCY-v2`)
+- Connector idempotency keys persist in `import_idempotency_ledger` with first/last run linkage and hit counts for audit-safe replay tracking.
+- Imported entity external IDs persist in `import_external_entity_refs` for `jobs`, `tools`, `part_dimensions`, and `measurements` payloads.
+- Replayed payloads increment idempotency and external-reference hit counters without mutating domain entities a second time.
+
 ## Open Decisions (Managed by Release Gates)
 - Exact overwrite/merge policies per domain object.
 - Connector authentication profile templates by customer environment.

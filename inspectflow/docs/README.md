@@ -23,7 +23,7 @@
 - Data Model: `data-model.md`
 - Integration Strategy: `integration-strategy.md`
 - Backup Plan: `backup-plan.md`
-- Backup & Restore Runbook: `backup-restore-runbook.md`
+- Backup and Restore Runbook: `backup-restore-runbook.md`
 - Delivery Plan: `delivery-plan.md`
 - Auth Session Foundation: `auth-session-foundation.md`
 - On-Prem Install Runbook: `onprem-install-runbook.md`
@@ -47,7 +47,8 @@
 - Analytics: `stream-contracts-ana.md`
 - Commercialization: `stream-contracts-comm.md`
 
-## Supporting Docs
-- ADRs: `adr/`
+## Operations and Supporting Docs
+- Multi-Agent Playbook: `operations/multi-agent-playbook.md`
 - Agent Roles: `agent-roles.md`
+- ADRs: `adr/`
 - Import Templates: `templates/`

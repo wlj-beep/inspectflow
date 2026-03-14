@@ -11,7 +11,10 @@ Platform foundations: auth, authorization enforcement, deployment/runtime reliab
 
 ## Consumes
 - `COMM-LICENSE-v1` for entitlement policy metadata.
-- `OPS-DOMAIN-v1` and `QUAL-TRACE-v1` for coverage of audited actions.
+- `OPS-WORKCENTER-v1` for audited work center action coverage.
+- `OPS-ROUTING-v1` for audited routing action coverage.
+- `OPS-JOBFLOW-v1` for audited job lifecycle action coverage.
+- `QUAL-TRACE-v1` for coverage of audited actions.
 
 ## Versioning Policy
 - Backward-compatible changes only inside a release.

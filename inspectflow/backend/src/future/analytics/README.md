@@ -16,6 +16,7 @@ Standalone R3 scaffolding for:
 - `anomalyRules.js`
   - reusable condition evaluator
   - sample rule pack
+  - risk event envelope + dedupe key helpers for downstream escalation pipelines
 
 ## Safe-by-default behavior
 - No dashboard wiring.

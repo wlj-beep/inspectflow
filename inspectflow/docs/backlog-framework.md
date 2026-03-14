@@ -48,14 +48,14 @@ Higher score means earlier scheduling within the release.
 - Keep `BL-###` format for all tracked items.
 - `STATUS.md` remains the active queue with existing schema.
 - Stream/team tags are appended in `Work Item` text only, not by schema changes.
-- Controller and hub reports must reference `BL-###` IDs directly to stay queue-compatible.
-- Non-coding control findings cannot introduce alternate ID namespaces.
+- Multi-agent reports must reference `BL-###` IDs directly to stay queue-compatible.
+- Execution findings cannot introduce alternate ID namespaces.
 
-## Control Plane Reporting Rules
-- Control Hub publishes one merged `Cycle Control Ledger` per cycle.
-- Controllers (`T/D/R`) are read-only and report by BL item, severity, and required action.
-- Red findings must include explicit stop condition and clear criteria to reopen new starts.
-- Builder next-step packets must be generated each cycle to avoid idle handoff delays.
+## Multi-Agent Reporting Rules
+- The controller publishes one consolidated run report per cycle.
+- Sub-agent findings must include: `BL IDs`, severity, required action, and evidence.
+- Red findings must include explicit stop condition and clear criteria to reopen starts.
+- Sub-agent task packets should be regenerated when scope or blockers change.
 
 ## Definition of Ready
 - All required metadata filled.

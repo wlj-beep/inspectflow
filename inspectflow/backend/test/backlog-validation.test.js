@@ -948,6 +948,180 @@ describe("Backlog validation hardening", () => {
     expect(pull.status).toBe(200);
     expect(pull.body.inserted).toBe(1);
     expect(pull.body.runId).toBeTruthy();
+    expect(pull.body.duplicate).toBe(false);
+    expect(Array.isArray(pull.body.runtimeAttempts)).toBe(true);
+  });
+
+  it("deduplicates repeated integration pulls via connector runtime idempotency", async () => {
+    const suffix = crypto.randomUUID().slice(0, 5).toUpperCase();
+    const jobId = `J-IDEM-${suffix}`;
+
+    const created = await request(app)
+      .post("/api/imports/integrations")
+      .set("x-user-role", "Admin")
+      .send({
+        name: `Idempotent Feed ${suffix}`,
+        sourceType: "api_pull",
+        importType: "jobs",
+        endpointUrl: null,
+        enabled: true
+      });
+    expect(created.status).toBe(201);
+
+    const payload = {
+      csvText: [
+        "job_id,part_id,part_revision,op_number,lot,qty,status",
+        `${jobId},1234,A,020,Lot Idem,4,open`
+      ].join("\n")
+    };
+
+    const first = await request(app)
+      .post(`/api/imports/integrations/${created.body.id}/pull`)
+      .set("x-user-role", "Admin")
+      .send(payload);
+    expect(first.status).toBe(200);
+    expect(first.body.inserted).toBe(1);
+    expect(first.body.duplicate).toBe(false);
+
+    const second = await request(app)
+      .post(`/api/imports/integrations/${created.body.id}/pull`)
+      .set("x-user-role", "Admin")
+      .send(payload);
+    expect(second.status).toBe(200);
+    expect(second.body).toMatchObject({
+      inserted: 0,
+      updated: 0,
+      failed: 0,
+      duplicate: true,
+      runStatus: "success"
+    });
+
+    const jobCount = await query(
+      "SELECT COUNT(*)::INT AS count FROM jobs WHERE id=$1",
+      [jobId]
+    );
+    expect(jobCount.rows[0]?.count).toBe(1);
+
+    const ledger = await query(
+      `SELECT source_type, import_type, hit_count, first_run_id, last_run_id, first_status, last_status
+       FROM import_idempotency_ledger
+       WHERE idempotency_key=$1`,
+      [second.body.idempotencyKey]
+    );
+    expect(ledger.rows[0]).toMatchObject({
+      source_type: "api_pull",
+      import_type: "jobs",
+      hit_count: 2,
+      first_run_id: first.body.runId,
+      last_run_id: second.body.runId,
+      first_status: "success",
+      last_status: "success"
+    });
+
+    const externalRef = await query(
+      `SELECT import_type, entity_type, external_id, hit_count
+       FROM import_external_entity_refs
+       WHERE import_type='jobs' AND entity_type='job' AND external_id=$1`,
+      [jobId]
+    );
+    expect(externalRef.rows[0]).toMatchObject({
+      import_type: "jobs",
+      entity_type: "job",
+      external_id: jobId,
+      hit_count: 2
+    });
+  });
+
+  it("persists external-id mappings and idempotency hits for webhook entity imports", async () => {
+    const suffix = crypto.randomUUID().slice(0, 6).toUpperCase();
+    const toolName = `Webhook Tool ${suffix}`;
+    const externalId = `TOOL-EXT-${suffix}`;
+    const payload = {
+      idempotencyToken: `tok_tool_${suffix}`,
+      csvText: [
+        "name,type,it_num,size,active,visible,external_id",
+        `${toolName},Variable,IT-WH-${suffix},0.250,true,true,${externalId}`
+      ].join("\n")
+    };
+
+    const first = await request(app)
+      .post("/api/imports/webhooks/tools")
+      .send(payload);
+    expect(first.status).toBe(200);
+    expect(first.body.inserted).toBe(1);
+    expect(first.body.duplicate).toBe(false);
+
+    const second = await request(app)
+      .post("/api/imports/webhooks/tools")
+      .send(payload);
+    expect(second.status).toBe(200);
+    expect(second.body).toMatchObject({
+      inserted: 0,
+      updated: 0,
+      failed: 0,
+      duplicate: true,
+      runStatus: "success"
+    });
+
+    const refs = await query(
+      `SELECT import_type, entity_type, external_id, source_type, hit_count
+       FROM import_external_entity_refs
+       WHERE import_type='tools' AND entity_type='tool' AND external_id=$1`,
+      [externalId]
+    );
+    expect(refs.rows[0]).toMatchObject({
+      import_type: "tools",
+      entity_type: "tool",
+      external_id: externalId,
+      source_type: "webhook",
+      hit_count: 2
+    });
+
+    const ledger = await query(
+      `SELECT source_type, import_type, hit_count
+       FROM import_idempotency_ledger
+       WHERE idempotency_key=$1`,
+      [second.body.idempotencyKey]
+    );
+    expect(ledger.rows[0]).toMatchObject({
+      source_type: "webhook",
+      import_type: "tools",
+      hit_count: 2
+    });
+  });
+
+  it("captures replay metadata for terminal integration failures", async () => {
+    const suffix = crypto.randomUUID().slice(0, 5).toUpperCase();
+    const created = await request(app)
+      .post("/api/imports/integrations")
+      .set("x-user-role", "Admin")
+      .send({
+        name: `Replay Feed ${suffix}`,
+        sourceType: "api_pull",
+        importType: "jobs",
+        endpointUrl: null,
+        enabled: true
+      });
+    expect(created.status).toBe(201);
+
+    const failed = await request(app)
+      .post(`/api/imports/integrations/${created.body.id}/pull`)
+      .set("x-user-role", "Admin")
+      .send({ csvText: "job_id,part_id,op_number,lot,qty,status" });
+    expect(failed.status).toBe(400);
+    expect(failed.body.runStatus).toBe("error");
+    expect(failed.body.replayMetadata).toMatchObject({
+      schemaVersion: "int-connector-replay-v1",
+      sourceType: "api_pull",
+      importType: "jobs"
+    });
+
+    const runRes = await query(
+      "SELECT status, summary FROM import_runs WHERE id=$1",
+      [failed.body.runId]
+    );
+    expect(runRes.rows[0]?.status).toBe("error");
+    expect(runRes.rows[0]?.summary?.runtime?.replayMetadata?.schemaVersion).toBe("int-connector-replay-v1");
   });
 
   it("supports work center master CRUD and operation assignment audit history", async () => {

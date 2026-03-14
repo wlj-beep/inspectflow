@@ -14,19 +14,8 @@ Canonical global execution queue for active backlog work.
 
 | Rank | Item ID | Priority | Status | Owner | Updated | Work Item |
 | --- | --- | --- | --- | --- | --- | --- |
-| 1 | BL-015 | P0 | In Progress | @codex | 2026-03-14T13:22:11-04:00 | [PLAT-Team Atlas] Implement local auth/session foundation contract (`PLAT-AUTH-v1`). |
-| 2 | BL-019 | P0 | In Progress | @codex | 2026-03-14T13:22:11-04:00 | [PLAT-Team Atlas] Deliver on-prem install packaging contract (`PLAT-DEPLOY-v1`). |
-| 3 | BL-021 | P0 | In Progress | @codex | 2026-03-14T13:22:11-04:00 | [PLAT-Team Atlas] Implement automated backup/restore workflow (`PLAT-BACKUP-v1`). |
-| 6 | BL-028 | P1 | Queued |  | 2026-03-14T13:20:00-04:00 | [OPS-Team Forge] Modularize frontend domains for parallel feature delivery (`OPS-JOBFLOW-v1`). |
-| 7 | BL-031 | P3 | In Progress | @codex | 2026-03-14T13:27:23-04:00 | [INT-Team Bridge] Agent D isolated connector runtime hardening scaffolding (`INT-CONNECTOR-v2`) under `backend/src/services/integration/*`. |
-| 8 | BL-032 | P3 | In Progress | @codex | 2026-03-14T13:27:23-04:00 | [INT-Team Bridge] Agent D isolated idempotency/external key scaffolding (`INT-IDEMPOTENCY-v2`) under `backend/src/services/idempotency/*`. |
-| 9 | BL-034 | P3 | In Progress | @codex | 2026-03-14T13:26:14-04:00 | [QUAL-Team Helix] Agent C future-safe first-article engine scaffolding (`QUAL-FAI-v2`) in isolated `future/` modules only. |
-| 10 | BL-035 | P3 | In Progress | @codex | 2026-03-14T13:26:14-04:00 | [QUAL-Team Helix] Agent C future-safe export profile pack scaffolding (`QUAL-EXPORT-v1`) in isolated `future/` modules only. |
-| 11 | BL-039 | P3 | In Progress | @codex | 2026-03-14T13:27:23-04:00 | [ANA-Team Signal] Agent D isolated analytics mart scaffolding (`ANA-MART-v3`) under `backend/src/services/analytics/*`. |
-| 12 | BL-040 | P3 | In Progress | @codex | 2026-03-14T13:27:23-04:00 | [ANA-Team Signal] Agent D isolated KPI contract scaffolding (`ANA-KPI-v3`) under `backend/src/services/analytics/*`. |
-| 13 | BL-042 | P3 | In Progress | @codex | 2026-03-14T13:26:14-04:00 | [QUAL-Team Helix] Agent C future-safe anomaly/risk scaffolding (`ANA-RISK-v3`) in isolated `future/` modules only. |
-| 16 | BL-033 | P3 | In Progress | @codex | 2026-03-14T13:27:23-04:00 | [INT-Team Bridge] Agent D ERP/job adapter contract path scaffolding (`INT-INGEST-v1`) via isolated adapter contract modules. |
-| 17 | BL-038 | P3 | In Progress | @codex | 2026-03-14T13:27:23-04:00 | [INT-Team Bridge] Agent D observability/support bundle scaffolding (`INT-CONNECTOR-v2`) under `backend/src/services/observability/*`. |
+| 9 | BL-034 | P3 | Blocked | @codex | 2026-03-14T17:25:18-04:00 | [QUAL-Team Helix] Blocked by BL-027 (dependency incomplete). Remaining acceptance gap: BL-027 export acceptance evidence is required before `QUAL-FAI-v2` first-article workflow hardening proceeds. |
+| 10 | BL-035 | P3 | Blocked | @codex | 2026-03-14T17:25:18-04:00 | [QUAL-Team Helix] Blocked by BL-034 (dependency incomplete). Remaining acceptance gap: BL-034 must complete acceptance before `QUAL-EXPORT-v1` profile-pack delivery can proceed. |
 
 ## Handoff Notes
 
@@ -50,7 +39,20 @@ Canonical global execution queue for active backlog work.
 | 2026-03-14 | BL-015 | @codex | @owner | Completed `PLAT-AUTH-v1`: local auth endpoints (`/api/auth/*`), session middleware/cookies, capability enforcement tied to authenticated identity, and auth/protected-route regression coverage. |
 | 2026-03-14 | BL-019 | @codex | @owner | Completed `PLAT-DEPLOY-v1`: on-prem install/start/stop/health/rollback packaging scripts under `deploy/onprem` with environment template and runbook. |
 | 2026-03-14 | BL-021 | @codex | @owner | Completed `PLAT-BACKUP-v1`: automated backup/restore/verify scripts with retention + schedule entrypoint and structured audit logging runbook. |
+| 2026-03-14 | BL-015 | @codex | @owner | Cycle C0 reconciliation published with acceptance evidence links: `docs/operations/cycles/2026-03-14-C0-atlas-reconciliation.md`. |
+| 2026-03-14 | BL-019 | @codex | @owner | Cycle C0 reconciliation published with acceptance evidence links: `docs/operations/cycles/2026-03-14-C0-atlas-reconciliation.md`. |
+| 2026-03-14 | BL-021 | @codex | @owner | Cycle C0 reconciliation published with acceptance evidence links: `docs/operations/cycles/2026-03-14-C0-atlas-reconciliation.md`. |
 | 2026-03-14 | BL-022 | @codex | @owner | Completed work center master CRUD, operation assignment endpoints, and assignment/work-center audit history. |
 | 2026-03-14 | BL-024 | @codex | @owner | Completed per-piece comments in record submit/review/export flows with comment audit lineage and serial support. |
 | 2026-03-14 | BL-025 | @codex | @owner | Completed quantity adjustment workflow with reason, actor, and before/after audit records. |
 | 2026-03-14 | BL-026 | @codex | @owner | Completed traceability query service filters (job/part/lot/piece/serial) including correction and quantity-adjustment lineage. |
+| 2026-03-14 | BL-028 | @codex | @owner | Completed frontend modularization slice: extracted domain constants/mappers/adapter modules and rewired legacy shell bootstrap/session/record-detail flows to stable `domains/jobflow` adapter APIs. |
+| 2026-03-14 | BL-031 | @codex | @owner | Completed `INT-CONNECTOR-v2`: wired connector runtime orchestration into configured integration and webhook execution paths with deterministic statusing, replay/idempotency metadata run-log persistence, and API regression coverage. |
+| 2026-03-14 | BL-032 | @codex | @owner | Completed `INT-IDEMPOTENCY-v2`: persisted import idempotency ledger and external-entity reference mappings across tools/jobs/part-dimensions/measurements with runtime-enforced duplicate short-circuit semantics and regression coverage. |
+| 2026-03-14 | BL-039 | @codex | @owner | Completed `ANA-MART-v3`: production mart build service and admin runtime endpoints now materialize analytics marts from traceable source contracts with deterministic rebuild snapshots and regression coverage. |
+| 2026-03-14 | BL-041 | @owner | @codex | Activated queue claim after BL-039 completion to deliver calibration-impact analytics and BL-042 integration path. |
+| 2026-03-14 | BL-041 | @codex | @owner | Completed `ANA-KPI-v3` calibration-impact analytics (`/api/analytics/performance/calibration-impact*`) with BL-042 integration path: `ANA-RISK-v3` event + `QUAL-RISK-WORKFLOW-v1` escalation generation, durable `ana_risk_event_log` persistence/resolve endpoints, runbook, and regression coverage; BL-042 dependency is now cleared. |
+| 2026-03-14 | BL-033 | @codex | @owner | Completed `INT-INGEST-v1` runtime integration: ERP job adapter pack (`erp_job_v1`) now maps external rows through canonical envelope contracts in managed imports, with adapter preview endpoint and regression coverage. |
+| 2026-03-14 | BL-038 | @codex | @owner | Completed `INT-CONNECTOR-v2` observability integration: support bundles are persisted in import run runtime summaries and exposed through admin-safe retrieval endpoints (`/api/imports/runs/:id/support-bundle`, `/api/imports/support-bundles`) with regression coverage. |
+| 2026-03-14 | BL-040 | @codex | @owner | Completed `ANA-KPI-v3` operator/supervisor dashboard runtime APIs (`/api/analytics/kpis/definitions`, `/api/analytics/kpis/dashboard`) with validated KPI contracts and mart-backed aggregate/breakdown/trend outputs. |
+| 2026-03-14 | BL-042 | @codex | @owner | Completed `ANA-RISK-v3` + `QUAL-RISK-WORKFLOW-v1` lifecycle integration: risk-event acknowledge/escalate-to-issue/resolve workflows now persist actor metadata, linked issue IDs, and traceable escalation evidence with regression coverage. |

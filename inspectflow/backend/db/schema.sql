@@ -351,6 +351,127 @@ CREATE TABLE IF NOT EXISTS import_unresolved_items (
   resolved_at TIMESTAMPTZ
 );
 
+CREATE TABLE IF NOT EXISTS import_idempotency_ledger (
+  id BIGSERIAL PRIMARY KEY,
+  idempotency_key TEXT NOT NULL UNIQUE,
+  source_type TEXT NOT NULL,
+  import_type TEXT NOT NULL,
+  external_key TEXT NOT NULL,
+  payload_hash TEXT NOT NULL,
+  payload_bytes INTEGER NOT NULL DEFAULT 0,
+  first_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  hit_count INTEGER NOT NULL DEFAULT 1,
+  first_run_id INTEGER REFERENCES import_runs(id) ON DELETE SET NULL,
+  last_run_id INTEGER REFERENCES import_runs(id) ON DELETE SET NULL,
+  first_status TEXT,
+  last_status TEXT
+);
+
+CREATE TABLE IF NOT EXISTS import_external_entity_refs (
+  id BIGSERIAL PRIMARY KEY,
+  import_type TEXT NOT NULL,
+  entity_type TEXT NOT NULL,
+  external_id TEXT NOT NULL,
+  source_type TEXT NOT NULL,
+  latest_internal_ref JSONB NOT NULL DEFAULT '{}'::JSONB,
+  first_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  hit_count INTEGER NOT NULL DEFAULT 1,
+  first_run_id INTEGER REFERENCES import_runs(id) ON DELETE SET NULL,
+  last_run_id INTEGER REFERENCES import_runs(id) ON DELETE SET NULL,
+  UNIQUE (import_type, entity_type, external_id)
+);
+
+CREATE TABLE IF NOT EXISTS ana_mart_inspection_fact (
+  record_id INTEGER NOT NULL REFERENCES records(id) ON DELETE CASCADE,
+  dimension_id INTEGER NOT NULL,
+  piece_number INTEGER NOT NULL,
+  site_id TEXT NOT NULL DEFAULT 'default',
+  job_id TEXT NOT NULL,
+  part_id TEXT NOT NULL,
+  operation_id TEXT NOT NULL,
+  lot TEXT,
+  work_center_id TEXT,
+  operator_user_id INTEGER,
+  event_at TIMESTAMPTZ NOT NULL,
+  measurement_count INTEGER NOT NULL DEFAULT 1,
+  oot_count INTEGER NOT NULL DEFAULT 0,
+  pass_count INTEGER NOT NULL DEFAULT 0,
+  rework_count INTEGER NOT NULL DEFAULT 0,
+  source_run_id INTEGER REFERENCES import_runs(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (record_id, dimension_id, piece_number)
+);
+
+CREATE TABLE IF NOT EXISTS ana_mart_connector_run_fact (
+  run_id INTEGER PRIMARY KEY REFERENCES import_runs(id) ON DELETE CASCADE,
+  site_id TEXT NOT NULL DEFAULT 'default',
+  connector_id TEXT NOT NULL,
+  status TEXT NOT NULL,
+  run_count INTEGER NOT NULL DEFAULT 1,
+  failure_count INTEGER NOT NULL DEFAULT 0,
+  replayed_count INTEGER NOT NULL DEFAULT 0,
+  processed_count INTEGER NOT NULL DEFAULT 0,
+  avg_latency_ms INTEGER,
+  run_ended_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS ana_mart_job_rollup_day (
+  site_id TEXT NOT NULL DEFAULT 'default',
+  rollup_date DATE NOT NULL,
+  part_id TEXT NOT NULL,
+  job_id TEXT NOT NULL,
+  total_pieces INTEGER NOT NULL,
+  pass_pieces INTEGER NOT NULL,
+  oot_pieces INTEGER NOT NULL,
+  correction_events INTEGER NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (site_id, rollup_date, part_id, job_id)
+);
+
+CREATE TABLE IF NOT EXISTS ana_mart_build_runs (
+  id BIGSERIAL PRIMARY KEY,
+  trigger_source TEXT NOT NULL,
+  requested_by_role TEXT,
+  requested_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  transform_version TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('success','error')),
+  source_snapshot JSONB NOT NULL DEFAULT '{}'::JSONB,
+  output_snapshot JSONB NOT NULL DEFAULT '{}'::JSONB,
+  error_payload JSONB,
+  started_at TIMESTAMPTZ NOT NULL,
+  completed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS ana_risk_event_log (
+  id BIGSERIAL PRIMARY KEY,
+  dedupe_key TEXT NOT NULL UNIQUE,
+  contract_id TEXT NOT NULL,
+  source TEXT NOT NULL,
+  severity TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','acknowledged','resolved')),
+  event_envelope JSONB NOT NULL,
+  escalation_record JSONB NOT NULL,
+  context JSONB NOT NULL DEFAULT '{}'::JSONB,
+  hit_count INTEGER NOT NULL DEFAULT 1,
+  first_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  acknowledged_by_role TEXT,
+  acknowledged_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  acknowledgement_note TEXT,
+  acknowledged_at TIMESTAMPTZ,
+  linked_issue_id INTEGER REFERENCES issue_reports(id) ON DELETE SET NULL,
+  resolved_by_role TEXT,
+  resolved_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  resolution_note TEXT,
+  resolved_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 ALTER TABLE missing_pieces DROP CONSTRAINT IF EXISTS missing_pieces_reason_check;
 ALTER TABLE missing_pieces ADD CONSTRAINT missing_pieces_reason_check CHECK (reason IN ('Scrapped','Lost','Damaged','Other','Unable to Measure'));
 ALTER TABLE dimensions ADD COLUMN IF NOT EXISTS sampling_interval INTEGER;
@@ -368,6 +489,11 @@ ALTER TABLE operations ADD COLUMN IF NOT EXISTS work_center_id INTEGER;
 ALTER TABLE operations DROP CONSTRAINT IF EXISTS operations_work_center_id_fkey;
 ALTER TABLE operations ADD CONSTRAINT operations_work_center_id_fkey FOREIGN KEY (work_center_id) REFERENCES work_centers(id) ON DELETE SET NULL;
 ALTER TABLE records ADD COLUMN IF NOT EXISTS serial_number TEXT;
+ALTER TABLE ana_risk_event_log ADD COLUMN IF NOT EXISTS acknowledged_by_role TEXT;
+ALTER TABLE ana_risk_event_log ADD COLUMN IF NOT EXISTS acknowledged_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE ana_risk_event_log ADD COLUMN IF NOT EXISTS acknowledgement_note TEXT;
+ALTER TABLE ana_risk_event_log ADD COLUMN IF NOT EXISTS acknowledged_at TIMESTAMPTZ;
+ALTER TABLE ana_risk_event_log ADD COLUMN IF NOT EXISTS linked_issue_id INTEGER REFERENCES issue_reports(id) ON DELETE SET NULL;
 
 CREATE INDEX IF NOT EXISTS idx_part_setup_revisions_part_latest
 ON part_setup_revisions (part_id, revision_index DESC);
@@ -379,6 +505,26 @@ CREATE INDEX IF NOT EXISTS idx_import_runs_created
 ON import_runs (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_import_unresolved_status
 ON import_unresolved_items (status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_import_idempotency_lookup
+ON import_idempotency_ledger (source_type, import_type, external_key);
+CREATE INDEX IF NOT EXISTS idx_import_external_refs_lookup
+ON import_external_entity_refs (import_type, entity_type, external_id);
+CREATE INDEX IF NOT EXISTS idx_ana_mart_inspection_event_at
+ON ana_mart_inspection_fact (event_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ana_mart_inspection_job
+ON ana_mart_inspection_fact (job_id, part_id, operation_id);
+CREATE INDEX IF NOT EXISTS idx_ana_mart_connector_run_ended
+ON ana_mart_connector_run_fact (run_ended_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ana_mart_connector_status
+ON ana_mart_connector_run_fact (connector_id, status);
+CREATE INDEX IF NOT EXISTS idx_ana_mart_job_rollup_date
+ON ana_mart_job_rollup_day (rollup_date DESC, part_id, job_id);
+CREATE INDEX IF NOT EXISTS idx_ana_mart_build_runs_created
+ON ana_mart_build_runs (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ana_risk_event_status
+ON ana_risk_event_log (status, last_seen_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ana_risk_event_linked_issue
+ON ana_risk_event_log (linked_issue_id);
 CREATE INDEX IF NOT EXISTS idx_operations_work_center_id
 ON operations (work_center_id);
 CREATE INDEX IF NOT EXISTS idx_work_centers_active

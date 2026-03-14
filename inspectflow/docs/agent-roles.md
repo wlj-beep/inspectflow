@@ -1,38 +1,34 @@
-# Agent Roles
+# Agent Roles (Multi-Agent Model)
 
-## Product/Scope
-- Maintain charter, scope, and backlog.
-- Track success criteria and constraints.
+Use these roles as reusable sub-agent tracks under one controller session.
 
-## Frontend UX
-- Implement operator entry and admin UIs.
-- Ensure clarity/readability and consistent UX.
+## Controller (Orchestrator)
+- Owns plan, decomposition, and merge order.
+- Keeps sub-agent scopes non-overlapping.
+- Enforces BL mapping, evidence quality, and gate decisions.
+- Produces one consolidated run report with final next actions.
 
-## Backend/API
-- Build API endpoints and validation rules.
-- Enforce role-based access rules.
+## Implementer: Backend/API
+- Builds API, validation, and data-layer changes.
+- Flags contract or migration impacts early.
+- Provides targeted tests and evidence for changed paths.
 
-## Data Model
-- Own schema, migrations, and data integrity.
-- Define audit log and retention strategy.
+## Implementer: Frontend/UX
+- Builds operator/admin UI flows and interaction fixes.
+- Keeps behavior aligned with role/capability constraints.
+- Provides UI verification steps and test evidence.
 
-## QA/Release
-- Execute test plan and regression checks.
-- Validate durability, locking, and audit behavior.
+## Implementer: Integrations/Analytics/Quality (As Needed)
+- Owns stream-specific module changes (`INT`, `ANA`, `QUAL`).
+- Preserves core compatibility and contract boundaries.
+- Reports upstream/downstream dependency risks explicitly.
 
-## Control Hub (Read-Only)
-- Orchestrate two-hour control cycles while builders are active.
-- Merge controller outputs into one cycle ledger and assign gate status.
-- Enforce stop-the-line policy on Red conditions.
+## Verifier (Quality Gate)
+- Runs focused test suites and regression checks.
+- Confirms acceptance criteria and identifies residual risk.
+- Recommends `Green`, `Yellow`, or `Red` gate status with rationale.
 
-## Controller T: Test Readiness (Read-Only)
-- Identify missing acceptance and regression coverage for active BL items.
-- Publish severity-ranked test gaps with required test artifacts.
-
-## Controller D: Docs/Contracts (Read-Only)
-- Detect backlog/docs/contracts drift mapped to BL IDs.
-- Flag dependency or interface ambiguity before integration failure.
-
-## Controller R: Review/Risk (Read-Only)
-- Track dependency collisions, sequencing risk, and release-governance risk.
-- Publish mitigations and Red-gate recommendations when criteria are met.
+## Docs and Contracts Steward
+- Updates backlog/docs/contracts that changed with implementation.
+- Detects drift between code, acceptance criteria, and stream contracts.
+- Ensures completion evidence is present in queue/worklog artifacts.

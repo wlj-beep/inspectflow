@@ -1,33 +1,46 @@
+import {
+  ANA_MART_CONTRACT_ID,
+  ANA_MART_DEFINITIONS,
+  canonicalizeMartFieldName,
+  getMartDefinition as getCanonicalMartDefinition
+} from "../../services/analytics/anaV3Vocabulary.js";
+
 const FIELD_NAME_PATTERN = /^[a-zA-Z][a-zA-Z0-9_]*$/;
 
-export const MART_CONTRACT_ID = "ANA-MART-v3";
-
-export const MART_DEFINITIONS = Object.freeze({
-  inspection_event_mart_v1: Object.freeze({
-    martId: "inspection_event_mart_v1",
-    dimensions: ["siteId", "jobId", "partId", "operationId", "lot", "workcenterId", "operatorId"],
-    measures: ["measurementCount", "ootCount", "passCount", "reworkCount"],
-    timeField: "eventAt"
-  }),
-  connector_run_mart_v1: Object.freeze({
-    martId: "connector_run_mart_v1",
-    dimensions: ["siteId", "connectorId", "status"],
-    measures: ["runCount", "failureCount", "processedCount", "avgLatencyMs"],
-    timeField: "runEndedAt"
-  })
-});
+export const MART_CONTRACT_ID = ANA_MART_CONTRACT_ID;
+export const MART_DEFINITIONS = ANA_MART_DEFINITIONS;
 
 function isFieldName(value) {
   return typeof value === "string" && FIELD_NAME_PATTERN.test(value);
 }
 
+function normalizeField(martId, field, contextLabel, errors, aliasUsage) {
+  if (!isFieldName(field)) {
+    errors.push(`invalid ${contextLabel} field: ${field}`);
+    return null;
+  }
+
+  const canonicalField = canonicalizeMartFieldName(martId, field);
+  if (!canonicalField) {
+    errors.push(`invalid ${contextLabel} field: ${field}`);
+    return null;
+  }
+
+  if (canonicalField !== field) {
+    aliasUsage.push({ from: field, to: canonicalField });
+  }
+
+  return canonicalField;
+}
+
 export function getMartDefinition(martId) {
-  return MART_DEFINITIONS[martId] ?? null;
+  return getCanonicalMartDefinition(martId);
 }
 
 export function validateMartQueryShape({ martId, select = [], groupBy = [], filters = [] }) {
   const definition = getMartDefinition(martId);
   const errors = [];
+  const aliasUsage = [];
 
   if (!definition) {
     return {
@@ -36,47 +49,62 @@ export function validateMartQueryShape({ martId, select = [], groupBy = [], filt
     };
   }
 
-  const allowedFields = new Set([...definition.dimensions, ...definition.measures, definition.timeField]);
+  const normalizedSelect = [];
 
-  const normalizedSelect = select.map((item) => {
-    if (typeof item === "string") {
-      return { field: item };
-    }
-    return item;
-  });
+  for (const item of select) {
+    const entry = typeof item === "string" ? { field: item } : item;
+    const canonicalField = normalizeField(
+      martId,
+      entry?.field,
+      "select",
+      errors,
+      aliasUsage
+    );
 
-  for (const entry of normalizedSelect) {
-    if (!isFieldName(entry?.field) || !allowedFields.has(entry.field)) {
-      errors.push(`invalid select field: ${entry?.field}`);
+    if (!canonicalField) {
       continue;
     }
 
-    if (entry.agg && !definition.measures.includes(entry.field)) {
-      errors.push(`aggregations are only allowed for measure fields: ${entry.field}`);
+    if (entry?.agg && !definition.measures.includes(canonicalField)) {
+      errors.push(`aggregations are only allowed for measure fields: ${entry?.field}`);
+      continue;
     }
+
+    normalizedSelect.push({ ...entry, field: canonicalField });
   }
 
+  const normalizedGroupBy = [];
   for (const field of groupBy) {
-    if (!isFieldName(field) || !definition.dimensions.includes(field)) {
-      errors.push(`invalid groupBy field: ${field}`);
+    const canonicalField = normalizeField(martId, field, "groupBy", errors, aliasUsage);
+    if (!canonicalField) {
+      continue;
     }
+    if (!definition.dimensions.includes(canonicalField)) {
+      errors.push(`invalid groupBy field: ${field}`);
+      continue;
+    }
+    normalizedGroupBy.push(canonicalField);
   }
 
+  const normalizedFilters = [];
   for (const filter of filters) {
-    if (!isFieldName(filter?.field) || !allowedFields.has(filter.field)) {
-      errors.push(`invalid filter field: ${filter?.field}`);
+    const canonicalField = normalizeField(martId, filter?.field, "filter", errors, aliasUsage);
+    if (!canonicalField) {
+      continue;
     }
+    normalizedFilters.push({ ...filter, field: canonicalField });
   }
 
   return {
     valid: errors.length === 0,
     errors,
     contractId: MART_CONTRACT_ID,
+    aliasUsage,
     query: {
       martId,
       select: normalizedSelect,
-      groupBy,
-      filters
+      groupBy: normalizedGroupBy,
+      filters: normalizedFilters
     }
   };
 }

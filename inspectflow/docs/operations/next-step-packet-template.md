@@ -1,20 +1,20 @@
-# Builder Next-Step Packet Template
+# Sub-Agent Task Packet Template
 
-Use one packet per active builder each cycle.
+Use one packet per active sub-agent track in a controller run.
 
 ## Packet
 - `Cycle`: `YYYY-MM-DD-C#`
-- `Builder`: `<thread alias>`
-- `Owned BL IDs`: `BL-###, BL-###`
-- `Current Gate`: `Green | Yellow | Red`
-- `Blocking Conditions`: `None` or explicit blockers
-- `Required Actions This Cycle`:
+- `Track`: `<backend|frontend|verifier|docs|custom>`
+- `Assigned BL IDs`: `BL-###, BL-###`
+- `Scope`: precise boundaries (paths, contracts, acceptance slices)
+- `Out of Scope`: explicit exclusions
+- `Required Actions`:
   1. Action one with measurable completion signal
   2. Action two with measurable completion signal
-- `Do Not Start`:
-  - List any scope blocked by Red gates
+- `Required Evidence`:
+  - file/line references
+  - test or command outputs
 - `Escalate If`:
-  - Clear trigger conditions for immediate escalation
-- `Deliverables Expected by Next Cycle`:
-  - Concrete output list
-
+  - explicit blocker conditions
+- `Expected Deliverables`:
+  - concrete output list for controller merge
