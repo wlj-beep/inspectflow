@@ -1,6 +1,8 @@
 # Contributing to InspectFlow
 
-This repository uses a short-lived branch + pull request workflow.
+This repository supports two workflow modes:
+- `PR Mode` (default): short-lived branch + pull request.
+- `Solo Offline Direct Push Mode` (optional): direct commits/pushes to `main` for single-maintainer offline execution.
 
 ## Branching Standard
 - `main` is protected and releasable at all times.
@@ -30,6 +32,50 @@ This repository uses a short-lived branch + pull request workflow.
 - Preferred: **Squash merge** to keep `main` linear and readable.
 - Use merge commits only when preserving branch history is intentionally required.
 - Do not push directly to `main`.
+
+## Solo Offline Direct Push Mode (Optional)
+Use this mode only when one trusted maintainer owns the repository and wants faster iteration.
+
+### Enable in GitHub (Rulesets path)
+1. Open repository `Settings`.
+2. Open `Rules` -> `Rulesets`.
+3. Open the ruleset that targets the default branch (`main`).
+4. For direct push mode, disable or remove the requirement:
+   - `Require a pull request before merging`.
+5. Save changes.
+
+### Enable in GitHub (Legacy Branch Protection path, if used)
+1. Open repository `Settings`.
+2. Open `Branches`.
+3. Under `Branch protection rules`, edit the rule for `main`.
+4. Uncheck:
+   - `Require a pull request before merging`.
+5. Save changes.
+
+### Recommended minimal safeguards (keep fast, still safe)
+- Keep repository private.
+- Keep 2FA enabled on the GitHub account.
+- Keep local pre-push gate:
+  - `npm run coordination:check`
+  - `npm run test`
+
+### Direct push sequence
+```bash
+git switch main
+git pull --ff-only origin main
+npm run coordination:check
+npm run test
+git add -A
+git commit -m "feat: <summary>"
+git push origin main
+```
+
+### Security note
+Private + single-user reduces collaboration risk, but does not remove risk:
+- local machine compromise,
+- credential/token leak,
+- accidental destructive pushes.
+Direct push mode trades review controls for speed.
 
 ## Recommended Cadence
 - For active work, push at least daily so work is backed up and visible.

@@ -30,6 +30,10 @@ Each backlog item has exactly one owning stream/team.
 5. Breaking contract changes require version bump and release approval.
 6. Completed work updates backlog state and appends `WORKLOG.md`.
 
+## Workflow Mode
+- Default workflow is PR-based with protected `main`.
+- For solo offline execution, direct push mode may be enabled temporarily per `docs/direct-push-mode.md`.
+
 ## Parallel Delivery Model
 - Teams may run in parallel when dependencies are contract-satisfied.
 - Contract-providing team owns interface test fixtures.

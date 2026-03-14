@@ -31,6 +31,7 @@
 - Backlog Snapshot (v1 baseline): `backlog-v1-baseline-2026-03.md`
 - Coordination Plan: `coordination-plan.md`
 - Deployment Governance: `deployment-governance.md`
+- Direct Push Mode: `direct-push-mode.md`
 - Test Plan: `test-plan.md`
 - Roadmap v2/v3/beyond: `roadmap-v2-v3-beyond.md`
 - Conflict Audit: `conflict-audit-2026-03.md`

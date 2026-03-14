@@ -9,6 +9,12 @@ Define release controls for safe delivery from R1 through R4.
 3. `npm run test:ui`
 4. Release-specific manual checks from `docs/test-plan.md`
 
+## Delivery Modes
+- `PR Mode` (default): merge through pull requests on protected `main`.
+- `Solo Offline Direct Push Mode` (optional): direct push to `main` permitted for a single maintainer.
+
+If Direct Push Mode is enabled, keep baseline required checks mandatory before each push.
+
 ## Change Classes
 - Standard: low-risk, no contract changes.
 - Normal: behavior or data-impacting change.

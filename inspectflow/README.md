@@ -50,3 +50,4 @@ Playwright requires browser binaries:
 - `WORKLOG.md` stores completed work history.
 - `docs/deployment-governance.md` defines change controls and pre-deploy checks.
 - `CONTRIBUTING.md` defines Git branching, commit, and PR best practices for this repo.
+- `docs/direct-push-mode.md` documents optional solo/offline direct push workflow for `main`.
