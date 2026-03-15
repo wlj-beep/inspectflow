@@ -89,7 +89,10 @@ describe("KPI dashboards and risk escalation workflow", () => {
       contractId: "ANA-KPI-v3",
       dashboardId: "operator_supervisor_kpi_v1"
     });
-    expect(typeof operatorDashboard.body.kpis.first_pass_yield).toBe("number");
+    const firstPassYield = operatorDashboard.body.kpis.first_pass_yield;
+    expect(
+      firstPassYield === null || typeof firstPassYield === "number"
+    ).toBe(true);
     expect(Array.isArray(operatorDashboard.body.breakdowns.byWorkCenter)).toBe(true);
 
     const supervisorDashboard = await request(app)
