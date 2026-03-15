@@ -17,6 +17,7 @@ import {
   refreshCalibrationImpactAnalytics,
   resolveCalibrationRiskEvent
 } from "../services/analytics/calibrationImpact.js";
+import { resolveAnalyticsSiteScope } from "../services/analytics/siteScope.js";
 
 const router = Router();
 
@@ -24,9 +25,14 @@ const KPI_DASHBOARD_CAPABILITIES = ["submit_records", "view_jobs", "manage_jobs"
 
 router.get("/marts/status", requireCapability("view_admin"), async (req, res, next) => {
   try {
-    const status = await getAnalyticsMartStatus();
-    res.json(status);
+    const siteScope = await resolveAnalyticsSiteScope({
+      requestedSiteId: req.query.siteId,
+      actorRole: getActorRole(req)
+    });
+    const status = await getAnalyticsMartStatus({ siteId: siteScope.siteId });
+    res.json({ ...status, siteScope });
   } catch (error) {
+    if (error?.status && error?.code) return res.status(error.status).json({ error: error.code });
     next(error);
   }
 });
@@ -34,15 +40,21 @@ router.get("/marts/status", requireCapability("view_admin"), async (req, res, ne
 router.post("/marts/rebuild", requireCapability("view_admin"), async (req, res, next) => {
   try {
     const triggerSource = String(req.body?.triggerSource || "manual").trim() || "manual";
+    const siteScope = await resolveAnalyticsSiteScope({
+      requestedSiteId: req.body?.siteId || req.query?.siteId,
+      actorRole: getActorRole(req)
+    });
     const result = await rebuildAnalyticsMarts({
       triggerSource,
+      siteId: siteScope.siteId,
       requestedByRole: getActorRole(req) || "system",
       requestedByUserId: getActorUserId(req)
     });
 
     const statusCode = result.ok ? 200 : 500;
-    res.status(statusCode).json(result);
+    res.status(statusCode).json({ ...result, siteScope });
   } catch (error) {
+    if (error?.status && error?.code) return res.status(error.status).json({ error: error.code });
     next(error);
   }
 });
@@ -61,13 +73,19 @@ router.get("/kpis/definitions", requireAnyCapability(KPI_DASHBOARD_CAPABILITIES)
 
 router.get("/kpis/dashboard", requireAnyCapability(KPI_DASHBOARD_CAPABILITIES), async (req, res, next) => {
   try {
+    const siteScope = await resolveAnalyticsSiteScope({
+      requestedSiteId: req.query.siteId,
+      actorRole: getActorRole(req)
+    });
     const result = await getKpiDashboard({
       dateFrom: req.query.dateFrom,
       dateTo: req.query.dateTo,
-      limit: req.query.limit
+      limit: req.query.limit,
+      siteId: siteScope.siteId
     });
-    res.json(result);
+    res.json({ ...result, siteScope });
   } catch (error) {
+    if (error?.status && error?.code) return res.status(error.status).json({ error: error.code });
     if (String(error?.message || "").startsWith("invalid_")) {
       return res.status(400).json({ error: error.message });
     }
@@ -80,13 +98,19 @@ router.get("/kpis/dashboard", requireAnyCapability(KPI_DASHBOARD_CAPABILITIES), 
 
 router.get("/performance/calibration-impact", requireCapability("view_admin"), async (req, res, next) => {
   try {
+    const siteScope = await resolveAnalyticsSiteScope({
+      requestedSiteId: req.query.siteId,
+      actorRole: getActorRole(req)
+    });
     const result = await getCalibrationImpactAnalytics({
       dateFrom: req.query.dateFrom,
       dateTo: req.query.dateTo,
-      limit: req.query.limit
+      limit: req.query.limit,
+      siteId: siteScope.siteId
     });
-    res.json(result);
+    res.json({ ...result, siteScope });
   } catch (error) {
+    if (error?.status && error?.code) return res.status(error.status).json({ error: error.code });
     if (String(error?.message || "").startsWith("invalid_")) {
       return res.status(400).json({ error: error.message });
     }
@@ -96,13 +120,19 @@ router.get("/performance/calibration-impact", requireCapability("view_admin"), a
 
 router.post("/performance/calibration-impact/refresh", requireCapability("view_admin"), async (req, res, next) => {
   try {
+    const siteScope = await resolveAnalyticsSiteScope({
+      requestedSiteId: req.body?.siteId || req.query?.siteId,
+      actorRole: getActorRole(req)
+    });
     const result = await refreshCalibrationImpactAnalytics({
       dateFrom: req.body?.dateFrom,
       dateTo: req.body?.dateTo,
-      limit: req.body?.limit
+      limit: req.body?.limit,
+      siteId: siteScope.siteId
     });
-    res.json(result);
+    res.json({ ...result, siteScope });
   } catch (error) {
+    if (error?.status && error?.code) return res.status(error.status).json({ error: error.code });
     if (String(error?.message || "").startsWith("invalid_")) {
       return res.status(400).json({ error: error.message });
     }

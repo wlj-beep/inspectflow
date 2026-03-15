@@ -80,9 +80,11 @@ function buildIssueDetailsFromRiskRow(row) {
   ].filter(Boolean).join(" | ");
 }
 
-function buildWindowFilter({ dateFrom, dateTo }, alias = "amif") {
+function buildWindowFilter({ dateFrom, dateTo, siteId = "default" }, alias = "amif") {
   const filters = [];
   const params = [];
+  params.push(siteId);
+  filters.push(`${alias}.site_id = $${params.length}`);
   if (dateFrom) {
     params.push(dateFrom);
     filters.push(`${alias}.event_at >= $${params.length}`);
@@ -97,8 +99,8 @@ function buildWindowFilter({ dateFrom, dateTo }, alias = "amif") {
   };
 }
 
-async function loadMachinePerformance({ dateFrom, dateTo }) {
-  const { where, params } = buildWindowFilter({ dateFrom, dateTo }, "amif");
+async function loadMachinePerformance({ dateFrom, dateTo, siteId }) {
+  const { where, params } = buildWindowFilter({ dateFrom, dateTo, siteId }, "amif");
   const { rows } = await query(
     `SELECT
        COALESCE(amif.work_center_id, 'unassigned') AS work_center_id,
@@ -134,9 +136,9 @@ async function loadMachinePerformance({ dateFrom, dateTo }) {
   });
 }
 
-async function loadToolPerformance({ dateFrom, dateTo, limit }) {
+async function loadToolPerformance({ dateFrom, dateTo, limit, siteId }) {
   const safeLimit = toPositiveInt(limit, DEFAULT_LIMIT);
-  const { where, params } = buildWindowFilter({ dateFrom, dateTo }, "amif");
+  const { where, params } = buildWindowFilter({ dateFrom, dateTo, siteId }, "amif");
   params.push(safeLimit);
 
   const { rows } = await query(
@@ -379,18 +381,21 @@ function summarizeMachinePerformance(machinePerformance, toolPerformance) {
 export async function getCalibrationImpactAnalytics({
   dateFrom = null,
   dateTo = null,
-  limit = DEFAULT_LIMIT
+  limit = DEFAULT_LIMIT,
+  siteId = "default"
 } = {}) {
   const normalizedDateFrom = toOptionalIso(dateFrom, "date_from");
   const normalizedDateTo = toOptionalIso(dateTo, "date_to");
   const machinePerformance = await loadMachinePerformance({
     dateFrom: normalizedDateFrom,
-    dateTo: normalizedDateTo
+    dateTo: normalizedDateTo,
+    siteId
   });
   const toolPerformance = await loadToolPerformance({
     dateFrom: normalizedDateFrom,
     dateTo: normalizedDateTo,
-    limit
+    limit,
+    siteId
   });
   const riskPreview = buildCalibrationRiskPreview(toolPerformance);
 
@@ -399,7 +404,8 @@ export async function getCalibrationImpactAnalytics({
     capabilityId: "BL-041-calibration-impact-v1",
     window: {
       dateFrom: normalizedDateFrom,
-      dateTo: normalizedDateTo
+      dateTo: normalizedDateTo,
+      siteId
     },
     summary: summarizeMachinePerformance(machinePerformance, toolPerformance),
     machinePerformance,

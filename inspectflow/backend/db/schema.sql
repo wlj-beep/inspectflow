@@ -453,11 +453,11 @@ CREATE TABLE IF NOT EXISTS ana_mart_inspection_fact (
   rework_count INTEGER NOT NULL DEFAULT 0,
   source_run_id INTEGER REFERENCES import_runs(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  PRIMARY KEY (record_id, dimension_id, piece_number)
+  PRIMARY KEY (site_id, record_id, dimension_id, piece_number)
 );
 
 CREATE TABLE IF NOT EXISTS ana_mart_connector_run_fact (
-  run_id INTEGER PRIMARY KEY REFERENCES import_runs(id) ON DELETE CASCADE,
+  run_id INTEGER NOT NULL REFERENCES import_runs(id) ON DELETE CASCADE,
   site_id TEXT NOT NULL DEFAULT 'default',
   connector_id TEXT NOT NULL,
   status TEXT NOT NULL,
@@ -467,7 +467,8 @@ CREATE TABLE IF NOT EXISTS ana_mart_connector_run_fact (
   processed_count INTEGER NOT NULL DEFAULT 0,
   avg_latency_ms INTEGER,
   run_ended_at TIMESTAMPTZ,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (site_id, run_id)
 );
 
 CREATE TABLE IF NOT EXISTS ana_mart_job_rollup_day (
@@ -485,6 +486,7 @@ CREATE TABLE IF NOT EXISTS ana_mart_job_rollup_day (
 
 CREATE TABLE IF NOT EXISTS ana_mart_build_runs (
   id BIGSERIAL PRIMARY KEY,
+  site_id TEXT NOT NULL DEFAULT 'default',
   trigger_source TEXT NOT NULL,
   requested_by_role TEXT,
   requested_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
@@ -497,6 +499,7 @@ CREATE TABLE IF NOT EXISTS ana_mart_build_runs (
   completed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+ALTER TABLE ana_mart_build_runs ADD COLUMN IF NOT EXISTS site_id TEXT NOT NULL DEFAULT 'default';
 
 CREATE TABLE IF NOT EXISTS ana_risk_event_log (
   id BIGSERIAL PRIMARY KEY,
@@ -546,6 +549,12 @@ ALTER TABLE ana_risk_event_log ADD COLUMN IF NOT EXISTS acknowledged_by_user_id 
 ALTER TABLE ana_risk_event_log ADD COLUMN IF NOT EXISTS acknowledgement_note TEXT;
 ALTER TABLE ana_risk_event_log ADD COLUMN IF NOT EXISTS acknowledged_at TIMESTAMPTZ;
 ALTER TABLE ana_risk_event_log ADD COLUMN IF NOT EXISTS linked_issue_id INTEGER REFERENCES issue_reports(id) ON DELETE SET NULL;
+ALTER TABLE ana_mart_inspection_fact DROP CONSTRAINT IF EXISTS ana_mart_inspection_fact_pkey;
+ALTER TABLE ana_mart_inspection_fact
+  ADD CONSTRAINT ana_mart_inspection_fact_pkey PRIMARY KEY (site_id, record_id, dimension_id, piece_number);
+ALTER TABLE ana_mart_connector_run_fact DROP CONSTRAINT IF EXISTS ana_mart_connector_run_fact_pkey;
+ALTER TABLE ana_mart_connector_run_fact
+  ADD CONSTRAINT ana_mart_connector_run_fact_pkey PRIMARY KEY (site_id, run_id);
 
 CREATE INDEX IF NOT EXISTS idx_part_setup_revisions_part_latest
 ON part_setup_revisions (part_id, revision_index DESC);
@@ -573,6 +582,8 @@ CREATE INDEX IF NOT EXISTS idx_ana_mart_job_rollup_date
 ON ana_mart_job_rollup_day (rollup_date DESC, part_id, job_id);
 CREATE INDEX IF NOT EXISTS idx_ana_mart_build_runs_created
 ON ana_mart_build_runs (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ana_mart_build_runs_site_created
+ON ana_mart_build_runs (site_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_ana_risk_event_status
 ON ana_risk_event_log (status, last_seen_at DESC);
 CREATE INDEX IF NOT EXISTS idx_ana_risk_event_linked_issue

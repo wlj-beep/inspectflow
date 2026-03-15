@@ -3,6 +3,7 @@ import { ANA_MART_CONTRACT_ID } from "./anaV3Vocabulary.js";
 
 const MART_BUILD_TRANSFORM_VERSION = `${ANA_MART_CONTRACT_ID}-transform-v1`;
 const DEFAULT_SITE_ID = "default";
+const SERIALIZATION_RETRY_LIMIT = 8;
 
 function toPositiveInt(value) {
   const n = Number(value);
@@ -12,6 +13,11 @@ function toPositiveInt(value) {
 function safeText(value, fallback = "manual") {
   const text = String(value ?? "").trim();
   return text ? text.slice(0, 120) : fallback;
+}
+
+function isSerializationFailure(error) {
+  return error?.code === "40001"
+    || String(error?.message || "").toLowerCase().includes("could not serialize access");
 }
 
 async function computeSourceSnapshot(client) {
@@ -46,7 +52,7 @@ async function computeSourceSnapshot(client) {
   };
 }
 
-async function refreshInspectionMart(client) {
+async function refreshInspectionMart(client, siteId) {
   const res = await client.query(
     `WITH correction_events AS (
        SELECT
@@ -130,12 +136,12 @@ async function refreshInspectionMart(client) {
         OR srm.operation_ref=o.op_number
         OR LPAD(REGEXP_REPLACE(srm.operation_ref, '[^0-9]', '', 'g'), 3, '0')=o.op_number
       )`,
-    [DEFAULT_SITE_ID]
+    [siteId]
   );
   return Number(res.rowCount || 0);
 }
 
-async function refreshConnectorRunMart(client) {
+async function refreshConnectorRunMart(client, siteId) {
   const res = await client.query(
     `INSERT INTO ana_mart_connector_run_fact (
        run_id,
@@ -171,12 +177,12 @@ async function refreshConnectorRunMart(client) {
        ) AS avg_latency_ms,
        ir.created_at AS run_ended_at
      FROM import_runs ir`,
-    [DEFAULT_SITE_ID]
+    [siteId]
   );
   return Number(res.rowCount || 0);
 }
 
-async function refreshJobRollupMart(client) {
+async function refreshJobRollupMart(client, siteId) {
   const res = await client.query(
     `INSERT INTO ana_mart_job_rollup_day (
        site_id,
@@ -198,14 +204,17 @@ async function refreshJobRollupMart(client) {
        SUM(oot_count)::INT AS oot_pieces,
        SUM(rework_count)::INT AS correction_events
      FROM ana_mart_inspection_fact
-     GROUP BY site_id, (event_at AT TIME ZONE 'UTC')::DATE, part_id, job_id`
+     WHERE site_id=$1
+     GROUP BY site_id, (event_at AT TIME ZONE 'UTC')::DATE, part_id, job_id`,
+    [siteId]
   );
   return Number(res.rowCount || 0);
 }
 
-async function snapshotMartTable(client, tableName, orderBy, keyColumns) {
+async function snapshotMartTable(client, tableName, orderBy, keyColumns, whereClause = "", whereParams = []) {
   const countRes = await client.query(
-    `SELECT COUNT(*)::INT AS count FROM ${tableName}`
+    `SELECT COUNT(*)::INT AS count FROM ${tableName} ${whereClause}`,
+    whereParams
   );
   const fingerprintRes = await client.query(
     `SELECT MD5(COALESCE(string_agg(row_payload, '||' ORDER BY row_ordinal), '')) AS fingerprint
@@ -214,7 +223,9 @@ async function snapshotMartTable(client, tableName, orderBy, keyColumns) {
          ROW_NUMBER() OVER (ORDER BY ${orderBy}) AS row_ordinal,
          CONCAT_WS('|', ${keyColumns}) AS row_payload
        FROM ${tableName}
-     ) rows`
+       ${whereClause}
+     ) rows`,
+    whereParams
   );
   return {
     rows: Number(countRes.rows[0]?.count || 0),
@@ -222,45 +233,56 @@ async function snapshotMartTable(client, tableName, orderBy, keyColumns) {
   };
 }
 
-async function snapshotOutput(client) {
+async function snapshotOutput(client, siteId) {
+  const whereClause = "WHERE site_id=$1";
+  const whereParams = [siteId];
   const inspection = await snapshotMartTable(
     client,
     "ana_mart_inspection_fact",
     "record_id, dimension_id, piece_number",
-    "record_id::TEXT, dimension_id::TEXT, piece_number::TEXT, job_id, part_id, operation_id, event_at::TEXT, measurement_count::TEXT, oot_count::TEXT, pass_count::TEXT, rework_count::TEXT, COALESCE(source_run_id::TEXT, '')"
+    "record_id::TEXT, dimension_id::TEXT, piece_number::TEXT, job_id, part_id, operation_id, event_at::TEXT, measurement_count::TEXT, oot_count::TEXT, pass_count::TEXT, rework_count::TEXT, COALESCE(source_run_id::TEXT, '')",
+    whereClause,
+    whereParams
   );
   const connectorRuns = await snapshotMartTable(
     client,
     "ana_mart_connector_run_fact",
     "run_id",
-    "run_id::TEXT, connector_id, status, run_count::TEXT, failure_count::TEXT, replayed_count::TEXT, processed_count::TEXT, COALESCE(avg_latency_ms::TEXT, ''), COALESCE(run_ended_at::TEXT, '')"
+    "run_id::TEXT, connector_id, status, run_count::TEXT, failure_count::TEXT, replayed_count::TEXT, processed_count::TEXT, COALESCE(avg_latency_ms::TEXT, ''), COALESCE(run_ended_at::TEXT, '')",
+    whereClause,
+    whereParams
   );
   const jobRollups = await snapshotMartTable(
     client,
     "ana_mart_job_rollup_day",
     "site_id, rollup_date, part_id, job_id",
-    "site_id, rollup_date::TEXT, part_id, job_id, total_pieces::TEXT, pass_pieces::TEXT, oot_pieces::TEXT, correction_events::TEXT"
+    "site_id, rollup_date::TEXT, part_id, job_id, total_pieces::TEXT, pass_pieces::TEXT, oot_pieces::TEXT, correction_events::TEXT",
+    whereClause,
+    whereParams
   );
   return { inspection, connectorRuns, jobRollups };
 }
 
-export async function getAnalyticsMartStatus() {
+export async function getAnalyticsMartStatus({ siteId = DEFAULT_SITE_ID } = {}) {
   const latestBuildRes = await query(
-    `SELECT id, trigger_source, requested_by_role, requested_by_user_id,
+    `SELECT id, site_id, trigger_source, requested_by_role, requested_by_user_id,
             transform_version, status, source_snapshot, output_snapshot,
             error_payload, started_at, completed_at, created_at
      FROM ana_mart_build_runs
+     WHERE site_id=$1
      ORDER BY id DESC
-     LIMIT 1`
+     LIMIT 1`,
+    [siteId]
   );
 
   const countsRes = await Promise.all([
-    query("SELECT COUNT(*)::INT AS count FROM ana_mart_inspection_fact"),
-    query("SELECT COUNT(*)::INT AS count FROM ana_mart_connector_run_fact"),
-    query("SELECT COUNT(*)::INT AS count FROM ana_mart_job_rollup_day")
+    query("SELECT COUNT(*)::INT AS count FROM ana_mart_inspection_fact WHERE site_id=$1", [siteId]),
+    query("SELECT COUNT(*)::INT AS count FROM ana_mart_connector_run_fact WHERE site_id=$1", [siteId]),
+    query("SELECT COUNT(*)::INT AS count FROM ana_mart_job_rollup_day WHERE site_id=$1", [siteId])
   ]);
 
   return {
+    siteId,
     transformVersion: MART_BUILD_TRANSFORM_VERSION,
     latestBuild: latestBuildRes.rows[0] || null,
     martCounts: {
@@ -274,55 +296,75 @@ export async function getAnalyticsMartStatus() {
 export async function rebuildAnalyticsMarts({
   triggerSource = "manual",
   requestedByRole = "system",
-  requestedByUserId = null
+  requestedByUserId = null,
+  siteId = DEFAULT_SITE_ID
 } = {}) {
   const startedAt = new Date();
   const safeRole = safeText(requestedByRole, "system");
   const safeSource = safeText(triggerSource, "manual");
   const safeUserId = toPositiveInt(requestedByUserId);
+  const safeSiteId = safeText(siteId, DEFAULT_SITE_ID);
 
   try {
-    const result = await transaction(async (client) => {
-      // Keep a consistent read snapshot for source counting + fact rebuild.
-      await client.query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ");
-      const sourceSnapshot = await computeSourceSnapshot(client);
+    let result = null;
+    let attempt = 0;
+    while (attempt < SERIALIZATION_RETRY_LIMIT) {
+      try {
+        result = await transaction(async (client) => {
+          // Keep a consistent read snapshot for source counting + fact rebuild.
+          await client.query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ");
+          await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`ana_mart_rebuild:${safeSiteId}`]);
+          const sourceSnapshot = await computeSourceSnapshot(client);
 
-      await client.query("TRUNCATE TABLE ana_mart_job_rollup_day, ana_mart_inspection_fact, ana_mart_connector_run_fact");
+          await client.query("DELETE FROM ana_mart_job_rollup_day WHERE site_id=$1", [safeSiteId]);
+          await client.query("DELETE FROM ana_mart_inspection_fact WHERE site_id=$1", [safeSiteId]);
+          await client.query("DELETE FROM ana_mart_connector_run_fact WHERE site_id=$1", [safeSiteId]);
 
-      const insertedInspectionRows = await refreshInspectionMart(client);
-      const insertedConnectorRows = await refreshConnectorRunMart(client);
-      const insertedRollupRows = await refreshJobRollupMart(client);
-      const outputSnapshot = await snapshotOutput(client);
+          const insertedInspectionRows = await refreshInspectionMart(client, safeSiteId);
+          const insertedConnectorRows = await refreshConnectorRunMart(client, safeSiteId);
+          const insertedRollupRows = await refreshJobRollupMart(client, safeSiteId);
+          const outputSnapshot = await snapshotOutput(client, safeSiteId);
 
-      const buildRes = await client.query(
-        `INSERT INTO ana_mart_build_runs
-           (trigger_source, requested_by_role, requested_by_user_id, transform_version, status, source_snapshot, output_snapshot, started_at, completed_at)
-         VALUES ($1,$2,$3,$4,'success',$5,$6,$7,NOW())
-         RETURNING id, created_at, completed_at`,
-        [
-          safeSource,
-          safeRole,
-          safeUserId,
-          MART_BUILD_TRANSFORM_VERSION,
-          sourceSnapshot,
-          outputSnapshot,
-          startedAt.toISOString()
-        ]
-      );
+          const buildRes = await client.query(
+            `INSERT INTO ana_mart_build_runs
+               (site_id, trigger_source, requested_by_role, requested_by_user_id, transform_version, status, source_snapshot, output_snapshot, started_at, completed_at)
+             VALUES ($1,$2,$3,$4,$5,'success',$6,$7,$8,NOW())
+             RETURNING id, created_at, completed_at`,
+            [
+              safeSiteId,
+              safeSource,
+              safeRole,
+              safeUserId,
+              MART_BUILD_TRANSFORM_VERSION,
+              sourceSnapshot,
+              outputSnapshot,
+              startedAt.toISOString()
+            ]
+          );
 
-      return {
-        buildId: Number(buildRes.rows[0]?.id || 0),
-        createdAt: buildRes.rows[0]?.created_at || startedAt.toISOString(),
-        completedAt: buildRes.rows[0]?.completed_at || new Date().toISOString(),
-        sourceSnapshot,
-        outputSnapshot,
-        insertedRows: {
-          inspection: insertedInspectionRows,
-          connectorRuns: insertedConnectorRows,
-          jobRollups: insertedRollupRows
+          return {
+            buildId: Number(buildRes.rows[0]?.id || 0),
+            siteId: safeSiteId,
+            createdAt: buildRes.rows[0]?.created_at || startedAt.toISOString(),
+            completedAt: buildRes.rows[0]?.completed_at || new Date().toISOString(),
+            sourceSnapshot,
+            outputSnapshot,
+            insertedRows: {
+              inspection: insertedInspectionRows,
+              connectorRuns: insertedConnectorRows,
+              jobRollups: insertedRollupRows
+            }
+          };
+        });
+        break;
+      } catch (retryableError) {
+        attempt += 1;
+        if (!isSerializationFailure(retryableError) || attempt >= SERIALIZATION_RETRY_LIMIT) {
+          throw retryableError;
         }
-      };
-    });
+        await new Promise((resolve) => setTimeout(resolve, 15 * attempt));
+      }
+    }
 
     return {
       ok: true,
@@ -337,10 +379,11 @@ export async function rebuildAnalyticsMarts({
     };
     const failureRes = await query(
       `INSERT INTO ana_mart_build_runs
-         (trigger_source, requested_by_role, requested_by_user_id, transform_version, status, source_snapshot, output_snapshot, error_payload, started_at, completed_at)
-       VALUES ($1,$2,$3,$4,'error',$5,$6,$7,$8,NOW())
+         (site_id, trigger_source, requested_by_role, requested_by_user_id, transform_version, status, source_snapshot, output_snapshot, error_payload, started_at, completed_at)
+       VALUES ($1,$2,$3,$4,$5,'error',$6,$7,$8,$9,NOW())
        RETURNING id, created_at, completed_at`,
       [
+        safeSiteId,
         safeSource,
         safeRole,
         safeUserId,
@@ -356,6 +399,7 @@ export async function rebuildAnalyticsMarts({
       ok: false,
       status: "error",
       transformVersion: MART_BUILD_TRANSFORM_VERSION,
+      siteId: safeSiteId,
       buildId: Number(failureRes.rows[0]?.id || 0),
       createdAt: failureRes.rows[0]?.created_at || startedAt.toISOString(),
       completedAt: failureRes.rows[0]?.completed_at || new Date().toISOString(),
