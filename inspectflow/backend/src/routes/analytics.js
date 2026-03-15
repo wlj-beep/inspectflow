@@ -27,7 +27,8 @@ router.get("/marts/status", requireCapability("view_admin"), async (req, res, ne
   try {
     const siteScope = await resolveAnalyticsSiteScope({
       requestedSiteId: req.query.siteId,
-      actorRole: getActorRole(req)
+      actorRole: getActorRole(req),
+      actorUserId: getActorUserId(req)
     });
     const status = await getAnalyticsMartStatus({ siteId: siteScope.siteId });
     res.json({ ...status, siteScope });
@@ -42,7 +43,8 @@ router.post("/marts/rebuild", requireCapability("view_admin"), async (req, res, 
     const triggerSource = String(req.body?.triggerSource || "manual").trim() || "manual";
     const siteScope = await resolveAnalyticsSiteScope({
       requestedSiteId: req.body?.siteId || req.query?.siteId,
-      actorRole: getActorRole(req)
+      actorRole: getActorRole(req),
+      actorUserId: getActorUserId(req)
     });
     const result = await rebuildAnalyticsMarts({
       triggerSource,
@@ -75,7 +77,8 @@ router.get("/kpis/dashboard", requireAnyCapability(KPI_DASHBOARD_CAPABILITIES), 
   try {
     const siteScope = await resolveAnalyticsSiteScope({
       requestedSiteId: req.query.siteId,
-      actorRole: getActorRole(req)
+      actorRole: getActorRole(req),
+      actorUserId: getActorUserId(req)
     });
     const result = await getKpiDashboard({
       dateFrom: req.query.dateFrom,
@@ -100,7 +103,8 @@ router.get("/performance/calibration-impact", requireCapability("view_admin"), a
   try {
     const siteScope = await resolveAnalyticsSiteScope({
       requestedSiteId: req.query.siteId,
-      actorRole: getActorRole(req)
+      actorRole: getActorRole(req),
+      actorUserId: getActorUserId(req)
     });
     const result = await getCalibrationImpactAnalytics({
       dateFrom: req.query.dateFrom,
@@ -122,7 +126,8 @@ router.post("/performance/calibration-impact/refresh", requireCapability("view_a
   try {
     const siteScope = await resolveAnalyticsSiteScope({
       requestedSiteId: req.body?.siteId || req.query?.siteId,
-      actorRole: getActorRole(req)
+      actorRole: getActorRole(req),
+      actorUserId: getActorUserId(req)
     });
     const result = await refreshCalibrationImpactAnalytics({
       dateFrom: req.body?.dateFrom,

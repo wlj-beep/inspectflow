@@ -55,10 +55,30 @@ describe("Analytics multi-site partition safeguards (BL-043)", () => {
     const operator = request.agent(app);
     const operatorLogin = await login(operator, "J. Morris");
     expect(operatorLogin.status).toBe(200);
-    const forbidden = await operator
+    const forbiddenBeforeGrant = await operator
       .get("/api/analytics/kpis/dashboard")
       .query({ siteId: "site-b" });
-    expect(forbidden.status).toBe(403);
-    expect(["site_scope_forbidden", "multisite_not_enabled"]).toContain(forbidden.body?.error);
+    expect(forbiddenBeforeGrant.status).toBe(403);
+    expect(["site_scope_forbidden", "multisite_not_enabled"]).toContain(forbiddenBeforeGrant.body?.error);
+
+    const users = await admin.get("/api/users");
+    expect(users.status).toBe(200);
+    const operatorUser = users.body.find((row) => row.name === "J. Morris");
+    expect(operatorUser?.id).toBeTruthy();
+
+    const grant = await admin
+      .put(`/api/users/${operatorUser.id}/sites`)
+      .send({ siteIds: ["default", "site-b"], defaultSiteId: "default" });
+    expect(grant.status).toBe(200);
+
+    const allowedAfterGrant = await operator
+      .get("/api/analytics/kpis/dashboard")
+      .query({ siteId: "site-b" });
+    expect(allowedAfterGrant.status).toBe(200);
+    expect(allowedAfterGrant.body.siteScope?.siteId).toBe("site-b");
+
+    await admin
+      .put(`/api/users/${operatorUser.id}/sites`)
+      .send({ siteIds: ["default"], defaultSiteId: "default" });
   });
 });

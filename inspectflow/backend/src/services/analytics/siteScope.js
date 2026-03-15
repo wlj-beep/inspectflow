@@ -1,4 +1,5 @@
 import { getPlatformEntitlements, isModuleEnabled } from "../platform/entitlements.js";
+import { getUserSiteAccess } from "../platform/siteAccess.js";
 
 export const DEFAULT_ANALYTICS_SITE_ID = "default";
 
@@ -32,7 +33,8 @@ function parseAllowedSites(multisiteEnabled) {
 
 export async function resolveAnalyticsSiteScope({
   requestedSiteId = null,
-  actorRole = null
+  actorRole = null,
+  actorUserId = null
 } = {}) {
   const entitlements = await getPlatformEntitlements();
   const multisiteEnabled = String(process.env.ANALYTICS_MULTISITE_ENABLED || "").trim().toLowerCase() === "true"
@@ -54,17 +56,26 @@ export async function resolveAnalyticsSiteScope({
     throw err;
   }
 
-  if (siteId !== DEFAULT_ANALYTICS_SITE_ID && actorRole !== "Admin") {
-    const err = new Error("site_scope_forbidden");
-    err.status = 403;
-    err.code = "site_scope_forbidden";
-    throw err;
+  let userAllowedSiteIds = [DEFAULT_ANALYTICS_SITE_ID];
+  if (actorRole !== "Admin") {
+    if (Number.isInteger(Number(actorUserId)) && Number(actorUserId) > 0) {
+      const siteAccess = await getUserSiteAccess(actorUserId);
+      userAllowedSiteIds = siteAccess.map((entry) => entry.siteId);
+      if (!userAllowedSiteIds.length) userAllowedSiteIds = [DEFAULT_ANALYTICS_SITE_ID];
+    }
+    if (!userAllowedSiteIds.includes(siteId)) {
+      const err = new Error("site_scope_forbidden");
+      err.status = 403;
+      err.code = "site_scope_forbidden";
+      throw err;
+    }
   }
 
   return {
     contractId: "ANA-MART-v3",
     siteId,
     multisiteEnabled,
-    allowedSiteIds: Array.from(allowedSites).sort()
+    allowedSiteIds: Array.from(allowedSites).sort(),
+    userAllowedSiteIds: actorRole === "Admin" ? Array.from(allowedSites).sort() : userAllowedSiteIds
   };
 }

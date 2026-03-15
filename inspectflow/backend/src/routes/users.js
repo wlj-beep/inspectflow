@@ -2,6 +2,10 @@ import { Router } from "express";
 import { query } from "../db.js";
 import { requireAnyCapability, requireCapability } from "../middleware/requireCapability.js";
 import { getDefaultSeedPassword, makePasswordHash, validatePasswordStrength } from "../auth.js";
+import {
+  getUserSiteAccessPayload,
+  setUserSiteAccess
+} from "../services/platform/siteAccess.js";
 
 const router = Router();
 
@@ -91,6 +95,26 @@ router.put("/:id", requireCapability("manage_users"), async (req, res) => {
     [trimmed, nextRole, nextActive !== false, id]
   );
   res.json(rows[0]);
+});
+
+router.get("/:id/sites", requireCapability("manage_users"), async (req, res) => {
+  const payload = await getUserSiteAccessPayload(req.params.id);
+  res.json(payload);
+});
+
+router.put("/:id/sites", requireCapability("manage_users"), async (req, res) => {
+  try {
+    const payload = await setUserSiteAccess(req.params.id, {
+      siteIds: req.body?.siteIds,
+      defaultSiteId: req.body?.defaultSiteId
+    });
+    res.json(payload);
+  } catch (error) {
+    if (error?.status && error?.code) {
+      return res.status(error.status).json({ error: error.code });
+    }
+    throw error;
+  }
 });
 
 router.delete("/:id", requireCapability("manage_users"), async (req, res) => {

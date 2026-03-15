@@ -7,6 +7,14 @@ CREATE TABLE IF NOT EXISTS users (
   active BOOLEAN NOT NULL DEFAULT TRUE
 );
 
+CREATE TABLE IF NOT EXISTS user_site_access (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  site_id TEXT NOT NULL,
+  is_default BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (user_id, site_id)
+);
+
 CREATE TABLE IF NOT EXISTS tools (
   id SERIAL PRIMARY KEY,
   name TEXT NOT NULL UNIQUE,
@@ -555,9 +563,16 @@ ALTER TABLE ana_mart_inspection_fact
 ALTER TABLE ana_mart_connector_run_fact DROP CONSTRAINT IF EXISTS ana_mart_connector_run_fact_pkey;
 ALTER TABLE ana_mart_connector_run_fact
   ADD CONSTRAINT ana_mart_connector_run_fact_pkey PRIMARY KEY (site_id, run_id);
+INSERT INTO user_site_access (user_id, site_id, is_default)
+SELECT id, 'default', true
+FROM users
+ON CONFLICT (user_id, site_id) DO NOTHING;
 
 CREATE INDEX IF NOT EXISTS idx_part_setup_revisions_part_latest
 ON part_setup_revisions (part_id, revision_index DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_user_site_access_default
+ON user_site_access (user_id)
+WHERE is_default;
 CREATE INDEX IF NOT EXISTS idx_tool_locations_type
 ON tool_locations (location_type);
 CREATE INDEX IF NOT EXISTS idx_import_integrations_enabled

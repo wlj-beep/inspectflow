@@ -6,6 +6,7 @@ Platform foundations: auth, authorization enforcement, deployment/runtime reliab
 ## Provides
 - `PLAT-AUTH-v1`: local account auth/session contract.
 - `PLAT-AUTH-v1` optional extension: env-gated SSO session bootstrap path (`POST /api/auth/sso/login`) with local auth parity retained.
+- `PLAT-AUTH-v1` multi-site extension: user site-scope assignments (`GET/PUT /api/users/:id/sites`) used for site-level authorization separation.
 - `PLAT-ENT-v1`: entitlement and module-flag read contract.
 - `PLAT-DEPLOY-v1`: install/health/preflight/update status contract.
 - `PLAT-BACKUP-v1`: backup/restore execution and audit contract.
