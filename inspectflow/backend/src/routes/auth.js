@@ -27,6 +27,11 @@ import {
 } from "../services/platform/authEvents.js";
 import { loginWithLocalCredentials } from "../services/platform/authLocalCredentials.js";
 import {
+  extractSsoLoginRequest,
+  isSsoEnabled,
+  resolveSsoUser
+} from "../services/platform/ssoAuth.js";
+import {
   getPlatformEntitlements,
   updatePlatformEntitlements
 } from "../services/platform/entitlements.js";
@@ -132,6 +137,74 @@ router.post("/login", async (req, res, next) => {
 
     res.json({
       ok: true,
+      ...sessionPayload
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/sso/login", async (req, res, next) => {
+  try {
+    if (!isSsoEnabled()) return res.status(404).json({ error: "sso_disabled" });
+
+    const requestContext = authRequestContext(req);
+    const ssoRequest = extractSsoLoginRequest(req, req.body || {});
+    if (!ssoRequest.principal) {
+      await emitAuthEventSafely({
+        eventType: "login_failure",
+        username: null,
+        ...requestContext,
+        metadata: { reason: "sso_principal_required", source: "sso" }
+      });
+      return res.status(400).json({ error: "sso_principal_required" });
+    }
+
+    const user = await resolveSsoUser(ssoRequest);
+    if (!user || user.active === false) {
+      await emitAuthEventSafely({
+        eventType: "login_failure",
+        username: ssoRequest.principal,
+        ...requestContext,
+        metadata: { reason: "invalid_sso_principal", source: "sso" }
+      });
+      return res.status(401).json({ error: "invalid_sso_principal" });
+    }
+
+    const session = await createAuthSession({
+      userId: user.id,
+      ...requestContext
+    });
+    setSessionCookie(res, session.token, session.expiresAt);
+    const sessionPayload = await buildAuthSessionPayload({
+      user,
+      expiresAt: session.expiresAt
+    });
+
+    await emitAuthEventSafely({
+      eventType: "login_success",
+      userId: user.id,
+      actorRole: user.role,
+      username: user.name,
+      sessionId: session.sessionId,
+      ...requestContext,
+      metadata: { source: "sso" }
+    });
+    if (sessionPayload.seatUsage.softLimitWarning) {
+      await emitAuthEventSafely({
+        eventType: "seat_soft_limit_warning",
+        userId: user.id,
+        actorRole: user.role,
+        username: user.name,
+        sessionId: session.sessionId,
+        ...requestContext,
+        metadata: seatWarningAuditMetadata(sessionPayload.seatUsage)
+      });
+    }
+
+    return res.json({
+      ok: true,
+      authSource: "sso",
       ...sessionPayload
     });
   } catch (err) {
