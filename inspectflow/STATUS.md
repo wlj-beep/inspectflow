@@ -14,7 +14,7 @@ Canonical global execution queue for active backlog work.
 
 | Rank | Item ID | Priority | Status | Owner | Updated | Work Item |
 | --- | --- | --- | --- | --- | --- | --- |
-Active ranked queue is currently clear; re-seed with new prioritized items when the next backlog tranche is activated.
+| 1 | BL-046 | P1 | In Progress | @codex | 2026-03-15T11:41:00-04:00 | `PLAT-DEPLOY-v1`: add extension SDK boundary and policy-safe plugin runtime scaffolding. |
 
 ## Active Gate Defaults
 - For BL-058 acceptance, duplicate/replay behavior is fixed to idempotent skip plus audit trail updates (no strict hard-reject mode).
@@ -84,3 +84,5 @@ Active ranked queue is currently clear; re-seed with new prioritized items when 
 | 2026-03-15 | BL-037 | @codex | @owner | Completed `COMM-SEAT-v2` hard-seat controls behind entitlement flags: added `seatPolicy` contract fields (`named`/`device`/`concurrent`), login-time enforcement for local+SSO paths, `seat_hard_limit_block` audit events, and regression coverage validating all three hard-seat modes while preserving local auth/soft-seat behavior. |
 | 2026-03-15 | BL-043 | @codex | @owner | Completed `ANA-MART-v3` multi-site partition safeguards: site-scoped mart rebuild/status and KPI/calibration analytics filters now enforce boundary controls, mart/build schemas are site-partition aware, and dedicated analytics multi-site regression coverage plus full standardized gates pass. |
 | 2026-03-15 | BL-044 | @codex | @owner | Completed multi-site authorization separation controls: added user site-access mapping contract (`user_site_access` + `GET/PUT /api/users/:id/sites`), enforced analytics site scope against assigned user sites for non-admin roles, and validated with expanded multi-site regression coverage plus full standardized gates. |
+| 2026-03-15 | BL-045 | @codex | @owner | Completed `ANA-KPI-v3` analytics performance + cost SLO statusing: added admin-only `GET /api/analytics/performance/slo` summary with configurable threshold env controls, updated multi-site analytics access regression to validate site grant gating, and validated with focused analytics tests plus full standardized gates. |
+| 2026-03-15 | BL-046 | @owner | @codex | Claimed after BL-045 completion to start extension SDK boundary and policy-safe plugin runtime scaffolding. |

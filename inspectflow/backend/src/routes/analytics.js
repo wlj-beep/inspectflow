@@ -18,6 +18,7 @@ import {
   resolveCalibrationRiskEvent
 } from "../services/analytics/calibrationImpact.js";
 import { resolveAnalyticsSiteScope } from "../services/analytics/siteScope.js";
+import { getAnalyticsPerformanceSlo } from "../services/analytics/performanceSlo.js";
 
 const router = Router();
 
@@ -141,6 +142,21 @@ router.post("/performance/calibration-impact/refresh", requireCapability("view_a
     if (String(error?.message || "").startsWith("invalid_")) {
       return res.status(400).json({ error: error.message });
     }
+    next(error);
+  }
+});
+
+router.get("/performance/slo", requireCapability("view_admin"), async (req, res, next) => {
+  try {
+    const siteScope = await resolveAnalyticsSiteScope({
+      requestedSiteId: req.query.siteId,
+      actorRole: getActorRole(req),
+      actorUserId: getActorUserId(req)
+    });
+    const result = await getAnalyticsPerformanceSlo({ siteId: siteScope.siteId });
+    res.json({ ...result, siteScope });
+  } catch (error) {
+    if (error?.status && error?.code) return res.status(error.status).json({ error: error.code });
     next(error);
   }
 });

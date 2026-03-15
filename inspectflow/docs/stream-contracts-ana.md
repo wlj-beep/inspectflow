@@ -7,6 +7,7 @@ Analytics and intelligence: KPI modeling, dashboards, anomaly detection, and per
 - `ANA-MART-v3`: analytics mart schema contract.
 - `ANA-KPI-v3`: KPI definition and query contract.
 - `ANA-RISK-v3`: anomaly and risk event contract.
+- `ANA-KPI-v3` operations extension: analytics SLO status contract (`GET /api/analytics/performance/slo`) for latency/error/storage budget tracking.
 
 `ANA-MART-v3` multi-site surface (BL-043):
 - Site-partitioned mart rows (`site_id`) with per-site rebuild/status isolation.
