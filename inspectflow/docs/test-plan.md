@@ -23,6 +23,10 @@ Tier 3: UI live critical-path gate
 Standardized gate (required before release promotion):
 - Command: `npm run test:standardized`
 
+R1 acceptance matrix automation (required for BL-030 release closure):
+- Command: `npm run test:r1:acceptance`
+- Evidence artifact: `docs/operations/cycles/evidence/<YYYY-MM-DD>-r1-acceptance-matrix.txt`
+
 ## Release Acceptance Matrix
 
 | Release | Required Suites | Gate Condition |
