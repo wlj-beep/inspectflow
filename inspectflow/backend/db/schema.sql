@@ -295,6 +295,40 @@ CREATE TABLE IF NOT EXISTS auth_sessions (
   user_agent TEXT
 );
 
+CREATE TABLE IF NOT EXISTS auth_event_log (
+  id BIGSERIAL PRIMARY KEY,
+  event_type TEXT NOT NULL CHECK (event_type IN (
+    'login_success',
+    'login_failure',
+    'login_locked',
+    'logout',
+    'password_changed',
+    'password_change_failure',
+    'password_reset_default',
+    'entitlements_updated'
+  )),
+  user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  actor_role TEXT CHECK (actor_role IS NULL OR actor_role IN ('Operator','Quality','Supervisor','Admin')),
+  session_id BIGINT REFERENCES auth_sessions(id) ON DELETE SET NULL,
+  username TEXT,
+  ip_address TEXT,
+  user_agent TEXT,
+  metadata JSONB NOT NULL DEFAULT '{}'::JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS platform_entitlements (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  contract_id TEXT NOT NULL DEFAULT 'PLAT-ENT-v1',
+  license_tier TEXT NOT NULL DEFAULT 'core',
+  seat_pack INTEGER NOT NULL DEFAULT 25 CHECK (seat_pack > 0),
+  seat_soft_limit INTEGER NOT NULL DEFAULT 25 CHECK (seat_soft_limit > 0),
+  diagnostics_opt_in BOOLEAN NOT NULL DEFAULT FALSE,
+  module_flags JSONB NOT NULL DEFAULT '{"CORE": true, "QUALITY_PRO": false, "INTEGRATION_SUITE": false, "ANALYTICS_SUITE": false, "MULTISITE": false, "EDGE": false}'::JSONB,
+  updated_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS user_sessions (
   id SERIAL PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(id),
@@ -545,3 +579,9 @@ CREATE INDEX IF NOT EXISTS idx_records_serial_number
 ON records (serial_number);
 CREATE INDEX IF NOT EXISTS idx_auth_sessions_user_active
 ON auth_sessions (user_id, revoked_at, expires_at DESC);
+CREATE INDEX IF NOT EXISTS idx_auth_event_log_created
+ON auth_event_log (created_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_auth_event_log_type_created
+ON auth_event_log (event_type, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_auth_event_log_user_created
+ON auth_event_log (user_id, created_at DESC);

@@ -18,6 +18,7 @@ import toolLocationsRouter from "./routes/toolLocations.js";
 import authRouter from "./routes/auth.js";
 import { attachAuthSession } from "./middleware/authSession.js";
 import analyticsRouter from "./routes/analytics.js";
+import technicalOpsRouter from "./routes/technicalOps.js";
 
 dotenv.config();
 
@@ -35,6 +36,7 @@ app.get("/health", (req, res) => {
 
 app.use("/api/auth", authRouter);
 app.use("/api/analytics", analyticsRouter);
+app.use("/api/technical-ops", technicalOpsRouter);
 app.use("/api/users", usersRouter);
 app.use("/api/tools", toolsRouter);
 app.use("/api/parts", partsRouter);

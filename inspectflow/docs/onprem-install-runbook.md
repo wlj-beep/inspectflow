@@ -1,6 +1,6 @@
 # On-Prem Install Runbook (`PLAT-DEPLOY-v1`)
 
-Implements BL-019.
+Implements BL-019 and BL-020.
 
 ## Prerequisites
 - OS with Bash and curl.
@@ -19,6 +19,11 @@ Implements BL-019.
   - `deploy/onprem/stop.sh`
   - `deploy/onprem/healthcheck.sh`
   - `deploy/onprem/rollback.sh`
+- Offline update scripts:
+  - `deploy/onprem/create-update-bundle.sh`
+  - `deploy/onprem/verify-update-bundle.sh`
+  - `deploy/onprem/preflight-update.sh`
+  - `deploy/onprem/apply-update-bundle.sh`
 
 ## Install Procedure
 1. Copy `deploy/onprem/.env.example` to `deploy/onprem/.env`.
@@ -55,6 +60,34 @@ Implements BL-019.
    - restores database from backup
    - restarts services
    - executes health checks
+
+## Signed Offline Update Workflow (BL-020)
+1. Configure signing settings in `deploy/onprem/.env`:
+   - `INSPECTFLOW_UPDATE_SIGNING_KEY_FILE` (preferred)
+   - or `INSPECTFLOW_UPDATE_SIGNING_KEY`
+2. Build a signed bundle on the source system:
+   - `npm run deploy:onprem:update:bundle:create -- <output-directory> --release-id <release-id>`
+3. Transfer the bundle directory to the target system over approved offline media.
+4. Verify bundle signature and checksums on target:
+   - `npm run deploy:onprem:update:bundle:verify -- <bundle-directory>`
+5. Run preflight checks on target:
+   - `npm run deploy:onprem:update:preflight -- <bundle-directory>`
+6. Apply update (auto-backup + rollback-on-failure):
+   - `npm run deploy:onprem:update:apply -- <bundle-directory>`
+
+### Update Safety Behavior
+- `apply-update-bundle.sh` always creates a backup before applying payload changes.
+- If extraction, migration, build, startup, or health checks fail, rollback is invoked automatically.
+- `deploy:onprem:rollback` remains available for manual rollback at any time.
+
+### Validation Evidence Commands
+- Help and usage checks:
+  - `bash deploy/onprem/create-update-bundle.sh --help`
+  - `bash deploy/onprem/verify-update-bundle.sh --help`
+  - `bash deploy/onprem/preflight-update.sh --help`
+  - `bash deploy/onprem/apply-update-bundle.sh --help`
+- Non-destructive dry run:
+  - `bash deploy/onprem/apply-update-bundle.sh <bundle-directory> --dry-run`
 
 ## Operational Notes
 - Keep `ALLOW_LEGACY_ROLE_HEADER=false` in production.

@@ -2,6 +2,11 @@ import { Router } from "express";
 import { query, transaction } from "../db.js";
 import { requireAnyCapability, requireCapability } from "../middleware/requireCapability.js";
 import { getActorRole, getActorUserId } from "../middleware/authSession.js";
+import {
+  DEFAULT_AS9102_PROFILE_ID,
+  listAs9102Profiles,
+  renderAs9102Export
+} from "../services/quality/as9102Exports.js";
 
 const router = Router();
 
@@ -607,6 +612,99 @@ router.get("/:id/export", requireCapability("view_records"), async (req, res, ne
     const csv = [header, ...lines].join("\n");
     res.setHeader("Content-Type", "text/csv");
     res.send(csv);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/:id/export/as9102", requireCapability("view_records"), async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const profileId = String(req.query.profile || req.query.profileId || DEFAULT_AS9102_PROFILE_ID).trim()
+      || DEFAULT_AS9102_PROFILE_ID;
+
+    const { rows } = await query(
+      `SELECT r.*, j.part_revision_code, j.qty AS job_qty,
+              p.description AS part_description,
+              o.op_number, o.label AS op_label
+       FROM records r
+       LEFT JOIN jobs j ON j.id = r.job_id
+       LEFT JOIN parts p ON p.id = r.part_id
+       LEFT JOIN operations o ON o.id = r.operation_id
+       WHERE r.id=$1`,
+      [id]
+    );
+    const record = rows[0];
+    if (!record) return res.status(404).json({ error: "not_found" });
+
+    const valuesRes = await query(
+      "SELECT is_oot FROM record_values WHERE record_id=$1",
+      [id]
+    );
+    const measured = valuesRes.rows.length;
+    const failed = valuesRes.rows.filter((row) => row.is_oot).length;
+    const passRate = measured ? (measured - failed) / measured : 1;
+
+    const inspectorRes = await query(
+      "SELECT id, name, role FROM users WHERE id=$1",
+      [record.operator_user_id]
+    );
+    const inspector = inspectorRes.rows[0] || {
+      id: record.operator_user_id || null,
+      name: "Unknown",
+      role: null
+    };
+
+    const input = {
+      part: {
+        id: record.part_id,
+        revision: record.part_revision_code || "A",
+        description: record.part_description || null
+      },
+      lot: record.lot,
+      inspector,
+      stats: {
+        measured,
+        failed,
+        passRate
+      }
+    };
+
+    let exportResult;
+    try {
+      exportResult = renderAs9102Export({
+        profileId,
+        input,
+        generatedAt: record.timestamp ? new Date(record.timestamp).toISOString() : undefined
+      });
+    } catch (error) {
+      if (String(error?.message || "") === "unknown_profile") {
+        return res.status(400).json({ error: "unknown_profile" });
+      }
+      throw error;
+    }
+
+    res.json({
+      contractId: exportResult.contractId,
+      exportContractId: exportResult.exportContractId,
+      profile: exportResult.profile,
+      record: {
+        id: record.id,
+        jobId: record.job_id,
+        partId: record.part_id,
+        partRevision: record.part_revision_code || "A",
+        operationId: record.operation_id,
+        operationNumber: record.op_number || null,
+        operationLabel: record.op_label || null,
+        lot: record.lot,
+        qty: record.job_qty ?? record.qty ?? null,
+        status: record.status,
+        createdAt: record.timestamp
+      },
+      input,
+      output: exportResult.output,
+      availableProfiles: listAs9102Profiles()
+    });
   } catch (err) {
     next(err);
   }

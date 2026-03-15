@@ -14,8 +14,11 @@ Canonical global execution queue for active backlog work.
 
 | Rank | Item ID | Priority | Status | Owner | Updated | Work Item |
 | --- | --- | --- | --- | --- | --- | --- |
-| 9 | BL-034 | P3 | Blocked | @codex | 2026-03-14T17:25:18-04:00 | [QUAL-Team Helix] Blocked by BL-027 (dependency incomplete). Remaining acceptance gap: BL-027 export acceptance evidence is required before `QUAL-FAI-v2` first-article workflow hardening proceeds. |
-| 10 | BL-035 | P3 | Blocked | @codex | 2026-03-14T17:25:18-04:00 | [QUAL-Team Helix] Blocked by BL-034 (dependency incomplete). Remaining acceptance gap: BL-034 must complete acceptance before `QUAL-EXPORT-v1` profile-pack delivery can proceed. |
+
+Active ranked queue is currently clear; re-seed with new prioritized items when the next backlog tranche is activated.
+
+## Active Gate Defaults
+- For BL-058 acceptance, duplicate/replay behavior is fixed to idempotent skip plus audit trail updates (no strict hard-reject mode).
 
 ## Handoff Notes
 
@@ -58,3 +61,13 @@ Canonical global execution queue for active backlog work.
 | 2026-03-14 | BL-038 | @codex | @owner | Completed `INT-CONNECTOR-v2` observability integration: support bundles are persisted in import run runtime summaries and exposed through admin-safe retrieval endpoints (`/api/imports/runs/:id/support-bundle`, `/api/imports/support-bundles`) with regression coverage. |
 | 2026-03-14 | BL-040 | @codex | @owner | Completed `ANA-KPI-v3` operator/supervisor dashboard runtime APIs (`/api/analytics/kpis/definitions`, `/api/analytics/kpis/dashboard`) with validated KPI contracts and mart-backed aggregate/breakdown/trend outputs. |
 | 2026-03-14 | BL-042 | @codex | @owner | Completed `ANA-RISK-v3` + `QUAL-RISK-WORKFLOW-v1` lifecycle integration: risk-event acknowledge/escalate-to-issue/resolve workflows now persist actor metadata, linked issue IDs, and traceable escalation evidence with regression coverage. |
+| 2026-03-15 | BL-027 | @codex | @owner | Completed `QUAL-EXPORT-v1` runtime path: retained record CSV export and shipped starter AS9102-oriented output endpoint (`/api/records/:id/export/as9102`) with profile rendering tests. |
+| 2026-03-15 | BL-053 | @codex | @owner | Completed technical ops API foundation (`/api/technical-ops/{summary,health,storage,backups,events}`) with admin-safe health/DB/storage/backup/error summaries and regression coverage. |
+| 2026-03-15 | BL-056 | @codex | @owner | Completed repeatable synthetic-load gate: deterministic 10x generator (`scripts/load/generate-synthetic-data.mjs`), load gate runner (`scripts/load/run-load-gate.sh`), and dry-run CI validation script (`npm run test:load:gate`). |
+| 2026-03-15 | BL-058 | @codex | @owner | Completed idempotent duplicate/replay enforcement across ingest entrypoints by routing manual/API CSV imports through connector runtime + ledger with run-log audit metadata and dedicated entrypoint tests. |
+| 2026-03-15 | BL-055 | @codex | @owner | Completed integration monitoring APIs (`/api/technical-ops/integrations/monitoring`, `/api/technical-ops/integrations/:id/runs`) with per-connector health indicators, run outcomes, replay context, and failure visibility. |
+| 2026-03-15 | BL-057 | @codex | @owner | Completed on-prem lifecycle controls APIs (`/api/technical-ops/lifecycle/{summary,retention}`) with retention policy persistence, footprint/capacity visibility, and operator runbook command guidance. |
+| 2026-03-15 | BL-054 | @codex | @owner | Completed Admin `Technical Ops` tab with function-first UX wired to technical ops/integration/lifecycle APIs and run-history controls. |
+| 2026-03-15 | BL-059 | @codex | @owner | Completed admin operational analytics/risk rollup endpoint (`/api/analytics/admin/operational-rollup`) and UI integration in the Technical Ops tab with high-level status/severity summaries. |
+| 2026-03-15 | BL-034 | @codex | @owner | Completed `QUAL-FAI-v2` first-article profile runtime path via record-scoped AS9102 export inputs (part + lot + inspector + measured/fail stats) and profile-selection endpoint behavior. |
+| 2026-03-15 | BL-035 | @codex | @owner | Completed `QUAL-EXPORT-v1` profile-pack delivery with selectable starter profiles (`as9102-basic`, `as9102-line-only`) and runtime validation/error handling tests for unknown profile requests. |

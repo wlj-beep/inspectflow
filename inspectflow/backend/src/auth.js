@@ -96,13 +96,18 @@ export async function createAuthSession({ userId, ipAddress = null, userAgent = 
   const tokenHash = sessionTokenHash(token);
   const ttlHours = toPositiveInt(DEFAULT_SESSION_TTL_HOURS, 12);
   const expiresAt = new Date(Date.now() + ttlHours * 60 * 60 * 1000);
-  await query(
+  const { rows } = await query(
     `INSERT INTO auth_sessions
        (user_id, session_token_hash, expires_at, ip_address, user_agent)
-     VALUES ($1,$2,$3,$4,$5)`,
+     VALUES ($1,$2,$3,$4,$5)
+     RETURNING id`,
     [userId, tokenHash, expiresAt.toISOString(), ipAddress, userAgent]
   );
-  return { token, expiresAt };
+  return {
+    token,
+    expiresAt,
+    sessionId: Number(rows[0].id)
+  };
 }
 
 export async function getAuthSessionByToken(token) {
@@ -147,8 +152,47 @@ export async function revokeAuthSessionByToken(token, reason = "logout") {
      SET revoked_at=NOW(), revoked_reason=$2
      WHERE session_token_hash=$1
        AND revoked_at IS NULL
-     RETURNING id`,
+     RETURNING id, user_id`,
     [tokenHash, reason]
   );
-  return !!rows[0];
+  if (!rows[0]) return null;
+  return {
+    sessionId: Number(rows[0].id),
+    userId: Number(rows[0].user_id)
+  };
+}
+
+function normalizeEventPayload(metadata) {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return {};
+  return metadata;
+}
+
+export async function recordAuthEvent({
+  eventType,
+  userId = null,
+  actorRole = null,
+  sessionId = null,
+  username = null,
+  ipAddress = null,
+  userAgent = null,
+  metadata = {}
+} = {}) {
+  const normalizedEventType = String(eventType || "").trim();
+  if (!normalizedEventType) return;
+  const normalizedUsername = String(username || "").trim() || null;
+  await query(
+    `INSERT INTO auth_event_log
+       (event_type, user_id, actor_role, session_id, username, ip_address, user_agent, metadata)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb)`,
+    [
+      normalizedEventType,
+      userId == null ? null : Number(userId),
+      actorRole ? String(actorRole) : null,
+      sessionId == null ? null : Number(sessionId),
+      normalizedUsername,
+      ipAddress ? String(ipAddress) : null,
+      userAgent ? String(userAgent) : null,
+      JSON.stringify(normalizeEventPayload(metadata))
+    ]
+  );
 }
