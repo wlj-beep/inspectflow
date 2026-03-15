@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import request from "supertest";
 import app from "../src/index.js";
 import { query } from "../src/db.js";
@@ -11,7 +11,34 @@ async function removeUserByName(name) {
   await query("DELETE FROM users WHERE name=$1", [name]);
 }
 
+async function resetAuthEntitlementBaseline() {
+  await query(
+    `UPDATE platform_entitlements
+     SET seat_pack=25,
+         seat_soft_limit=25,
+         seat_policy='{"mode":"soft","enforced":false,"hardLimit":0,"namedUsers":[],"allowedDevices":[]}'::jsonb,
+         module_flags='{"CORE":true,"QUALITY_PRO":false,"INTEGRATION_SUITE":false,"ANALYTICS_SUITE":false,"MULTISITE":false,"EDGE":false}'::jsonb,
+         updated_at=NOW()
+     WHERE id=1`
+  );
+
+  await query(
+    `UPDATE auth_local_credentials
+     SET failed_attempts=0,
+         locked_until=NULL
+     WHERE user_id IN (
+       SELECT id
+       FROM users
+       WHERE name IN ('S. Admin', 'J. Morris', 'R. Tatum')
+     )`
+  );
+}
+
 describe("Optional SSO auth path (BL-036)", () => {
+  beforeEach(async () => {
+    await resetAuthEntitlementBaseline();
+  });
+
   afterEach(async () => {
     delete process.env.AUTH_SSO_ENABLED;
     delete process.env.AUTH_SSO_AUTO_PROVISION;

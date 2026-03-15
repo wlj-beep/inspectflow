@@ -535,6 +535,22 @@ CREATE TABLE IF NOT EXISTS ana_risk_event_log (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS platform_extensions (
+  plugin_id TEXT PRIMARY KEY,
+  display_name TEXT NOT NULL,
+  version TEXT NOT NULL,
+  sdk_version TEXT NOT NULL DEFAULT 'EDGE-SDK-v1',
+  manifest_json JSONB NOT NULL DEFAULT '{}'::JSONB,
+  policy_status TEXT NOT NULL DEFAULT 'blocked' CHECK (policy_status IN ('allowed','blocked')),
+  policy_findings_json JSONB NOT NULL DEFAULT '[]'::JSONB,
+  enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  required_module TEXT NOT NULL DEFAULT 'EDGE',
+  updated_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  updated_by_role TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 ALTER TABLE missing_pieces DROP CONSTRAINT IF EXISTS missing_pieces_reason_check;
 ALTER TABLE missing_pieces ADD CONSTRAINT missing_pieces_reason_check CHECK (reason IN ('Scrapped','Lost','Damaged','Other','Unable to Measure'));
 ALTER TABLE dimensions ADD COLUMN IF NOT EXISTS sampling_interval INTEGER;
@@ -603,6 +619,10 @@ CREATE INDEX IF NOT EXISTS idx_ana_risk_event_status
 ON ana_risk_event_log (status, last_seen_at DESC);
 CREATE INDEX IF NOT EXISTS idx_ana_risk_event_linked_issue
 ON ana_risk_event_log (linked_issue_id);
+CREATE INDEX IF NOT EXISTS idx_platform_extensions_enabled
+ON platform_extensions (enabled, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_platform_extensions_policy_status
+ON platform_extensions (policy_status, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_operations_work_center_id
 ON operations (work_center_id);
 CREATE INDEX IF NOT EXISTS idx_work_centers_active

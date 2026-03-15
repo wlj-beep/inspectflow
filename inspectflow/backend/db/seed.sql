@@ -38,7 +38,7 @@ INSERT INTO role_capabilities (role, capability) VALUES
 ON CONFLICT DO NOTHING;
 
 INSERT INTO platform_entitlements
-  (id, contract_id, license_tier, seat_pack, seat_soft_limit, diagnostics_opt_in, module_flags)
+  (id, contract_id, license_tier, seat_pack, seat_soft_limit, seat_policy, diagnostics_opt_in, module_flags)
 VALUES
   (
     1,
@@ -46,6 +46,7 @@ VALUES
     'core',
     25,
     25,
+    '{"mode":"soft","enforced":false,"hardLimit":0,"namedUsers":[],"allowedDevices":[]}'::JSONB,
     false,
     '{"CORE": true, "QUALITY_PRO": false, "INTEGRATION_SUITE": false, "ANALYTICS_SUITE": false, "MULTISITE": false, "EDGE": false}'::JSONB
   )
@@ -54,6 +55,7 @@ SET contract_id = EXCLUDED.contract_id,
     license_tier = EXCLUDED.license_tier,
     seat_pack = EXCLUDED.seat_pack,
     seat_soft_limit = EXCLUDED.seat_soft_limit,
+    seat_policy = EXCLUDED.seat_policy,
     diagnostics_opt_in = EXCLUDED.diagnostics_opt_in,
     module_flags = EXCLUDED.module_flags,
     updated_at = NOW();

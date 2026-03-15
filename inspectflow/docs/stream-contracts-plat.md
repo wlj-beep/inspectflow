@@ -10,6 +10,7 @@ Platform foundations: auth, authorization enforcement, deployment/runtime reliab
 - `PLAT-ENT-v1`: entitlement and module-flag read contract.
 - `PLAT-DEPLOY-v1`: install/health/preflight/update status contract.
 - `PLAT-BACKUP-v1`: backup/restore execution and audit contract.
+- `PLAT-DEPLOY-v1` extension surface (`EDGE-SDK-v1`): policy-safe plugin runtime scaffolding (`/api/extensions/*`) for R4 ecosystem work (BL-046).
 
 `PLAT-ENT-v1` API surface:
 - `GET /api/auth/entitlements`: authenticated read contract for module gating consumers.

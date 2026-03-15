@@ -1,12 +1,38 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import request from "supertest";
 import app from "../src/index.js";
+import { query } from "../src/db.js";
 
 async function login(agent, username, password = "inspectflow") {
   return agent.post("/api/auth/login").send({ username, password });
 }
 
+async function resetAuthEntitlementBaseline() {
+  await query(
+    `UPDATE platform_entitlements
+     SET seat_pack=25,
+         seat_soft_limit=25,
+         seat_policy='{"mode":"soft","enforced":false,"hardLimit":0,"namedUsers":[],"allowedDevices":[]}'::jsonb,
+         module_flags='{"CORE":true,"QUALITY_PRO":false,"INTEGRATION_SUITE":false,"ANALYTICS_SUITE":false,"MULTISITE":false,"EDGE":false}'::jsonb,
+         updated_at=NOW()
+     WHERE id=1`
+  );
+
+  await query(
+    `UPDATE auth_local_credentials
+     SET failed_attempts=0,
+         locked_until=NULL
+     WHERE user_id IN (
+       SELECT id
+       FROM users
+       WHERE name IN ('S. Admin', 'J. Morris')
+     )`
+  );
+}
+
 async function loginAdmin(agent) {
+  await resetAuthEntitlementBaseline();
+
   const primary = await login(agent, "S. Admin", "inspectflow");
   if (primary.status === 200) return primary;
   const fallback = await login(agent, "S. Admin", "inspectflow-v2");
@@ -15,6 +41,10 @@ async function loginAdmin(agent) {
 }
 
 describe("Auth route contracts (BL-029)", () => {
+  beforeEach(async () => {
+    await resetAuthEntitlementBaseline();
+  });
+
   afterEach(() => {
     delete process.env.ALLOW_LEGACY_ROLE_HEADER;
   });

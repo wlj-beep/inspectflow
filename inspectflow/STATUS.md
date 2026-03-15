@@ -14,7 +14,7 @@ Canonical global execution queue for active backlog work.
 
 | Rank | Item ID | Priority | Status | Owner | Updated | Work Item |
 | --- | --- | --- | --- | --- | --- | --- |
-| 1 | BL-046 | P1 | In Progress | @codex | 2026-03-15T11:41:00-04:00 | `PLAT-DEPLOY-v1`: add extension SDK boundary and policy-safe plugin runtime scaffolding. |
+| 1 | BL-047 | P1 | In Progress | @codex | 2026-03-15T12:04:00-04:00 | `INT-CONNECTOR-v2`: add partner connector kit and validation harness for third-party onboarding. |
 
 ## Active Gate Defaults
 - For BL-058 acceptance, duplicate/replay behavior is fixed to idempotent skip plus audit trail updates (no strict hard-reject mode).
@@ -86,3 +86,5 @@ Canonical global execution queue for active backlog work.
 | 2026-03-15 | BL-044 | @codex | @owner | Completed multi-site authorization separation controls: added user site-access mapping contract (`user_site_access` + `GET/PUT /api/users/:id/sites`), enforced analytics site scope against assigned user sites for non-admin roles, and validated with expanded multi-site regression coverage plus full standardized gates. |
 | 2026-03-15 | BL-045 | @codex | @owner | Completed `ANA-KPI-v3` analytics performance + cost SLO statusing: added admin-only `GET /api/analytics/performance/slo` summary with configurable threshold env controls, updated multi-site analytics access regression to validate site grant gating, and validated with focused analytics tests plus full standardized gates. |
 | 2026-03-15 | BL-046 | @owner | @codex | Claimed after BL-045 completion to start extension SDK boundary and policy-safe plugin runtime scaffolding. |
+| 2026-03-15 | BL-046 | @codex | @owner | Completed `PLAT-DEPLOY-v1` extension SDK boundary + policy-safe plugin runtime scaffolding: added `platform_extensions` persistence, admin `/api/extensions/{runtime,plugins,*}` scaffolding with `EDGE-SDK-v1` policy validation, and validated via full standardized gates. |
+| 2026-03-15 | BL-047 | @owner | @codex | Claimed after BL-046 completion to implement partner connector kit and validation harness onboarding path. |
