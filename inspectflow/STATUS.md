@@ -77,3 +77,4 @@ Active ranked queue is currently clear; re-seed with new prioritized items when 
 | 2026-03-15 | BL-017 | @codex | @owner | Completed `PLAT-AUTH-v1` capability migration acceptance: authenticated identity role is authoritative with controlled legacy-header compatibility behavior validated in auth/permission tests. |
 | 2026-03-15 | BL-051 | @codex | @owner | Completed `PLAT-ENT-v1` entitlement contract acceptance: authenticated read/admin update contract with module flags and entitlement audit events validated in regression suite. |
 | 2026-03-15 | BL-020 | @codex | @owner | Completed `PLAT-DEPLOY-v1` offline update acceptance: signed bundle create/verify and preflight workflow validated (`create-update-bundle.sh`, `verify-update-bundle.sh`, `preflight-update.sh`). |
+| 2026-03-15 | BL-023 | @codex | @owner | Completed `OPS-ROUTING-v1` acceptance: operation resequence + move workflows with part revision trace validated via `test/ops-routing-workflows.test.js`. |
