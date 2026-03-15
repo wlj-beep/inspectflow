@@ -33,9 +33,35 @@ test.describe("Live UI critical path @live", () => {
     await expect(page.getByText("Manufacturing Inspection System")).toBeVisible();
   }
 
+  async function ensurePartWithOperation(request, partId, opNumber = "020") {
+    const partRes = await request.post(`${API_URL}/api/parts`, {
+      headers: { "x-user-role": "Admin" },
+      data: {
+        id: partId,
+        description: `UI Live Test ${partId}`,
+        revision: "A"
+      }
+    });
+    expect([201, 409]).toContain(partRes.status());
+
+    const opRes = await request.post(`${API_URL}/api/operations`, {
+      headers: { "x-user-role": "Admin" },
+      data: {
+        partId,
+        opNumber,
+        label: `Live Test Op ${opNumber}`
+      }
+    });
+    expect([201, 409]).toContain(opRes.status());
+  }
+
   test("admin creates job, operator submits measurements, record persists", async ({ page }) => {
     const jobId = `J-UI-${Date.now()}`;
     const lot = `Lot-${Date.now()}`;
+    const partId = `UI${Date.now().toString().slice(-8)}`;
+    const opNumber = "020";
+
+    await ensurePartWithOperation(page.request, partId, opNumber);
 
     await page.goto("/");
     await login(page, "S. Admin - Admin");
@@ -48,7 +74,7 @@ test.describe("Live UI critical path @live", () => {
     await createCard.getByPlaceholder("J-10045").fill(jobId);
 
     const partSelect = createCard.locator("div.field:has(label:has-text('Part Number')) select").first();
-    await partSelect.selectOption({ value: "1234" });
+    await partSelect.selectOption({ value: partId });
 
     const revSelect = createCard.locator("div.field:has(label:has-text('Revision')) select").first();
     const activeRevision = await revSelect.inputValue();
@@ -57,13 +83,13 @@ test.describe("Live UI critical path @live", () => {
     }
 
     const opSelect = createCard.locator("div.field:has(label:has-text('Operation')) select").first();
-    await selectPreferredOrFirst(opSelect, ["020", "20", "010", "10"]);
+    await selectPreferredOrFirst(opSelect, [opNumber, String(Number(opNumber))]);
 
     await createCard.getByPlaceholder("e.g. Lot C").fill(lot);
     await createCard.locator("input[placeholder='12']").fill("1");
     await createCard.getByRole("button", { name: /create job/i }).click();
     await expect.poll(async () => {
-      const jobsRes = await page.request.get(`${API_URL}/api/jobs?partId=1234`);
+      const jobsRes = await page.request.get(`${API_URL}/api/jobs?partId=${encodeURIComponent(partId)}`);
       if (!jobsRes.ok()) return false;
       const jobs = await jobsRes.json();
       return jobs.some((job) => job.id === jobId);
