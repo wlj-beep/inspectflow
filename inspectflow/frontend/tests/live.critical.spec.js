@@ -9,6 +9,23 @@ const DEFAULT_PASSWORD = process.env.INSPECTFLOW_TEST_PASSWORD
 test.skip(!LIVE_ENABLED, "PLAYWRIGHT_LIVE not enabled (set PLAYWRIGHT_LIVE=1 to run live tests).");
 
 test.describe("Live UI critical path @live", () => {
+  async function listSelectOptionValues(selectLocator) {
+    return selectLocator.locator("option").evaluateAll((options) => options
+      .map((option) => option.value)
+      .filter((value) => value));
+  }
+
+  async function selectPreferredOrFirst(selectLocator, preferredValues, timeoutMs = 10000) {
+    await expect.poll(async () => {
+      const values = await listSelectOptionValues(selectLocator);
+      return values.length;
+    }, { timeout: timeoutMs }).toBeGreaterThan(0);
+    const values = await listSelectOptionValues(selectLocator);
+    const target = preferredValues.find((value) => values.includes(value)) || values[0];
+    await selectLocator.selectOption({ value: target });
+    return target;
+  }
+
   async function login(page, userLabel) {
     await page.getByLabel("User").selectOption({ label: userLabel });
     await page.getByLabel("Password").fill(DEFAULT_PASSWORD);
@@ -34,10 +51,13 @@ test.describe("Live UI critical path @live", () => {
     await partSelect.selectOption({ value: "1234" });
 
     const revSelect = createCard.locator("div.field:has(label:has-text('Revision')) select").first();
-    await revSelect.selectOption({ value: "A" });
+    const activeRevision = await revSelect.inputValue();
+    if (!activeRevision) {
+      await selectPreferredOrFirst(revSelect, ["A"]);
+    }
 
     const opSelect = createCard.locator("div.field:has(label:has-text('Operation')) select").first();
-    await opSelect.selectOption({ value: "020" });
+    await selectPreferredOrFirst(opSelect, ["020", "20", "010", "10"]);
 
     await createCard.getByPlaceholder("e.g. Lot C").fill(lot);
     await createCard.locator("input[placeholder='12']").fill("1");
