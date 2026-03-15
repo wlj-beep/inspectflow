@@ -1756,6 +1756,56 @@ async function executeConnectorManagedImport({
   };
 }
 
+async function executeDirectImportWithAudit({
+  importType,
+  payload,
+  sourceType,
+  role,
+  triggerMode = "manual",
+  options = {}
+}) {
+  const { result, runtime, externalRefs } = await executeConnectorManagedImport({
+    integrationId: null,
+    sourceType,
+    importType,
+    payload,
+    role,
+    triggerMode,
+    options
+  });
+
+  const run = await insertRunLog({
+    integrationId: null,
+    sourceType,
+    importType,
+    triggerMode,
+    result,
+    runtime
+  });
+
+  await persistUnresolvedItems(result.unresolvedItems || [], {
+    runId: run.runId,
+    sourceType
+  });
+  await persistExternalEntityRefs(externalRefs || [], {
+    runId: run.runId,
+    sourceType,
+    importType
+  });
+  await finalizeIdempotencyLedgerEntry({
+    idempotencyKey: result.idempotencyKey,
+    runId: run.runId,
+    runStatus: run.status
+  });
+
+  return {
+    ...result,
+    ok: Number(result?.failed || 0) === 0,
+    runId: run.runId,
+    runStatus: run.status
+  };
+}
+
 function integrationLastMessage(result, runtime, status) {
   if (status === "error") {
     const runtimeCode = runtime?.errors?.[0]?.code;
@@ -1882,22 +1932,26 @@ router.post("/tools/csv", requireCapability("manage_tools"), async (req, res, ne
   try {
     const { csvText } = req.body || {};
     if (!String(csvText || "").trim()) return res.status(400).json({ error: "csv_required" });
-
     const { rows } = parseCsvText(csvText);
     if (!rows.length) return res.status(400).json({ error: "csv_no_rows" });
 
-    const result = await importToolsRows(rows);
-    const status = result.failed >= result.totalRows ? 400 : 200;
-    res.status(status).json({
-      ok: result.ok,
-      total: result.totalRows,
-      totalRows: result.totalRows,
-      inserted: result.inserted,
-      updated: result.updated,
-      failed: result.failed,
-      errors: result.errors
+    const result = await executeDirectImportWithAudit({
+      importType: "tools",
+      payload: { csvText },
+      sourceType: "manual_csv",
+      role: requestRole(req),
+      triggerMode: "manual"
+    });
+
+    const statusCode = importResponseStatusCode(result);
+    res.status(statusCode).json({
+      ...result,
+      total: result.totalRows
     });
   } catch (err) {
+    if (safeErrorCode(err) === "csv_no_rows") {
+      return res.status(400).json({ error: "csv_no_rows" });
+    }
     next(err);
   }
 });
@@ -1906,16 +1960,21 @@ router.post("/part-dimensions/csv", requireCapability("manage_parts"), async (re
   try {
     const { csvText } = req.body || {};
     if (!String(csvText || "").trim()) return res.status(400).json({ error: "csv_required" });
-
     const { rows } = parseCsvText(csvText);
     if (!rows.length) return res.status(400).json({ error: "csv_no_rows" });
 
-    const role = requestRole(req);
-    const result = await importPartDimensionsRows(rows, role);
-    res.json(result);
+    const result = await executeDirectImportWithAudit({
+      importType: "part_dimensions",
+      payload: { csvText },
+      sourceType: "manual_csv",
+      role: requestRole(req),
+      triggerMode: "manual"
+    });
+    const statusCode = importResponseStatusCode(result);
+    res.status(statusCode).json(result);
   } catch (err) {
-    if (String(err?.message || "").startsWith("line_")) {
-      return res.status(400).json({ error: err.message });
+    if (safeErrorCode(err) === "csv_no_rows") {
+      return res.status(400).json({ error: "csv_no_rows" });
     }
     next(err);
   }
@@ -1925,14 +1984,22 @@ router.post("/jobs/csv", requireCapability("manage_jobs"), async (req, res, next
   try {
     const { csvText } = req.body || {};
     if (!String(csvText || "").trim()) return res.status(400).json({ error: "csv_required" });
-
     const { rows } = parseCsvText(csvText);
     if (!rows.length) return res.status(400).json({ error: "csv_no_rows" });
 
-    const result = await importJobsRows(rows, requestRole(req));
-    const status = result.failed >= result.totalRows ? 400 : 200;
-    res.status(status).json(result);
+    const result = await executeDirectImportWithAudit({
+      importType: "jobs",
+      payload: { csvText },
+      sourceType: "manual_csv",
+      role: requestRole(req),
+      triggerMode: "manual"
+    });
+    const statusCode = importResponseStatusCode(result);
+    res.status(statusCode).json(result);
   } catch (err) {
+    if (safeErrorCode(err) === "csv_no_rows") {
+      return res.status(400).json({ error: "csv_no_rows" });
+    }
     next(err);
   }
 });
@@ -1940,12 +2007,12 @@ router.post("/jobs/csv", requireCapability("manage_jobs"), async (req, res, next
 router.post("/measurements/bulk", requireCapability("manage_jobs"), async (req, res, next) => {
   try {
     const payload = req.body || {};
-
-    const result = await runImportByType({
+    const result = await executeDirectImportWithAudit({
       importType: "measurements",
       payload,
       sourceType: "api_pull",
       role: requestRole(req),
+      triggerMode: "manual",
       options: {
         requireOpenJob: false,
         forceOperatorUserId: payload.operatorUserId,
@@ -1954,24 +2021,9 @@ router.post("/measurements/bulk", requireCapability("manage_jobs"), async (req, 
       }
     });
 
-    const run = await insertRunLog({
-      integrationId: null,
-      sourceType: "api_pull",
-      importType: "measurements",
-      triggerMode: "manual",
-      result
-    });
-
-    await persistUnresolvedItems(result.unresolvedItems || [], {
-      runId: run.runId,
-      sourceType: "api_pull"
-    });
-
     const status = importResponseStatusCode(result);
     res.status(status).json({
-      ...result,
-      runId: run.runId,
-      runStatus: run.status
+      ...result
     });
   } catch (err) {
     if (safeErrorCode(err) === "csv_no_rows") {
@@ -1998,11 +2050,22 @@ router.post("/jobs/:jobId/measurements/csv", requireCapability("submit_records")
     const { rows } = parseCsvText(csvText);
     if (!rows.length) return res.status(400).json({ error: "csv_no_rows" });
 
-    const result = await runImportByType({
+    const runtimePayload = {
+      rows,
+      jobId,
+      operationId: operationId || null,
+      partId: partId || null,
+      operatorUserId: effectiveOperatorId,
+      status: status || null,
+      comment: comment || null
+    };
+
+    const result = await executeDirectImportWithAudit({
       importType: "measurements",
-      payload: { rows },
+      payload: runtimePayload,
       sourceType: "operator_csv",
       role: requestRole(req),
+      triggerMode: "manual",
       options: {
         forceJobId: jobId,
         forcePartId: partId,
@@ -2015,24 +2078,9 @@ router.post("/jobs/:jobId/measurements/csv", requireCapability("submit_records")
       }
     });
 
-    const run = await insertRunLog({
-      integrationId: null,
-      sourceType: "operator_csv",
-      importType: "measurements",
-      triggerMode: "manual",
-      result
-    });
-
-    await persistUnresolvedItems(result.unresolvedItems || [], {
-      runId: run.runId,
-      sourceType: "operator_csv"
-    });
-
     const statusCode = importResponseStatusCode(result);
     res.status(statusCode).json({
-      ...result,
-      runId: run.runId,
-      runStatus: run.status
+      ...result
     });
   } catch (err) {
     if (safeErrorCode(err) === "csv_no_rows") {

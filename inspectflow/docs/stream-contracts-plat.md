@@ -9,6 +9,10 @@ Platform foundations: auth, authorization enforcement, deployment/runtime reliab
 - `PLAT-DEPLOY-v1`: install/health/preflight/update status contract.
 - `PLAT-BACKUP-v1`: backup/restore execution and audit contract.
 
+`PLAT-ENT-v1` API surface:
+- `GET /api/auth/entitlements`: authenticated read contract for module gating consumers.
+- `PUT /api/auth/entitlements`: admin policy update (`moduleFlags`, seat policy, diagnostics opt-in).
+
 ## Consumes
 - `COMM-LICENSE-v1` for entitlement policy metadata.
 - `OPS-WORKCENTER-v1` for audited work center action coverage.
@@ -24,3 +28,4 @@ Platform foundations: auth, authorization enforcement, deployment/runtime reliab
 - Contract documented and linked from backlog items.
 - Security and rollback criteria validated.
 - Test coverage includes failure mode handling.
+- Auth events are auditable for login/session/password lifecycle transitions.

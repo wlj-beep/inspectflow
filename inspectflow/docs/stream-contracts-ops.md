@@ -8,6 +8,11 @@ Shop-floor workflows: jobs, operations, work centers, routing changes, operator 
 - `OPS-ROUTING-v1`: operation sequencing and reroute contract.
 - `OPS-JOBFLOW-v1`: draft/incomplete/complete lifecycle control contract.
 
+## API Surface Notes
+- `POST /api/operations/resequence`: re-sequences one or more operations for a part with revision trace updates.
+- `POST /api/operations/:id/move`: moves an operation across parts/op numbers with source + target revision trace updates.
+- Routing/work-center audit actors use authenticated identity role resolution (`PLAT-AUTH-v1`) with legacy header compatibility mode retained.
+
 ## Consumes
 - `PLAT-AUTH-v1` and `PLAT-ENT-v1`.
 - `QUAL-TRACE-v1` for traceability/audit overlays.

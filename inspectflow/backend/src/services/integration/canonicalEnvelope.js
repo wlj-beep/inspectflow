@@ -2,6 +2,12 @@ import { createHash } from "node:crypto";
 
 const SOURCE_TYPE_ALIASES = new Map([
   ["manual", "manual"],
+  ["manual_csv", "manual"],
+  ["manualcsv", "manual"],
+  ["operator_csv", "manual"],
+  ["operatorcsv", "manual"],
+  ["manual_resolution", "manual"],
+  ["manualresolution", "manual"],
   ["api", "api_pull"],
   ["api_pull", "api_pull"],
   ["pull", "api_pull"],
@@ -191,4 +197,3 @@ export function validateAndNormalizeCanonicalEnvelope(input, options = {}) {
     value: result.ok ? value : null
   };
 }
-

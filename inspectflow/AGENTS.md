@@ -8,6 +8,7 @@ These instructions are optimized for context usage and forward progress.
 - `README.md`
 - `STATUS.md`
 - `docs/backlog.md`
+- `docs/backlog-intake-protocol.md` (required when evaluating new ideas for backlog insertion)
 - `WORKLOG.md`
 - `docs/architecture.md`
 - `docs/mvp-scope.md`

@@ -28,6 +28,12 @@ This backlog follows `docs/backlog-framework.md` and is organized for parallel t
 | BL-030 | R1 | PLAT | CORE | Team Atlas | BL-015, BL-016, BL-017, BL-018, BL-019, BL-020, BL-021, BL-022, BL-023, BL-024, BL-025, BL-026, BL-027, BL-028, BL-029, BL-051 | PLAT-DEPLOY-v1 | 99 | R1 acceptance matrix automated and manual release evidence checklist completed. |
 | BL-051 | R1 | PLAT | CORE | Team Atlas | BL-015 | PLAT-ENT-v1 | 89 | Entitlement and module-flag read contract is delivered as the authoritative gating source consumed by commercialization and multi-site controls. |
 | BL-052 | R1 | PLAT | CORE | Team Atlas | None | PLAT-TEST-v1 | 97 | Standardized test platform is rebuilt end-to-end with live UI critical-path coverage, backend persistence checks, CI quality gates, and updated agent/testing runbooks. |
+| BL-053 | R1 | PLAT | CORE | Team Atlas | BL-052, BL-019, BL-021 | PLAT-DEPLOY-v1 | 95 | Admin-safe technical ops APIs expose system health, DB/storage signals, backup status, and error/event summaries. |
+| BL-054 | R1 | PLAT | CORE | Team Atlas | BL-053, BL-055, BL-057, BL-058 | PLAT-DEPLOY-v1 | 89 | Admin `Technical Ops` tab ships in-app for integration setup visibility, runtime status, failures/delays, and operational actions with usability-first layout. |
+| BL-056 | R1 | PLAT | CORE | Team Atlas | BL-052 | PLAT-TEST-v1 | 94 | Repeatable 10x synthetic data generation and load test gate validates ingest/runtime behavior under increased workload. |
+| BL-057 | R1 | PLAT | CORE | Team Atlas | BL-021, BL-053 | PLAT-BACKUP-v1 | 90 | On-prem data lifecycle management is explicit: retention, capacity visibility, backup footprint, and operator runbook controls. |
+| BL-060 | R1 | PLAT | CORE | Team Atlas | BL-015, BL-028 | PLAT-AUTH-v1 | 84 | After successful authentication, UI identity controls show the signed-in user name only and remove post-login dropdown-style user selection. |
+| BL-061 | R1 | PLAT | CORE | Team Atlas | BL-027, BL-028 | QUAL-EXPORT-v1 | 86 | Export-capable pages provide an optional "select records for export" mode that reveals row checkboxes only when enabled, updates actions to "Export selected ... CSV", and exports only the checked records. |
 
 ## R2 Backlog (Enterprise Expansion)
 
@@ -41,6 +47,8 @@ This backlog follows `docs/backlog-framework.md` and is organized for parallel t
 | BL-036 | R2 | PLAT | CORE | Team Atlas | BL-016 | PLAT-AUTH-v1 | 82 | Optional AD/SSO integration path implemented without breaking local account mode. |
 | BL-037 | R2 | COMM | QUALITY_PRO | Team Ledger | BL-018, BL-036, BL-051 | COMM-SEAT-v2 | 80 | Optional paid hard-seat modes (named/device/concurrent) implemented behind entitlement flags. |
 | BL-038 | R2 | INT | INTEGRATION_SUITE | Team Bridge | BL-031 | INT-CONNECTOR-v2 | 84 | Integration observability/support bundle provides operator-safe troubleshooting and replay context. |
+| BL-055 | R2 | INT | INTEGRATION_SUITE | Team Bridge | BL-031, BL-038, BL-053 | INT-CONNECTOR-v2 | 92 | Integration monitoring provides per-connector status, run outcomes, replay/error context, and connected service health indicators. |
+| BL-058 | R2 | INT | INTEGRATION_SUITE | Team Bridge | BL-032, BL-033 | INT-IDEMPOTENCY-v2 | 96 | Duplicate/replay policy is enforced across all ingest entrypoints (manual/import/webhook/API) as idempotent skip + audit. |
 
 ## R3 Backlog (Intelligence and Multi-Site)
 
@@ -53,6 +61,7 @@ This backlog follows `docs/backlog-framework.md` and is organized for parallel t
 | BL-043 | R3 | ANA | MULTISITE | Team Signal | BL-039 | ANA-MART-v3 | 83 | Multi-site partition-aware analytics model implemented with site boundary safeguards. |
 | BL-044 | R3 | PLAT | MULTISITE | Team Atlas | BL-043, BL-036, BL-051 | PLAT-AUTH-v1 | 82 | Multi-site access and reporting controls enforce site-level authorization separation. |
 | BL-045 | R3 | ANA | ANALYTICS_SUITE | Team Signal | BL-040, BL-041, BL-042, BL-043, BL-044 | ANA-KPI-v3 | 79 | Analytics performance and cost controls meet defined SLO thresholds. |
+| BL-059 | R3 | ANA | ANALYTICS_SUITE | Team Signal | BL-039, BL-040, BL-041, BL-042, BL-054 | ANA-KPI-v3 | 83 | Admin operational analytics and risk rollups provide high-level reporting without exposing restricted raw payloads. |
 
 ## R4 Backlog (Platform and Ecosystem)
 

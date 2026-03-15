@@ -33,6 +33,35 @@ describe("Integration envelope and idempotency scaffolding", () => {
     });
   });
 
+  it("accepts manual CSV and operator CSV source aliases", () => {
+    const manualCsv = validateAndNormalizeCanonicalEnvelope({
+      sourceType: "manual_csv",
+      importType: "tools",
+      externalKey: "tools:batch:1",
+      payload: { csvText: "name,type,it_num\nA,Variable,IT-1" }
+    }, { requireExternalKey: true });
+    expect(manualCsv.ok).toBe(true);
+    expect(manualCsv.value?.sourceType).toBe("manual");
+
+    const operatorCsv = validateAndNormalizeCanonicalEnvelope({
+      sourceType: "operator_csv",
+      importType: "measurements",
+      externalKey: "measurements:batch:1",
+      payload: { rows: [{ piece_number: 1 }] }
+    }, { requireExternalKey: true });
+    expect(operatorCsv.ok).toBe(true);
+    expect(operatorCsv.value?.sourceType).toBe("manual");
+
+    const manualResolution = validateAndNormalizeCanonicalEnvelope({
+      sourceType: "manual_resolution",
+      importType: "measurements",
+      externalKey: "measurements:resolve:1",
+      payload: { rows: [{ piece_number: 2 }] }
+    }, { requireExternalKey: true });
+    expect(manualResolution.ok).toBe(true);
+    expect(manualResolution.value?.sourceType).toBe("manual");
+  });
+
   it("can enforce external key requirements", () => {
     const result = validateAndNormalizeCanonicalEnvelope({
       sourceType: "manual",
@@ -107,4 +136,3 @@ describe("Integration envelope and idempotency scaffolding", () => {
     expect(mapped.rejected[0].errors).toContain("invalid_op_number");
   });
 });
-

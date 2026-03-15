@@ -27,6 +27,7 @@ If Direct Push Mode is enabled, keep baseline required checks mandatory before e
 ### R1 Gate
 - Auth/session enforcement active.
 - Backup/restore and offline update workflow validated.
+- Signed bundle verification and update preflight checks pass before apply.
 - Core traceability/export acceptance complete.
 - No unresolved Red findings for R1 items in the latest multi-agent report.
 
@@ -56,6 +57,11 @@ If Direct Push Mode is enabled, keep baseline required checks mandatory before e
 - Capture risk waivers with owner and expiration date.
 - Keep release notes aligned with enabled modules and contract versions.
 - Attach latest multi-agent run report and closure evidence for release sign-off.
+- For BL-020 offline updates, include evidence for:
+  - `deploy:onprem:update:bundle:verify`
+  - `deploy:onprem:update:preflight`
+  - `deploy:onprem:update:apply --dry-run` (or full apply in staging)
+  - rollback proof using `deploy:onprem:rollback` with a known backup artifact
 
 ## Stop-the-Line Policy
 - A `Red` gate freezes new starts for impacted BL IDs immediately.

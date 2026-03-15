@@ -37,6 +37,27 @@ INSERT INTO role_capabilities (role, capability) VALUES
   ('Admin','manage_roles')
 ON CONFLICT DO NOTHING;
 
+INSERT INTO platform_entitlements
+  (id, contract_id, license_tier, seat_pack, seat_soft_limit, diagnostics_opt_in, module_flags)
+VALUES
+  (
+    1,
+    'PLAT-ENT-v1',
+    'core',
+    25,
+    25,
+    false,
+    '{"CORE": true, "QUALITY_PRO": false, "INTEGRATION_SUITE": false, "ANALYTICS_SUITE": false, "MULTISITE": false, "EDGE": false}'::JSONB
+  )
+ON CONFLICT (id) DO UPDATE
+SET contract_id = EXCLUDED.contract_id,
+    license_tier = EXCLUDED.license_tier,
+    seat_pack = EXCLUDED.seat_pack,
+    seat_soft_limit = EXCLUDED.seat_soft_limit,
+    diagnostics_opt_in = EXCLUDED.diagnostics_opt_in,
+    module_flags = EXCLUDED.module_flags,
+    updated_at = NOW();
+
 INSERT INTO tools (name, type, it_num, size) VALUES
   ('Outside Micrometer','Variable','IT-0042','0-6 in'),
   ('Vernier Caliper','Variable','IT-0018','0-12 in'),
