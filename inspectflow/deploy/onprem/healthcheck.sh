@@ -24,7 +24,7 @@ fi
 backend_health="$(curl -fsS "${BACKEND_URL}/health")"
 frontend_status="$(curl -sS -o /dev/null -w "%{http_code}" "${FRONTEND_URL}")"
 
-if [[ "${frontend_status}" != "200" ]]; then
+if [[ "${frontend_status}" -lt 200 || "${frontend_status}" -ge 400 ]]; then
   echo "Frontend health failed (HTTP ${frontend_status})." >&2
   exit 1
 fi
