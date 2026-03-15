@@ -306,7 +306,8 @@ CREATE TABLE IF NOT EXISTS auth_event_log (
     'password_change_failure',
     'password_reset_default',
     'entitlements_updated',
-    'seat_soft_limit_warning'
+    'seat_soft_limit_warning',
+    'seat_hard_limit_block'
   )),
   user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
   actor_role TEXT CHECK (actor_role IS NULL OR actor_role IN ('Operator','Quality','Supervisor','Admin')),
@@ -327,7 +328,8 @@ ALTER TABLE auth_event_log ADD CONSTRAINT auth_event_log_event_type_check CHECK 
   'password_change_failure',
   'password_reset_default',
   'entitlements_updated',
-  'seat_soft_limit_warning'
+  'seat_soft_limit_warning',
+  'seat_hard_limit_block'
 ));
 
 CREATE TABLE IF NOT EXISTS platform_entitlements (
@@ -336,11 +338,14 @@ CREATE TABLE IF NOT EXISTS platform_entitlements (
   license_tier TEXT NOT NULL DEFAULT 'core',
   seat_pack INTEGER NOT NULL DEFAULT 25 CHECK (seat_pack > 0),
   seat_soft_limit INTEGER NOT NULL DEFAULT 25 CHECK (seat_soft_limit > 0),
+  seat_policy JSONB NOT NULL DEFAULT '{"mode":"soft","enforced":false,"hardLimit":0,"namedUsers":[],"allowedDevices":[]}'::JSONB,
   diagnostics_opt_in BOOLEAN NOT NULL DEFAULT FALSE,
   module_flags JSONB NOT NULL DEFAULT '{"CORE": true, "QUALITY_PRO": false, "INTEGRATION_SUITE": false, "ANALYTICS_SUITE": false, "MULTISITE": false, "EDGE": false}'::JSONB,
   updated_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+ALTER TABLE platform_entitlements
+  ADD COLUMN IF NOT EXISTS seat_policy JSONB NOT NULL DEFAULT '{"mode":"soft","enforced":false,"hardLimit":0,"namedUsers":[],"allowedDevices":[]}'::JSONB;
 
 CREATE TABLE IF NOT EXISTS user_sessions (
   id SERIAL PRIMARY KEY,

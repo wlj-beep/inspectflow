@@ -31,12 +31,17 @@ import {
   isSsoEnabled,
   resolveSsoUser
 } from "../services/platform/ssoAuth.js";
+import { evaluateSeatAccess } from "../services/platform/seatEnforcement.js";
 import {
   getPlatformEntitlements,
   updatePlatformEntitlements
 } from "../services/platform/entitlements.js";
 
 const router = Router();
+
+function resolveDeviceId(req, body = {}) {
+  return normalizeUserInput(req.header("x-device-id") || body.deviceId) || null;
+}
 
 router.get("/users", async (req, res, next) => {
   try {
@@ -104,6 +109,31 @@ router.post("/login", async (req, res, next) => {
       return res.status(423).json({ error: "account_locked", lockedUntil: result.lockedUntil || null });
     }
 
+    const entitlements = await getPlatformEntitlements();
+    const seatDecision = await evaluateSeatAccess({
+      entitlements,
+      userId: result.user.id,
+      username: result.user.name,
+      deviceId: resolveDeviceId(req, req.body || {})
+    });
+    if (!seatDecision.allowed) {
+      await emitAuthEventSafely({
+        eventType: "seat_hard_limit_block",
+        userId: result.user.id,
+        actorRole: result.user.role,
+        username: result.user.name,
+        ...requestContext,
+        metadata: {
+          contractId: seatDecision.contractId,
+          mode: seatDecision.mode,
+          reason: seatDecision.reason,
+          hardLimit: seatDecision.hardLimit || null,
+          activeUsers: seatDecision.activeUsers || null
+        }
+      });
+      return res.status(403).json({ error: seatDecision.errorCode || "seat_access_denied" });
+    }
+
     const session = await createAuthSession({
       userId: result.user.id,
       ...requestContext
@@ -111,7 +141,8 @@ router.post("/login", async (req, res, next) => {
     setSessionCookie(res, session.token, session.expiresAt);
     const sessionPayload = await buildAuthSessionPayload({
       user: result.user,
-      expiresAt: session.expiresAt
+      expiresAt: session.expiresAt,
+      entitlements
     });
 
     await emitAuthEventSafely({
@@ -171,6 +202,31 @@ router.post("/sso/login", async (req, res, next) => {
       return res.status(401).json({ error: "invalid_sso_principal" });
     }
 
+    const entitlements = await getPlatformEntitlements();
+    const seatDecision = await evaluateSeatAccess({
+      entitlements,
+      userId: user.id,
+      username: user.name,
+      deviceId: resolveDeviceId(req, req.body || {})
+    });
+    if (!seatDecision.allowed) {
+      await emitAuthEventSafely({
+        eventType: "seat_hard_limit_block",
+        userId: user.id,
+        actorRole: user.role,
+        username: user.name,
+        ...requestContext,
+        metadata: {
+          contractId: seatDecision.contractId,
+          mode: seatDecision.mode,
+          reason: seatDecision.reason,
+          hardLimit: seatDecision.hardLimit || null,
+          activeUsers: seatDecision.activeUsers || null
+        }
+      });
+      return res.status(403).json({ error: seatDecision.errorCode || "seat_access_denied" });
+    }
+
     const session = await createAuthSession({
       userId: user.id,
       ...requestContext
@@ -178,7 +234,8 @@ router.post("/sso/login", async (req, res, next) => {
     setSessionCookie(res, session.token, session.expiresAt);
     const sessionPayload = await buildAuthSessionPayload({
       user,
-      expiresAt: session.expiresAt
+      expiresAt: session.expiresAt,
+      entitlements
     });
 
     await emitAuthEventSafely({
@@ -433,7 +490,8 @@ router.put("/entitlements", requireAuthenticated, async (req, res, next) => {
         moduleFlags: updated.moduleFlags,
         licenseTier: updated.licenseTier,
         seatPack: updated.seatPack,
-        seatSoftLimit: updated.seatSoftLimit
+        seatSoftLimit: updated.seatSoftLimit,
+        seatPolicy: updated.seatPolicy
       }
     });
 

@@ -20,6 +20,10 @@ async function unlockUser(name) {
   );
 }
 
+async function removeUserByName(name) {
+  await query("DELETE FROM users WHERE name=$1", [name]);
+}
+
 async function login(agent, username, password) {
   return agent
     .post("/api/auth/login")
@@ -37,6 +41,13 @@ const DEFAULT_ENTITLEMENTS = {
   licenseTier: "core",
   seatPack: 25,
   seatSoftLimit: 25,
+  seatPolicy: {
+    mode: "soft",
+    enforced: false,
+    hardLimit: 0,
+    namedUsers: [],
+    allowedDevices: []
+  },
   diagnosticsOptIn: false,
   moduleFlags: {
     CORE: true,
@@ -52,6 +63,7 @@ describe("Auth hardening + entitlement contract", () => {
   afterEach(async () => {
     delete process.env.ALLOW_LEGACY_ROLE_HEADER;
     await unlockUser("A. Vasquez");
+    await removeUserByName("C. HardSeat");
   });
 
   it("records login failure and lockout events", async () => {
@@ -202,6 +214,84 @@ describe("Auth hardening + entitlement contract", () => {
     expect(seatEvents.status).toBe(200);
     expect(seatEvents.body.count).toBeGreaterThan(0);
     expect(seatEvents.body.events[0]?.metadata?.contractId).toBe("COMM-SEAT-v1");
+
+    await admin.put("/api/auth/entitlements").send(DEFAULT_ENTITLEMENTS);
+  });
+
+  it("enforces COMM-SEAT-v2 named/device/concurrent hard-seat modes behind entitlement flags", async () => {
+    const admin = await loginAdminAgent();
+    const hardSeatModuleFlags = {
+      ...DEFAULT_ENTITLEMENTS.moduleFlags,
+      QUALITY_PRO: true
+    };
+
+    await admin.put("/api/auth/entitlements").send({
+      ...DEFAULT_ENTITLEMENTS,
+      moduleFlags: hardSeatModuleFlags,
+      seatPolicy: {
+        mode: "named",
+        enforced: true,
+        hardLimit: 0,
+        namedUsers: ["J. Morris"],
+        allowedDevices: []
+      }
+    });
+
+    const namedAllowed = await login(request.agent(app), "J. Morris", "inspectflow");
+    expect(namedAllowed.status).toBe(200);
+    const namedBlocked = await login(request.agent(app), "R. Tatum", "inspectflow");
+    expect(namedBlocked.status).toBe(403);
+    expect(namedBlocked.body).toMatchObject({ error: "seat_user_not_entitled" });
+
+    await admin.put("/api/auth/entitlements").send({
+      ...DEFAULT_ENTITLEMENTS,
+      moduleFlags: hardSeatModuleFlags,
+      seatPolicy: {
+        mode: "device",
+        enforced: true,
+        hardLimit: 0,
+        namedUsers: [],
+        allowedDevices: ["bench-1"]
+      }
+    });
+
+    const deviceAllowed = await request(app)
+      .post("/api/auth/login")
+      .send({ username: "J. Morris", password: "inspectflow", deviceId: "bench-1" });
+    expect(deviceAllowed.status).toBe(200);
+    const deviceBlocked = await request(app)
+      .post("/api/auth/login")
+      .send({ username: "J. Morris", password: "inspectflow", deviceId: "bench-9" });
+    expect(deviceBlocked.status).toBe(403);
+    expect(deviceBlocked.body).toMatchObject({ error: "seat_device_not_entitled" });
+
+    const created = await admin
+      .post("/api/users")
+      .send({ name: "C. HardSeat", role: "Operator", password: "inspectflow" });
+    expect(created.status).toBe(201);
+
+    await admin.put("/api/auth/entitlements").send({
+      ...DEFAULT_ENTITLEMENTS,
+      moduleFlags: hardSeatModuleFlags,
+      seatPolicy: {
+        mode: "concurrent",
+        enforced: true,
+        hardLimit: 1,
+        namedUsers: [],
+        allowedDevices: []
+      }
+    });
+
+    const concurrentBlocked = await login(request.agent(app), "C. HardSeat", "inspectflow");
+    expect(concurrentBlocked.status).toBe(403);
+    expect(concurrentBlocked.body).toMatchObject({ error: "seat_concurrent_limit_reached" });
+
+    const events = await admin
+      .get("/api/auth/events")
+      .query({ eventType: "seat_hard_limit_block", limit: 20 });
+    expect(events.status).toBe(200);
+    expect(events.body.count).toBeGreaterThan(0);
+    expect(["named", "device", "concurrent"]).toContain(events.body.events[0]?.metadata?.mode);
 
     await admin.put("/api/auth/entitlements").send(DEFAULT_ENTITLEMENTS);
   });

@@ -31,18 +31,18 @@ function normalizeExpiresAt(expiresAt) {
   return Number.isNaN(parsed.getTime()) ? expiresAt : parsed.toISOString();
 }
 
-export async function loadEntitlementsWithSeatUsage() {
-  const entitlements = await getPlatformEntitlements();
+export async function loadEntitlementsWithSeatUsage(entitlementsInput = null) {
+  const entitlements = entitlementsInput || await getPlatformEntitlements();
   const seatUsage = await getSeatUsageSnapshot(entitlements);
   return { entitlements, seatUsage };
 }
 
-export async function buildAuthSessionPayload({ user, expiresAt, valid } = {}) {
-  const { entitlements, seatUsage } = await loadEntitlementsWithSeatUsage();
+export async function buildAuthSessionPayload({ user, expiresAt, valid, entitlements } = {}) {
+  const { entitlements: resolvedEntitlements, seatUsage } = await loadEntitlementsWithSeatUsage(entitlements);
   const payload = {
     user: mapAuthUser(user),
     expiresAt: normalizeExpiresAt(expiresAt),
-    entitlements,
+    entitlements: resolvedEntitlements,
     seatUsage
   };
   if (typeof valid === "boolean") payload.valid = valid;
@@ -56,6 +56,9 @@ export function seatWarningAuditMetadata(seatUsage) {
     licenseTier: seatUsage.licenseTier,
     seatPack: seatUsage.seatPack,
     seatSoftLimit: seatUsage.seatSoftLimit,
+    seatMode: seatUsage.seatMode,
+    hardSeatEnforced: seatUsage.hardSeatEnforced,
+    seatHardLimit: seatUsage.seatHardLimit,
     activeSessions: seatUsage.activeSessions,
     activeUsers: seatUsage.activeUsers,
     softLimitExceeded: seatUsage.softLimitExceeded

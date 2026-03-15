@@ -17,7 +17,7 @@ Implements BL-015.
 - `POST /api/auth/logout`: revoke current session and clear cookie.
 - `GET /api/auth/me`: current authenticated user.
 - `GET /api/auth/session`: session validity check.
-- `GET /api/auth/seats`: admin seat usage snapshot (`COMM-SEAT-v1`).
+- `GET /api/auth/seats`: admin seat usage snapshot (`COMM-SEAT-v1`/`COMM-SEAT-v2`).
 - `POST /api/auth/set-password`: authenticated password rotation.
 - `POST /api/auth/reset-default-passwords`: admin credential reset workflow.
 - `GET /api/auth/events`: admin auth event audit feed (`PLAT-AUTH-v1` evidence surface).
@@ -41,6 +41,7 @@ Implements BL-015.
 - `AUTH_SSO_AUTO_PROVISION=false` by default. When enabled, unknown principals can be created as active users.
 - `AUTH_SSO_DEFAULT_ROLE=Operator` controls fallback role for auto-provision.
 - Local account login (`POST /api/auth/login`) remains available regardless of SSO mode.
+- `PLAT-ENT-v1` `seatPolicy` fields enable optional `COMM-SEAT-v2` hard-seat modes.
 
 ## Auth Event Coverage (BL-016)
 - `login_success`
@@ -52,6 +53,7 @@ Implements BL-015.
 - `password_reset_default`
 - `entitlements_updated`
 - `seat_soft_limit_warning`
+- `seat_hard_limit_block`
 
 Audit fields include actor/user/session linkage, request context (IP/user-agent), metadata, and timestamp.
 
@@ -68,6 +70,7 @@ Audit fields include actor/user/session linkage, request context (IP/user-agent)
   - `licenseTier`
   - `seatPack`
   - `seatSoftLimit`
+  - `seatPolicy` (`mode`, `enforced`, `hardLimit`, `namedUsers`, `allowedDevices`)
   - `diagnosticsOptIn`
 
 ## Local Seed Credentials
