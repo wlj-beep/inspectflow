@@ -49,18 +49,14 @@ test.describe("Live UI critical path @live", () => {
   }
 
   async function pickLiveFixture(request) {
-    const partsRes = await request.get(`${API_URL}/api/parts`, {
-      headers: { "x-user-role": "Admin" }
-    });
+    const partsRes = await request.get(`${API_URL}/api/parts`);
     expect(partsRes.ok()).toBe(true);
     const parts = await partsRes.json();
 
     for (const part of parts || []) {
       const partId = String(part?.id || "").trim();
       if (!partId) continue;
-      const detailRes = await request.get(`${API_URL}/api/parts/${encodeURIComponent(partId)}`, {
-        headers: { "x-user-role": "Admin" }
-      });
+      const detailRes = await request.get(`${API_URL}/api/parts/${encodeURIComponent(partId)}`);
       if (!detailRes.ok()) continue;
       const detail = await detailRes.json();
       const operation = (detail.operations || []).find((op) => Array.isArray(op.dimensions) && op.dimensions.length > 0);
