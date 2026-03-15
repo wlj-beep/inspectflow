@@ -2,12 +2,12 @@ import { createHash } from "node:crypto";
 
 const SOURCE_TYPE_ALIASES = new Map([
   ["manual", "manual"],
-  ["manual_csv", "manual"],
-  ["manualcsv", "manual"],
-  ["operator_csv", "manual"],
-  ["operatorcsv", "manual"],
-  ["manual_resolution", "manual"],
-  ["manualresolution", "manual"],
+  ["manual_csv", "manual_csv"],
+  ["manualcsv", "manual_csv"],
+  ["operator_csv", "operator_csv"],
+  ["operatorcsv", "operator_csv"],
+  ["manual_resolution", "manual_resolution"],
+  ["manualresolution", "manual_resolution"],
   ["api", "api_pull"],
   ["api_pull", "api_pull"],
   ["pull", "api_pull"],

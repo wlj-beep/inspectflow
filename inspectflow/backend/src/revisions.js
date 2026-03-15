@@ -203,6 +203,7 @@ export async function ensurePartSetupBaselineRevision(client, { partId, changedB
     `INSERT INTO part_setup_revisions
        (part_id, revision_code, revision_index, part_name, snapshot, change_summary, changed_fields, created_by_role)
      VALUES ($1,'A',1,$2,$3,$4,$5,$6)
+     ON CONFLICT (part_id, revision_code) DO NOTHING
      RETURNING id, part_id, revision_code, revision_index, part_name, snapshot, change_summary,
                changed_fields, created_by_role, created_at`,
     [
@@ -214,7 +215,8 @@ export async function ensurePartSetupBaselineRevision(client, { partId, changedB
       changedByRole
     ]
   );
-  return inserted.rows[0] || null;
+  if (inserted.rows[0]) return inserted.rows[0];
+  return getLatestPartRevision(client, partId);
 }
 
 export async function createPartSetupRevision(
@@ -240,6 +242,7 @@ export async function createPartSetupRevision(
       `INSERT INTO part_setup_revisions
          (part_id, revision_code, revision_index, part_name, snapshot, change_summary, changed_fields, created_by_role)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+       ON CONFLICT (part_id, revision_code) DO NOTHING
        RETURNING id, part_id, revision_code, revision_index, part_name, snapshot, change_summary,
                  changed_fields, created_by_role, created_at`,
       [
@@ -253,7 +256,11 @@ export async function createPartSetupRevision(
         changedByRole
       ]
     );
-    return { created: true, revision: insertedInitial.rows[0] };
+    if (insertedInitial.rows[0]) {
+      return { created: true, revision: insertedInitial.rows[0] };
+    }
+    const concurrentLatest = await getLatestPartRevision(client, partId);
+    return { created: false, revision: concurrentLatest };
   }
 
   if (!latest) {
