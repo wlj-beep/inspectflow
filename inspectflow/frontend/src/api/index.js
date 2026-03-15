@@ -7,6 +7,7 @@ export const api = {
     logout: () => apiFetch("/api/auth/logout", { method: "POST" }),
     me: () => apiFetch("/api/auth/me"),
     session: () => apiFetch("/api/auth/session"),
+    seats: () => apiFetch("/api/auth/seats"),
     setPassword: (payload) => apiFetch("/api/auth/set-password", { method: "POST", body: payload })
   },
   users: {

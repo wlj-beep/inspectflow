@@ -305,7 +305,8 @@ CREATE TABLE IF NOT EXISTS auth_event_log (
     'password_changed',
     'password_change_failure',
     'password_reset_default',
-    'entitlements_updated'
+    'entitlements_updated',
+    'seat_soft_limit_warning'
   )),
   user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
   actor_role TEXT CHECK (actor_role IS NULL OR actor_role IN ('Operator','Quality','Supervisor','Admin')),
@@ -316,6 +317,18 @@ CREATE TABLE IF NOT EXISTS auth_event_log (
   metadata JSONB NOT NULL DEFAULT '{}'::JSONB,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+ALTER TABLE auth_event_log DROP CONSTRAINT IF EXISTS auth_event_log_event_type_check;
+ALTER TABLE auth_event_log ADD CONSTRAINT auth_event_log_event_type_check CHECK (event_type IN (
+  'login_success',
+  'login_failure',
+  'login_locked',
+  'logout',
+  'password_changed',
+  'password_change_failure',
+  'password_reset_default',
+  'entitlements_updated',
+  'seat_soft_limit_warning'
+));
 
 CREATE TABLE IF NOT EXISTS platform_entitlements (
   id INTEGER PRIMARY KEY CHECK (id = 1),

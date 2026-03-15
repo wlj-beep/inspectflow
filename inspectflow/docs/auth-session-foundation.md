@@ -16,6 +16,7 @@ Implements BL-015.
 - `POST /api/auth/logout`: revoke current session and clear cookie.
 - `GET /api/auth/me`: current authenticated user.
 - `GET /api/auth/session`: session validity check.
+- `GET /api/auth/seats`: admin seat usage snapshot (`COMM-SEAT-v1`).
 - `POST /api/auth/set-password`: authenticated password rotation.
 - `POST /api/auth/reset-default-passwords`: admin credential reset workflow.
 - `GET /api/auth/events`: admin auth event audit feed (`PLAT-AUTH-v1` evidence surface).
@@ -37,6 +38,7 @@ Implements BL-015.
 - `password_change_failure`
 - `password_reset_default`
 - `entitlements_updated`
+- `seat_soft_limit_warning`
 
 Audit fields include actor/user/session linkage, request context (IP/user-agent), metadata, and timestamp.
 

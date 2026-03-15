@@ -135,3 +135,37 @@ export function isModuleEnabled(entitlements, moduleKey) {
   if (!MODULE_FLAG_KEYS.includes(key)) return false;
   return entitlements?.moduleFlags?.[key] === true;
 }
+
+export async function getSeatUsageSnapshot(entitlementsInput = null) {
+  const entitlements = entitlementsInput || await getPlatformEntitlements();
+  const { rows } = await query(
+    `SELECT
+       COUNT(*)::int AS active_sessions,
+       COUNT(DISTINCT user_id)::int AS active_users
+     FROM auth_sessions
+     WHERE revoked_at IS NULL
+       AND expires_at > NOW()`,
+    []
+  );
+  const row = rows[0] || {};
+  const activeSessions = Number(row.active_sessions || 0);
+  const activeUsers = Number(row.active_users || 0);
+  const seatPack = Number(entitlements?.seatPack || 0);
+  const seatSoftLimit = Number(entitlements?.seatSoftLimit || seatPack || 0);
+  const softLimitWarning = seatSoftLimit > 0 && activeUsers >= seatSoftLimit;
+  const softLimitExceeded = seatSoftLimit > 0 && activeUsers > seatSoftLimit;
+
+  return {
+    contractId: "COMM-SEAT-v1",
+    entitlementContractId: PLATFORM_ENTITLEMENT_CONTRACT_ID,
+    licenseTier: entitlements?.licenseTier || "core",
+    seatPack,
+    seatSoftLimit,
+    activeSessions,
+    activeUsers,
+    softLimitWarning,
+    softLimitExceeded,
+    remainingSoftSeats: seatSoftLimit > 0 ? Math.max(seatSoftLimit - activeUsers, 0) : null,
+    percentSoftUsed: seatSoftLimit > 0 ? Number(((activeUsers / seatSoftLimit) * 100).toFixed(1)) : null
+  };
+}

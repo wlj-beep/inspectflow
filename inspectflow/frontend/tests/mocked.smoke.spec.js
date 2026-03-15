@@ -36,7 +36,27 @@ const DEFAULT_PART_DETAIL = {
   ]
 };
 
-async function mockApi(page, { createPartMode = "success", createPartDelayMs = 0, jobs = [], records = [], enableImports = false } = {}) {
+async function mockApi(
+  page,
+  {
+    createPartMode = "success",
+    createPartDelayMs = 0,
+    jobs = [],
+    records = [],
+    enableImports = false,
+    seatUsage = {
+      contractId: "COMM-SEAT-v1",
+      entitlementContractId: "PLAT-ENT-v1",
+      licenseTier: "core",
+      seatPack: 25,
+      seatSoftLimit: 25,
+      activeSessions: 1,
+      activeUsers: 1,
+      softLimitWarning: false,
+      softLimitExceeded: false
+    }
+  } = {}
+) {
   const routeHandler = async (route) => {
     const req = route.request();
     const method = req.method();
@@ -55,7 +75,8 @@ async function mockApi(page, { createPartMode = "success", createPartDelayMs = 0
         json: {
           ok: true,
           user: { id: 1, name: "Admin User", role: "Admin" },
-          expiresAt: "2026-03-15T00:00:00.000Z"
+          expiresAt: "2026-03-15T00:00:00.000Z",
+          seatUsage
         }
       });
     }
@@ -186,6 +207,25 @@ test.describe("Mocked UI smoke @mock", () => {
     await expect(page.getByText("InspectFlow", { exact: false })).toBeVisible();
     await expect(page.getByTestId("authenticated-user")).toContainText("Admin User");
     await expect(page.getByTestId("authenticated-user")).not.toContainText("Select user");
+  });
+
+  test("shows COMM-SEAT soft warning chip in authenticated shell when seat usage is high", async ({ page }) => {
+    await mockApi(page, {
+      seatUsage: {
+        contractId: "COMM-SEAT-v1",
+        entitlementContractId: "PLAT-ENT-v1",
+        licenseTier: "core_plus",
+        seatPack: 30,
+        seatSoftLimit: 25,
+        activeSessions: 28,
+        activeUsers: 26,
+        softLimitWarning: true,
+        softLimitExceeded: true
+      }
+    });
+    await page.goto("/");
+    await loginAsAdmin(page);
+    await expect(page.getByTestId("seat-usage-chip")).toContainText("Seats Exceeded 26/25");
   });
 
   test("shows loading and success transitions during part creation", async ({ page }) => {

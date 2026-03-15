@@ -163,4 +163,46 @@ describe("Auth hardening + entitlement contract", () => {
     expect(eventTypes).toContain("password_changed");
     expect(eventTypes).toContain("password_reset_default");
   });
+
+  it("surfaces soft seat usage warnings and records COMM-SEAT-v1 audit events", async () => {
+    const admin = await loginAdminAgent();
+
+    await admin.put("/api/auth/entitlements").send({
+      ...DEFAULT_ENTITLEMENTS,
+      seatPack: 25,
+      seatSoftLimit: 1
+    });
+
+    const op1 = request.agent(app);
+    const op2 = request.agent(app);
+
+    const op1Login = await login(op1, "J. Morris", "inspectflow");
+    expect(op1Login.status).toBe(200);
+    expect(op1Login.body.seatUsage?.contractId).toBe("COMM-SEAT-v1");
+    expect(op1Login.body.seatUsage?.softLimitWarning).toBe(true);
+
+    const op2Login = await login(op2, "R. Tatum", "inspectflow");
+    expect(op2Login.status).toBe(200);
+    expect(op2Login.body.seatUsage?.softLimitWarning).toBe(true);
+    expect(op2Login.body.seatUsage?.softLimitExceeded).toBe(true);
+    expect(Number(op2Login.body.seatUsage?.activeUsers || 0)).toBeGreaterThanOrEqual(2);
+
+    const seats = await admin.get("/api/auth/seats");
+    expect(seats.status).toBe(200);
+    expect(seats.body).toMatchObject({
+      contractId: "COMM-SEAT-v1",
+      entitlementContractId: "PLAT-ENT-v1",
+      seatSoftLimit: 1,
+      softLimitWarning: true
+    });
+
+    const seatEvents = await admin
+      .get("/api/auth/events")
+      .query({ eventType: "seat_soft_limit_warning", limit: 10 });
+    expect(seatEvents.status).toBe(200);
+    expect(seatEvents.body.count).toBeGreaterThan(0);
+    expect(seatEvents.body.events[0]?.metadata?.contractId).toBe("COMM-SEAT-v1");
+
+    await admin.put("/api/auth/entitlements").send(DEFAULT_ENTITLEMENTS);
+  });
 });

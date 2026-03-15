@@ -3669,7 +3669,7 @@ function TransitionBanner({ state }) {
   );
 }
 
-export default function App({ authUser = null, onLogout = null }) {
+export default function App({ authUser = null, seatUsage = null, onLogout = null }) {
   const [view,setView]=useState("operator");
   const [users,setUsers]=useState([]);
   const [usersById,setUsersById]=useState({});
@@ -4388,6 +4388,16 @@ export default function App({ authUser = null, onLogout = null }) {
   }
   const dataChipLabel = dataStatus==="live" ? "Live Data" : dataStatus==="loading" ? "Loading" : "Local Demo";
   const dataChipClass = dataStatus==="live" ? "data-live" : dataStatus==="loading" ? "data-loading" : "data-fallback";
+  const seatChipText = seatUsage
+    ? `${seatUsage.softLimitExceeded ? "Seats Exceeded" : seatUsage.softLimitWarning ? "Seats Warning" : "Seats"} ${seatUsage.activeUsers}/${seatUsage.seatSoftLimit}`
+    : "";
+  const seatChipClass = !seatUsage
+    ? "data-loading"
+    : seatUsage.softLimitExceeded
+      ? "data-fallback"
+      : seatUsage.softLimitWarning
+        ? "data-loading"
+        : "data-live";
   return (
     <ErrorBoundary>
       <>
@@ -4420,7 +4430,16 @@ export default function App({ authUser = null, onLogout = null }) {
               {userLoadErr?<div className="user-ctrl-hint">{userLoadErr}</div>:null}
               {dataErr?<div className="user-ctrl-hint">{dataErr}</div>:null}
             </div>
-            <span className={`data-chip ${dataChipClass}`}>{dataChipLabel}</span>
+            {seatUsage ? (
+              <span
+                className={`data-chip ${seatChipClass}`}
+                title={`License ${seatUsage.licenseTier} · active sessions ${seatUsage.activeSessions}`}
+                data-testid="seat-usage-chip"
+              >
+                {seatChipText}
+              </span>
+            ) : null}
+            <span className={`data-chip ${dataChipClass}`} data-testid="data-status-chip">{dataChipLabel}</span>
             {onLogout ? <button className="nav-btn" onClick={onLogout}>Sign Out</button> : null}
             <nav className="nav">
               {canViewOperator && <button className={`nav-btn ${view==="operator"?"active":""}`} onClick={()=>setView("operator")}>Operator Entry</button>}

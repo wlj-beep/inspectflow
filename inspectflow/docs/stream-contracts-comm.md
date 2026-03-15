@@ -8,6 +8,11 @@ Commercialization controls: license metadata, entitlement policy, seat-pack rule
 - `COMM-SEAT-v1`: soft seat visibility/warning contract.
 - `COMM-SEAT-v2`: optional paid hard-seat enforcement contract.
 
+`COMM-SEAT-v1` surface:
+- `GET /api/auth/seats`: admin seat-usage snapshot (`activeUsers`, `activeSessions`, `seatSoftLimit`, warning flags).
+- Auth/session payloads (`/api/auth/login`, `/api/auth/me`, `/api/auth/session`) include `seatUsage`.
+- `auth_event_log.event_type='seat_soft_limit_warning'` records warning-state login events with license/seat metadata for audit.
+
 ## Consumes
 - `PLAT-ENT-v1` for runtime gating.
 - `PLAT-AUTH-v1` for subject identity and seat attribution.

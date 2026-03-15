@@ -14,7 +14,6 @@ Canonical global execution queue for active backlog work.
 
 | Rank | Item ID | Priority | Status | Owner | Updated | Work Item |
 | --- | --- | --- | --- | --- | --- | --- |
-
 Active ranked queue is currently clear; re-seed with new prioritized items when the next backlog tranche is activated.
 
 ## Active Gate Defaults
@@ -78,3 +77,4 @@ Active ranked queue is currently clear; re-seed with new prioritized items when 
 | 2026-03-15 | BL-051 | @codex | @owner | Completed `PLAT-ENT-v1` entitlement contract acceptance: authenticated read/admin update contract with module flags and entitlement audit events validated in regression suite. |
 | 2026-03-15 | BL-020 | @codex | @owner | Completed `PLAT-DEPLOY-v1` offline update acceptance: signed bundle create/verify and preflight workflow validated (`create-update-bundle.sh`, `verify-update-bundle.sh`, `preflight-update.sh`). |
 | 2026-03-15 | BL-023 | @codex | @owner | Completed `OPS-ROUTING-v1` acceptance: operation resequence + move workflows with part revision trace validated via `test/ops-routing-workflows.test.js`. |
+| 2026-03-15 | BL-018 | @codex | @owner | Completed `COMM-SEAT-v1`: auth payloads now expose seat usage (`/api/auth/login|me|session`), admin seat snapshot endpoint (`/api/auth/seats`) added, and warning-state seat audit trace (`seat_soft_limit_warning`) validated in auth hardening regression tests. |
