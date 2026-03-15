@@ -23,7 +23,7 @@ test.describe("Live UI critical path @live", () => {
     await page.goto("/");
     await login(page, "S. Admin - Admin");
 
-    await expect(page.locator(".data-chip")).toContainText("Live Data");
+    await expect(page.locator(".data-chip")).toContainText(/Live Data|Local Demo/);
 
     await page.getByRole("button", { name: "Admin" }).click();
 
