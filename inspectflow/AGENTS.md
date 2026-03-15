@@ -62,11 +62,17 @@ Canonical operations docs:
 - Frontend: `http://localhost:5173`
 - API: `http://localhost:4000`
 - Run both services: `npm run dev` from repo root.
-- Smoke tests:
-  - `npm run test` (root) runs API and UI smoke.
+- Standardized test tiers (required gates):
+  - Tier 0 (coordination): `npm run test:coordination`
+  - Tier 1 (API regression): `npm run test:api`
+  - Tier 2 (UI mock regression): `npm run test:ui:mock`
+  - Tier 3 (UI live critical path): `npm run test:ui:live`
+  - Standardized gate: `npm run test:standardized`
+- UI prerequisites:
   - `npx playwright install` is required at least once for UI tests.
+  - `npm run test:ui:live` auto-prepares test data and boots a local API instance for the live gate.
 - Test DB:
-  - Use `DATABASE_URL_TEST` in `backend/.env`.
+  - Use `DATABASE_URL_TEST` in `backend/.env` for local test runs and live UI gating.
 
 ## 6) Code Style and Conventions
 - ESModules (`import`/`export`), semicolons, double quotes.
@@ -96,7 +102,12 @@ Protected APIs use local authenticated session identity as the security boundary
 - Stop only when blocked by missing critical information or when a major product/architecture decision is required.
 - State assumptions explicitly in the response.
 
-## 11) Thread Hygiene
+## 11) Evidence Requirements (Mandatory)
+- Report exact test commands executed and their results.
+- Include evidence links/paths when running CI or generating artifacts.
+- Any skipped gate must be explicitly called out with rationale.
+
+## 12) Thread Hygiene
 Start a new thread when:
 - Switching to a different feature area.
 - The request is unrelated to the thread's main purpose.

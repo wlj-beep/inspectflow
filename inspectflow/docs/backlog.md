@@ -27,6 +27,7 @@ This backlog follows `docs/backlog-framework.md` and is organized for parallel t
 | BL-029 | R1 | PLAT | CORE | Team Atlas | BL-017 | PLAT-AUTH-v1 | 85 | Backend route logic extracted into stream-aligned services with contract tests. |
 | BL-030 | R1 | PLAT | CORE | Team Atlas | BL-015, BL-016, BL-017, BL-018, BL-019, BL-020, BL-021, BL-022, BL-023, BL-024, BL-025, BL-026, BL-027, BL-028, BL-029, BL-051 | PLAT-DEPLOY-v1 | 99 | R1 acceptance matrix automated and manual release evidence checklist completed. |
 | BL-051 | R1 | PLAT | CORE | Team Atlas | BL-015 | PLAT-ENT-v1 | 89 | Entitlement and module-flag read contract is delivered as the authoritative gating source consumed by commercialization and multi-site controls. |
+| BL-052 | R1 | PLAT | CORE | Team Atlas | None | PLAT-TEST-v1 | 97 | Standardized test platform is rebuilt end-to-end with live UI critical-path coverage, backend persistence checks, CI quality gates, and updated agent/testing runbooks. |
 
 ## R2 Backlog (Enterprise Expansion)
 

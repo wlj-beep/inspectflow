@@ -6,7 +6,7 @@ on:
   pull_request:
 
 jobs:
-  api-tests:
+  standardized-tests:
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -24,6 +24,9 @@ jobs:
           --health-retries 5
     env:
       DATABASE_URL_TEST: postgres://postgres:postgres@localhost:5432/inspectflow_test
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/inspectflow_test
+      VITE_API_URL: http://127.0.0.1:4000
+      PLAYWRIGHT_BASE_URL: http://127.0.0.1:5173
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -35,32 +38,11 @@ jobs:
           cache: "npm"
           cache-dependency-path: |
             inspectflow/backend/package-lock.json
-
-      - name: Validate coordination queue
-        run: npm run coordination:check
-        working-directory: inspectflow
+            inspectflow/frontend/package-lock.json
 
       - name: Install backend dependencies
         run: npm ci
         working-directory: inspectflow/backend
-
-      - name: Run backend tests
-        run: npm test
-        working-directory: inspectflow/backend
-
-  ui-tests:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-          cache-dependency-path: |
-            inspectflow/frontend/package-lock.json
 
       - name: Install frontend dependencies
         run: npm ci
@@ -70,6 +52,6 @@ jobs:
         run: npx playwright install --with-deps chromium
         working-directory: inspectflow/frontend
 
-      - name: Run frontend UI tests
-        run: npm run test:ui
-        working-directory: inspectflow/frontend
+      - name: Run standardized test gates
+        run: npm run test:standardized
+        working-directory: inspectflow

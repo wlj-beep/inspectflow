@@ -1,11 +1,27 @@
 # Release Test Plan
 
-This plan governs acceptance from R1 through R4 and preserves existing smoke/manual coverage.
+This plan governs acceptance from R1 through R4 and defines standardized test tiers that gate delivery.
 
-## Core Automated Validation
-1. `npm run coordination:check`
-2. `npm run test:api`
-3. `npm run test:ui`
+## Standardized Test Tiers
+Tier 0: Coordination gate
+- Command: `npm run test:coordination`
+- Purpose: queue integrity and dependency hygiene
+
+Tier 1: API regression gate
+- Command: `npm run test:api`
+- Purpose: auth, permissions, workflow, and data contract regressions
+
+Tier 2: UI mock regression gate
+- Command: `npm run test:ui:mock`
+- Purpose: UI workflow coverage with mocked APIs for fast feedback
+
+Tier 3: UI live critical-path gate
+- Command: `npm run test:ui:live`
+- Purpose: end-to-end operator/admin flow that persists to the database
+- Note: gate script prepares test DB and starts/stops the local API automatically
+
+Standardized gate (required before release promotion):
+- Command: `npm run test:standardized`
 
 ## Release Acceptance Matrix
 
@@ -42,7 +58,8 @@ Run matrix dimensions for every release candidate:
 - Import pathways: tools, part dimensions, jobs, measurements, unresolved manual resolution.
 
 ## Evidence Requirements Per Release Candidate
-- CI run artifacts for API and UI suites.
+- CI run artifacts for standardized gates.
+- Explicit pass/fail log for each tiered gate (`test:coordination`, `test:api`, `test:ui:mock`, `test:ui:live`).
 - Manual execution checklist with role, input, expected result, and observed result.
 - Export sample outputs and verification notes.
 - Backup/restore and update workflow logs.

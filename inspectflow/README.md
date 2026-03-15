@@ -37,9 +37,16 @@ Set a dedicated test DB URL in `backend/.env`:
 DATABASE_URL_TEST=postgres://user:pass@localhost:5432/inspectflow_test
 ```
 
-### Automated Smoke Tests
-- API smoke: `npm run test:api` (root) or `npm run test` in `backend/`
-- UI smoke: `npm run test:ui` (root) or `npm run test:ui` in `frontend/`
+### Standardized Tests (Required Gates)
+- Coordination gate: `npm run test:coordination`
+- API regression gate: `npm run test:api` (root) or `npm run test` in `backend/`
+- UI mock regression gate: `npm run test:ui:mock`
+- UI live critical-path gate: `npm run test:ui:live`
+- Full standardized gate: `npm run test:standardized`
+
+Live UI gate requirements:
+- `DATABASE_URL_TEST` must be configured
+- `npm run test:ui:live` handles test DB setup and backend startup automatically
 
 Playwright requires browser binaries:
 - `npx playwright install`

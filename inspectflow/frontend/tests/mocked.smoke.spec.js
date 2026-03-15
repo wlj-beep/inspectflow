@@ -175,100 +175,102 @@ async function loginAsAdmin(page) {
   await expect(page.getByText("Manufacturing Inspection System")).toBeVisible();
 }
 
-test("loads the InspectFlow shell", async ({ page }) => {
-  await mockApi(page);
-  await page.goto("/");
-  await loginAsAdmin(page);
-  await expect(page.getByText("InspectFlow", { exact: false })).toBeVisible();
-});
-
-test("shows loading and success transitions during part creation", async ({ page }) => {
-  await mockApi(page, { createPartMode: "success", createPartDelayMs: 500 });
-  await page.goto("/");
-  await loginAsAdmin(page);
-
-  await page.getByRole("button", { name: "Admin" }).click();
-  await page.getByRole("button", { name: "Part / Op Setup" }).click();
-
-  const addPartCard = page.locator(".card").filter({ hasText: "Add New Part" });
-  await addPartCard.getByPlaceholder("e.g. 5678").fill("5678");
-  await addPartCard.getByPlaceholder("Part name").fill("Transition Widget");
-  await addPartCard.getByRole("button", { name: /add part/i }).click();
-
-  const banner = page.getByTestId("transition-banner");
-  await expect(banner).toContainText("Create part…");
-  await expect(banner).toContainText("Create part complete.");
-  await expect(page.getByText("Part 5678")).toBeVisible();
-});
-
-test("shows failure transition when part creation fails", async ({ page }) => {
-  await mockApi(page, { createPartMode: "error" });
-  await page.goto("/");
-  await loginAsAdmin(page);
-
-  await page.getByRole("button", { name: "Admin" }).click();
-  await page.getByRole("button", { name: "Part / Op Setup" }).click();
-
-  const addPartCard = page.locator(".card").filter({ hasText: "Add New Part" });
-  await addPartCard.getByPlaceholder("e.g. 5678").fill("5678");
-  await addPartCard.getByPlaceholder("Part name").fill("Will Fail");
-  await addPartCard.getByRole("button", { name: /add part/i }).click();
-
-  const banner = page.getByTestId("transition-banner");
-  await expect(banner).toContainText("Create part failed. create_part_failed");
-  await expect(page.getByText("create_part_failed", { exact: true })).toBeVisible();
-});
-
-test("reuses original base prefix and increments family run index for duplicate lot jobs", async ({ page }) => {
-  await mockApi(page, {
-    jobs: [
-      {
-        id: "1234561001",
-        part_id: "1234",
-        operation_id: 10,
-        lot: "Lot B",
-        qty: 12,
-        status: "closed"
-      },
-      {
-        id: "1234562001",
-        part_id: "1234",
-        operation_id: 20,
-        lot: "Lot B",
-        qty: 12,
-        status: "closed"
-      }
-    ]
+test.describe("Mocked UI smoke @mock", () => {
+  test("loads the InspectFlow shell", async ({ page }) => {
+    await mockApi(page);
+    await page.goto("/");
+    await loginAsAdmin(page);
+    await expect(page.getByText("InspectFlow", { exact: false })).toBeVisible();
   });
-  await page.goto("/");
-  await loginAsAdmin(page);
 
-  await page.getByRole("button", { name: "Admin" }).click();
-  await page.getByRole("button", { name: "Job Management" }).click();
-  const builderCard = page.locator(".card").filter({ hasText: "Job Builder (Part + Lot)" });
-  await builderCard.locator("select").first().selectOption("1234");
-  await builderCard.getByPlaceholder("e.g. Lot B").fill("Lot B");
-  await builderCard.getByPlaceholder("12").fill("12");
+  test("shows loading and success transitions during part creation", async ({ page }) => {
+    await mockApi(page, { createPartMode: "success", createPartDelayMs: 500 });
+    await page.goto("/");
+    await loginAsAdmin(page);
 
-  await expect(page.getByText("Reusing base job prefix")).toContainText("123456");
-  await expect(page.getByText("12345601002")).toBeVisible();
-  await expect(page.getByText("12345602002")).toBeVisible();
-  await expect(page.getByText("12345603002")).toBeVisible();
-});
+    await page.getByRole("button", { name: "Admin" }).click();
+    await page.getByRole("button", { name: "Part / Op Setup" }).click();
 
-test("allows admins to import tools via CSV from the Data Imports tab", async ({ page }) => {
-  await mockApi(page, { enableImports: true });
-  await page.goto("/");
-  await loginAsAdmin(page);
+    const addPartCard = page.locator(".card").filter({ hasText: "Add New Part" });
+    await addPartCard.getByPlaceholder("e.g. 5678").fill("5678");
+    await addPartCard.getByPlaceholder("Part name").fill("Transition Widget");
+    await addPartCard.getByRole("button", { name: /add part/i }).click();
 
-  await page.getByRole("button", { name: "Admin" }).click();
-  await page.getByRole("button", { name: "Data Imports" }).click();
+    const banner = page.getByTestId("transition-banner");
+    await expect(banner).toContainText("Create part…");
+    await expect(banner).toContainText("Create part complete.");
+    await expect(page.getByText("Part 5678")).toBeVisible();
+  });
 
-  const toolsTextarea = page.getByPlaceholder("Paste tools CSV here…");
-  const toolsSection = toolsTextarea.locator("xpath=ancestor::div[contains(@class,'card-body')][1]");
-  await toolsSection.getByRole("button", { name: "Load Sample" }).click();
-  await toolsSection.getByRole("button", { name: "Run Tool Import" }).click();
+  test("shows failure transition when part creation fails", async ({ page }) => {
+    await mockApi(page, { createPartMode: "error" });
+    await page.goto("/");
+    await loginAsAdmin(page);
 
-  await expect(page.getByText('"ok": true')).toBeVisible();
-  await expect(page.getByText('"inserted": 1')).toBeVisible();
+    await page.getByRole("button", { name: "Admin" }).click();
+    await page.getByRole("button", { name: "Part / Op Setup" }).click();
+
+    const addPartCard = page.locator(".card").filter({ hasText: "Add New Part" });
+    await addPartCard.getByPlaceholder("e.g. 5678").fill("5678");
+    await addPartCard.getByPlaceholder("Part name").fill("Will Fail");
+    await addPartCard.getByRole("button", { name: /add part/i }).click();
+
+    const banner = page.getByTestId("transition-banner");
+    await expect(banner).toContainText("Create part failed. create_part_failed");
+    await expect(page.getByText("create_part_failed", { exact: true })).toBeVisible();
+  });
+
+  test("reuses original base prefix and increments family run index for duplicate lot jobs", async ({ page }) => {
+    await mockApi(page, {
+      jobs: [
+        {
+          id: "1234561001",
+          part_id: "1234",
+          operation_id: 10,
+          lot: "Lot B",
+          qty: 12,
+          status: "closed"
+        },
+        {
+          id: "1234562001",
+          part_id: "1234",
+          operation_id: 20,
+          lot: "Lot B",
+          qty: 12,
+          status: "closed"
+        }
+      ]
+    });
+    await page.goto("/");
+    await loginAsAdmin(page);
+
+    await page.getByRole("button", { name: "Admin" }).click();
+    await page.getByRole("button", { name: "Job Management" }).click();
+    const builderCard = page.locator(".card").filter({ hasText: "Job Builder (Part + Lot)" });
+    await builderCard.locator("select").first().selectOption("1234");
+    await builderCard.getByPlaceholder("e.g. Lot B").fill("Lot B");
+    await builderCard.getByPlaceholder("12").fill("12");
+
+    await expect(page.getByText("Reusing base job prefix")).toContainText("123456");
+    await expect(page.getByText("12345601002")).toBeVisible();
+    await expect(page.getByText("12345602002")).toBeVisible();
+    await expect(page.getByText("12345603002")).toBeVisible();
+  });
+
+  test("allows admins to import tools via CSV from the Data Imports tab", async ({ page }) => {
+    await mockApi(page, { enableImports: true });
+    await page.goto("/");
+    await loginAsAdmin(page);
+
+    await page.getByRole("button", { name: "Admin" }).click();
+    await page.getByRole("button", { name: "Data Imports" }).click();
+
+    const toolsTextarea = page.getByPlaceholder("Paste tools CSV here…");
+    const toolsSection = toolsTextarea.locator("xpath=ancestor::div[contains(@class,'card-body')][1]");
+    await toolsSection.getByRole("button", { name: "Load Sample" }).click();
+    await toolsSection.getByRole("button", { name: "Run Tool Import" }).click();
+
+    await expect(page.getByText('"ok": true')).toBeVisible();
+    await expect(page.getByText('"inserted": 1')).toBeVisible();
+  });
 });

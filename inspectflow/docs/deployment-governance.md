@@ -4,11 +4,12 @@
 Define release controls for safe delivery from R1 through R4.
 
 ## Baseline Required Checks
-1. `npm run coordination:check`
+1. `npm run test:coordination`
 2. `npm run test:api`
-3. `npm run test:ui`
-4. Release-specific manual checks from `docs/test-plan.md`
-5. Latest multi-agent run report shows no unresolved Red rows for in-scope BL IDs
+3. `npm run test:ui:mock`
+4. `npm run test:ui:live`
+5. Release-specific manual checks from `docs/test-plan.md`
+6. Latest multi-agent run report shows no unresolved Red rows for in-scope BL IDs
 
 ## Delivery Modes
 - `PR Mode` (default): merge through pull requests on protected `main`.
