@@ -25,9 +25,11 @@ echo "[ui-live] Preparing test database..."
 npm run db:test:setup
 
 export DATABASE_URL="${DATABASE_URL:-${DATABASE_URL_TEST}}"
+export VITE_API_URL="${VITE_API_URL:-http://127.0.0.1:4000}"
+export PLAYWRIGHT_API_URL="${PLAYWRIGHT_API_URL:-${VITE_API_URL}}"
 
 echo "[ui-live] Starting backend API..."
-npm run dev --prefix backend > "${BACKEND_LOG}" 2>&1 &
+ALLOW_LEGACY_ROLE_HEADER=true npm run dev --prefix backend > "${BACKEND_LOG}" 2>&1 &
 BACKEND_PID=$!
 
 for _ in {1..30}; do

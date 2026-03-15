@@ -37,7 +37,7 @@ const DEFAULT_PART_DETAIL = {
 };
 
 async function mockApi(page, { createPartMode = "success", createPartDelayMs = 0, jobs = [], enableImports = false } = {}) {
-  await page.route("http://localhost:4000/api/**", async (route) => {
+  const routeHandler = async (route) => {
     const req = route.request();
     const method = req.method();
     const url = new URL(req.url());
@@ -165,7 +165,10 @@ async function mockApi(page, { createPartMode = "success", createPartDelayMs = 0
     }
 
     return route.fulfill({ status: 404, json: { error: `Unhandled ${method} ${path}` } });
-  });
+  };
+
+  await page.route("http://localhost:4000/api/**", routeHandler);
+  await page.route("http://127.0.0.1:4000/api/**", routeHandler);
 }
 
 async function loginAsAdmin(page) {
