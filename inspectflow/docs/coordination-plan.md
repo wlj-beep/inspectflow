@@ -10,6 +10,7 @@
 - `STATUS.md`: active ranked queue.
 - `docs/backlog.md`: release-aware backlog with metadata.
 - `docs/backlog-framework.md`: required metadata and scoring model.
+- `docs/backlog-intake-protocol.md`: mandatory pre-backlog intake gate.
 - `docs/stream-contracts-*.md`: cross-stream interface contracts.
 - `WORKLOG.md`: historical completion record.
 
@@ -47,6 +48,11 @@ Each backlog item has exactly one owning stream/team.
 
 ## Intake and Prioritization
 - New requests are mapped to release (`R1`-`R4`) and stream.
+- Intake must follow `docs/backlog-intake-protocol.md` before any backlog insertion.
+- Candidate ideas require duplicate scan across `docs/backlog.md`, `STATUS.md`, and recent `WORKLOG.md` entries.
+- Realism gate outcome must be one of `Reject`, `Defer`, or `Accept`.
+- Only `Accept` outcomes may create a new `BL-###` row in `docs/backlog.md`.
+- Accepted intake items must be recorded in `WORKLOG.md` (default recording path: backlog + worklog).
 - Priority scoring follows `docs/backlog-framework.md`.
 - Coordinator maintains final rank order in `STATUS.md`.
 

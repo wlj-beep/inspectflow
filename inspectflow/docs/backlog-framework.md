@@ -3,6 +3,14 @@
 ## Purpose
 This framework standardizes backlog design for parallel team execution across releases.
 
+## Intake Gate (Before Creating a Backlog Item)
+Every candidate idea must be evaluated through `docs/backlog-intake-protocol.md` before adding a new `BL-###`.
+
+Required intake checks:
+- Duplicate scan against `docs/backlog.md`, `STATUS.md`, and recent `WORKLOG.md` history.
+- Realism evaluation with explicit outcome: `Reject`, `Defer`, or `Accept`.
+- For `Accept`, write to both `docs/backlog.md` and `WORKLOG.md` (default logging path).
+
 ## Required Metadata Per Backlog Item
 Each item must include:
 1. `ID` (`BL-###`)
@@ -59,6 +67,7 @@ Higher score means earlier scheduling within the release.
 
 ## Definition of Ready
 - All required metadata filled.
+- Intake gate completed with explicit `Accept` decision.
 - Dependencies validated and not contradictory.
 - Interface contract exists and has owner.
 - Acceptance criteria are testable.
