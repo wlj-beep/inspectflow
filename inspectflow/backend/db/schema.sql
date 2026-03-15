@@ -551,6 +551,23 @@ CREATE TABLE IF NOT EXISTS platform_extensions (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS partner_connector_kits (
+  connector_id TEXT PRIMARY KEY,
+  display_name TEXT NOT NULL,
+  version TEXT NOT NULL,
+  sdk_plugin_id TEXT REFERENCES platform_extensions(plugin_id) ON DELETE SET NULL,
+  source_types_json JSONB NOT NULL DEFAULT '[]'::JSONB,
+  import_types_json JSONB NOT NULL DEFAULT '[]'::JSONB,
+  manifest_json JSONB NOT NULL DEFAULT '{}'::JSONB,
+  validation_status TEXT NOT NULL DEFAULT 'invalid' CHECK (validation_status IN ('valid','invalid')),
+  validation_findings_json JSONB NOT NULL DEFAULT '[]'::JSONB,
+  enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  updated_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  updated_by_role TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 ALTER TABLE missing_pieces DROP CONSTRAINT IF EXISTS missing_pieces_reason_check;
 ALTER TABLE missing_pieces ADD CONSTRAINT missing_pieces_reason_check CHECK (reason IN ('Scrapped','Lost','Damaged','Other','Unable to Measure'));
 ALTER TABLE dimensions ADD COLUMN IF NOT EXISTS sampling_interval INTEGER;
@@ -623,6 +640,10 @@ CREATE INDEX IF NOT EXISTS idx_platform_extensions_enabled
 ON platform_extensions (enabled, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_platform_extensions_policy_status
 ON platform_extensions (policy_status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_partner_connector_kits_enabled
+ON partner_connector_kits (enabled, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_partner_connector_kits_validation_status
+ON partner_connector_kits (validation_status, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_operations_work_center_id
 ON operations (work_center_id);
 CREATE INDEX IF NOT EXISTS idx_work_centers_active

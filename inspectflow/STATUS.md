@@ -14,7 +14,7 @@ Canonical global execution queue for active backlog work.
 
 | Rank | Item ID | Priority | Status | Owner | Updated | Work Item |
 | --- | --- | --- | --- | --- | --- | --- |
-| 1 | BL-047 | P1 | In Progress | @codex | 2026-03-15T12:04:00-04:00 | `INT-CONNECTOR-v2`: add partner connector kit and validation harness for third-party onboarding. |
+| 1 | BL-048 | P1 | In Progress | @codex | 2026-03-15T12:13:00-04:00 | `OPS-JOBFLOW-v1`: add edge/standalone interoperability sync model against core data contracts. |
 
 ## Active Gate Defaults
 - For BL-058 acceptance, duplicate/replay behavior is fixed to idempotent skip plus audit trail updates (no strict hard-reject mode).
@@ -88,3 +88,5 @@ Canonical global execution queue for active backlog work.
 | 2026-03-15 | BL-046 | @owner | @codex | Claimed after BL-045 completion to start extension SDK boundary and policy-safe plugin runtime scaffolding. |
 | 2026-03-15 | BL-046 | @codex | @owner | Completed `PLAT-DEPLOY-v1` extension SDK boundary + policy-safe plugin runtime scaffolding: added `platform_extensions` persistence, admin `/api/extensions/{runtime,plugins,*}` scaffolding with `EDGE-SDK-v1` policy validation, and validated via full standardized gates. |
 | 2026-03-15 | BL-047 | @owner | @codex | Claimed after BL-046 completion to implement partner connector kit and validation harness onboarding path. |
+| 2026-03-15 | BL-047 | @codex | @owner | Completed `INT-CONNECTOR-v2` partner connector kit + validation harness: added `partner_connector_kits` persistence, admin `/api/partner-connectors` validate/register/list runtime surface, sdk-plugin dependency validation against enabled `platform_extensions`, and validated via focused + full standardized gates. |
+| 2026-03-15 | BL-048 | @owner | @codex | Claimed after BL-047 completion to implement edge/standalone interoperability sync model. |
