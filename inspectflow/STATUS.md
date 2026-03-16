@@ -14,7 +14,6 @@ Canonical global execution queue for active backlog work.
 
 | Rank | Item ID | Priority | Status | Owner | Updated | Work Item |
 | --- | --- | --- | --- | --- | --- | --- |
-| 1 | BL-050 | P1 | In Progress | @codex | 2026-03-15T12:19:00-04:00 | `PLAT-DEPLOY-v1`: run ecosystem compatibility suite for extension/module upgrade safety. |
 
 ## Active Gate Defaults
 - For BL-058 acceptance, duplicate/replay behavior is fixed to idempotent skip plus audit trail updates (no strict hard-reject mode).
@@ -94,3 +93,4 @@ Canonical global execution queue for active backlog work.
 | 2026-03-15 | BL-049 | @owner | @codex | Claimed after BL-048 completion to deliver module policy/rules entitlement activation controls. |
 | 2026-03-15 | BL-049 | @codex | @owner | Completed `COMM-LICENSE-v1` module policy/rules engine: added profile catalog + evaluator (`/api/auth/module-policy/{profiles,evaluate}`), persisted `modulePolicyProfile` in entitlements contract, and validated via focused module-policy coverage plus full standardized gates. |
 | 2026-03-15 | BL-050 | @owner | @codex | Claimed after BL-049 completion to deliver ecosystem compatibility suite coverage. |
+| 2026-03-16 | BL-050 | @codex | @owner | Completed `PLAT-DEPLOY-v1` ecosystem compatibility suite: added `test:r4:compatibility` runner with focused R4 extension/partner/edge/module-policy matrix + standardized gate and published evidence (`docs/operations/cycles/evidence/2026-03-16-r4-compatibility-suite.txt`). |

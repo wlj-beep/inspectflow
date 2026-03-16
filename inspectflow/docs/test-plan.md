@@ -27,6 +27,10 @@ R1 acceptance matrix automation (required for BL-030 release closure):
 - Command: `npm run test:r1:acceptance`
 - Evidence artifact: `docs/operations/cycles/evidence/<YYYY-MM-DD>-r1-acceptance-matrix.txt`
 
+R4 ecosystem compatibility suite (required for BL-050 release closure):
+- Command: `npm run test:r4:compatibility`
+- Evidence artifact: `docs/operations/cycles/evidence/<YYYY-MM-DD>-r4-compatibility-suite.txt`
+
 ## Release Acceptance Matrix
 
 | Release | Required Suites | Gate Condition |
@@ -37,6 +41,7 @@ R1 acceptance matrix automation (required for BL-030 release closure):
 | R4 | Full matrix + extension compatibility suite | Platform extensions do not regress core or prior modules |
 
 R4 extension compatibility suite includes edge sync contract validation (`EDGE-SYNC-v1` via `/api/edge-sync/contracts`, `/api/edge-sync/snapshot`, `/api/edge-sync/validate`) when EDGE module is enabled.
+R4 compatibility scope covers extension runtime, partner connector kit, edge sync, module policy, and the standardized gate.
 
 ## Cross-Module Regression Policy
 Run matrix dimensions for every release candidate:

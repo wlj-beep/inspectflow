@@ -45,6 +45,8 @@ If Direct Push Mode is enabled, keep baseline required checks mandatory before e
 ### R4 Gate
 - Full matrix (core + modules + extensions) passes.
 - Extension compatibility and rollback paths validated.
+- Run `npm run test:r4:compatibility` and attach `docs/operations/cycles/evidence/<YYYY-MM-DD>-r4-compatibility-suite.txt`.
+- R4 suite covers extension runtime, partner connector kit, edge sync, module policy, plus the standardized gate.
 - Latest multi-agent report confirms no unresolved Red findings across core and extension contracts.
 
 ## Rollback Policy
