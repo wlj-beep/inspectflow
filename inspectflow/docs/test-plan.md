@@ -36,6 +36,8 @@ R1 acceptance matrix automation (required for BL-030 release closure):
 | R3 | R1/R2 suites + analytics correctness suite + multi-site boundary suite | KPI and partition controls meet defined SLOs |
 | R4 | Full matrix + extension compatibility suite | Platform extensions do not regress core or prior modules |
 
+R4 extension compatibility suite includes edge sync contract validation (`EDGE-SYNC-v1` via `/api/edge-sync/contracts`, `/api/edge-sync/snapshot`, `/api/edge-sync/validate`) when EDGE module is enabled.
+
 ## Cross-Module Regression Policy
 Run matrix dimensions for every release candidate:
 1. CORE only

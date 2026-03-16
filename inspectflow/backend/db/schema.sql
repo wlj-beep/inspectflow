@@ -568,6 +568,18 @@ CREATE TABLE IF NOT EXISTS partner_connector_kits (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS edge_sync_runs (
+  id BIGSERIAL PRIMARY KEY,
+  contract_id TEXT NOT NULL,
+  direction TEXT NOT NULL CHECK (direction IN ('snapshot_export','payload_validate')),
+  validation_status TEXT NOT NULL CHECK (validation_status IN ('valid','invalid')),
+  payload_summary JSONB NOT NULL DEFAULT '{}'::JSONB,
+  findings_json JSONB NOT NULL DEFAULT '[]'::JSONB,
+  actor_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  actor_role TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 ALTER TABLE missing_pieces DROP CONSTRAINT IF EXISTS missing_pieces_reason_check;
 ALTER TABLE missing_pieces ADD CONSTRAINT missing_pieces_reason_check CHECK (reason IN ('Scrapped','Lost','Damaged','Other','Unable to Measure'));
 ALTER TABLE dimensions ADD COLUMN IF NOT EXISTS sampling_interval INTEGER;
@@ -644,6 +656,10 @@ CREATE INDEX IF NOT EXISTS idx_partner_connector_kits_enabled
 ON partner_connector_kits (enabled, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_partner_connector_kits_validation_status
 ON partner_connector_kits (validation_status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_edge_sync_runs_created
+ON edge_sync_runs (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_edge_sync_runs_status
+ON edge_sync_runs (validation_status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_operations_work_center_id
 ON operations (work_center_id);
 CREATE INDEX IF NOT EXISTS idx_work_centers_active
