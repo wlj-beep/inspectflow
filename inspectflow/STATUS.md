@@ -14,7 +14,7 @@ Canonical global execution queue for active backlog work.
 
 | Rank | Item ID | Priority | Status | Owner | Updated | Work Item |
 | --- | --- | --- | --- | --- | --- | --- |
-| 1 | BL-049 | P1 | In Progress | @codex | 2026-03-15T12:16:00-04:00 | `COMM-LICENSE-v1`: add module policy/rules engine for entitlement profile activation controls. |
+| 1 | BL-050 | P1 | In Progress | @codex | 2026-03-15T12:19:00-04:00 | `PLAT-DEPLOY-v1`: run ecosystem compatibility suite for extension/module upgrade safety. |
 
 ## Active Gate Defaults
 - For BL-058 acceptance, duplicate/replay behavior is fixed to idempotent skip plus audit trail updates (no strict hard-reject mode).
@@ -92,3 +92,5 @@ Canonical global execution queue for active backlog work.
 | 2026-03-15 | BL-048 | @owner | @codex | Claimed after BL-047 completion to implement edge/standalone interoperability sync model. |
 | 2026-03-15 | BL-048 | @codex | @owner | Completed `OPS-JOBFLOW-v1` edge/standalone interoperability sync model: added `EDGE-SYNC-v1` contracts/snapshot/validate APIs with EDGE module guard, `edge_sync_runs` validation ledger, and focused + full standardized validation evidence. |
 | 2026-03-15 | BL-049 | @owner | @codex | Claimed after BL-048 completion to deliver module policy/rules entitlement activation controls. |
+| 2026-03-15 | BL-049 | @codex | @owner | Completed `COMM-LICENSE-v1` module policy/rules engine: added profile catalog + evaluator (`/api/auth/module-policy/{profiles,evaluate}`), persisted `modulePolicyProfile` in entitlements contract, and validated via focused module-policy coverage plus full standardized gates. |
+| 2026-03-15 | BL-050 | @owner | @codex | Claimed after BL-049 completion to deliver ecosystem compatibility suite coverage. |

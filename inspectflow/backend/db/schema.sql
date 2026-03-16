@@ -349,11 +349,14 @@ CREATE TABLE IF NOT EXISTS platform_entitlements (
   seat_policy JSONB NOT NULL DEFAULT '{"mode":"soft","enforced":false,"hardLimit":0,"namedUsers":[],"allowedDevices":[]}'::JSONB,
   diagnostics_opt_in BOOLEAN NOT NULL DEFAULT FALSE,
   module_flags JSONB NOT NULL DEFAULT '{"CORE": true, "QUALITY_PRO": false, "INTEGRATION_SUITE": false, "ANALYTICS_SUITE": false, "MULTISITE": false, "EDGE": false}'::JSONB,
+  module_policy_profile TEXT NOT NULL DEFAULT 'core_starter',
   updated_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 ALTER TABLE platform_entitlements
   ADD COLUMN IF NOT EXISTS seat_policy JSONB NOT NULL DEFAULT '{"mode":"soft","enforced":false,"hardLimit":0,"namedUsers":[],"allowedDevices":[]}'::JSONB;
+ALTER TABLE platform_entitlements
+  ADD COLUMN IF NOT EXISTS module_policy_profile TEXT NOT NULL DEFAULT 'core_starter';
 
 CREATE TABLE IF NOT EXISTS user_sessions (
   id SERIAL PRIMARY KEY,

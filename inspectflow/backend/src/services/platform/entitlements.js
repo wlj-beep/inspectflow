@@ -1,4 +1,5 @@
 import { query } from "../../db.js";
+import { evaluateModulePolicy, getDefaultModulePolicyProfile } from "./modulePolicy.js";
 
 export const PLATFORM_ENTITLEMENT_CONTRACT_ID = "PLAT-ENT-v1";
 
@@ -104,6 +105,7 @@ function mapEntitlements(row) {
     seatPolicy,
     diagnosticsOptIn: row?.diagnostics_opt_in === true,
     moduleFlags: flags,
+    modulePolicyProfile: row?.module_policy_profile || getDefaultModulePolicyProfile(),
     enabledModules,
     updatedAt: row?.updated_at || null,
     updatedByUserId: row?.updated_by_user_id == null ? null : Number(row.updated_by_user_id)
@@ -113,13 +115,14 @@ function mapEntitlements(row) {
 async function ensureEntitlementsRow() {
   await query(
     `INSERT INTO platform_entitlements
-       (id, contract_id, license_tier, seat_pack, seat_soft_limit, seat_policy, diagnostics_opt_in, module_flags)
-     VALUES (1, $1, 'core', 25, 25, $2::jsonb, false, $3::jsonb)
+       (id, contract_id, license_tier, seat_pack, seat_soft_limit, seat_policy, diagnostics_opt_in, module_flags, module_policy_profile)
+     VALUES (1, $1, 'core', 25, 25, $2::jsonb, false, $3::jsonb, $4)
      ON CONFLICT (id) DO NOTHING`,
     [
       PLATFORM_ENTITLEMENT_CONTRACT_ID,
       JSON.stringify(DEFAULT_SEAT_POLICY),
-      JSON.stringify(DEFAULT_MODULE_FLAGS)
+      JSON.stringify(DEFAULT_MODULE_FLAGS),
+      getDefaultModulePolicyProfile()
     ]
   );
 }
@@ -128,7 +131,7 @@ export async function getPlatformEntitlements() {
   await ensureEntitlementsRow();
   const { rows } = await query(
     `SELECT contract_id, license_tier, seat_pack, seat_soft_limit, seat_policy, diagnostics_opt_in,
-            module_flags, updated_at, updated_by_user_id
+            module_flags, module_policy_profile, updated_at, updated_by_user_id
      FROM platform_entitlements
      WHERE id=1
      LIMIT 1`,
@@ -144,6 +147,7 @@ export async function updatePlatformEntitlements({
   seatPolicy,
   diagnosticsOptIn,
   moduleFlags,
+  modulePolicyProfile,
   updatedByUserId = null
 } = {}) {
   await ensureEntitlementsRow();
@@ -170,9 +174,19 @@ export async function updatePlatformEntitlements({
   const nextSeatPolicy = seatPolicy === undefined
     ? current.seatPolicy
     : normalizeSeatPolicy(seatPolicy, current.seatPolicy);
-  const nextModuleFlags = moduleFlags === undefined
-    ? current.moduleFlags
-    : normalizeModuleFlags(moduleFlags);
+  const profileToUse = modulePolicyProfile === undefined
+    ? (current.modulePolicyProfile || getDefaultModulePolicyProfile())
+    : String(modulePolicyProfile || "").trim().toLowerCase();
+  const moduleFlagsInput = moduleFlags !== undefined
+    ? moduleFlags
+    : modulePolicyProfile !== undefined
+      ? undefined
+      : current.moduleFlags;
+  const policyEvaluation = evaluateModulePolicy({
+    profile: profileToUse,
+    moduleFlags: moduleFlagsInput
+  });
+  const nextModuleFlags = policyEvaluation.moduleFlags;
 
   await query(
     `UPDATE platform_entitlements
@@ -183,7 +197,8 @@ export async function updatePlatformEntitlements({
          seat_policy=$5::jsonb,
          diagnostics_opt_in=$6,
          module_flags=$7::jsonb,
-         updated_by_user_id=$8,
+         module_policy_profile=$8,
+         updated_by_user_id=$9,
          updated_at=NOW()
      WHERE id=1`,
     [
@@ -194,6 +209,7 @@ export async function updatePlatformEntitlements({
       JSON.stringify(nextSeatPolicy),
       nextDiagnosticsOptIn,
       JSON.stringify(nextModuleFlags),
+      policyEvaluation.profile,
       updatedByUserId
     ]
   );

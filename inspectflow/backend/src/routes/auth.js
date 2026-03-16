@@ -33,6 +33,11 @@ import {
 } from "../services/platform/ssoAuth.js";
 import { evaluateSeatAccess } from "../services/platform/seatEnforcement.js";
 import {
+  evaluateModulePolicy,
+  getDefaultModulePolicyProfile,
+  getModulePolicyProfiles
+} from "../services/platform/modulePolicy.js";
+import {
   getPlatformEntitlements,
   updatePlatformEntitlements
 } from "../services/platform/entitlements.js";
@@ -469,6 +474,28 @@ router.get("/entitlements", requireAuthenticated, async (req, res, next) => {
   }
 });
 
+router.get("/module-policy/profiles", requireAuthenticated, async (req, res, next) => {
+  try {
+    res.json(getModulePolicyProfiles());
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/module-policy/evaluate", requireAuthenticated, async (req, res, next) => {
+  try {
+    if (req.auth.user.role !== "Admin") return res.status(403).json({ error: "forbidden" });
+    const evaluation = evaluateModulePolicy({
+      profile: req.body?.profile || req.body?.modulePolicyProfile || getDefaultModulePolicyProfile(),
+      moduleFlags: req.body?.moduleFlags
+    });
+    res.json(evaluation);
+  } catch (err) {
+    if (err?.status) return res.status(err.status).json({ error: err.code });
+    next(err);
+  }
+});
+
 router.put("/entitlements", requireAuthenticated, async (req, res, next) => {
   try {
     if (req.auth.user.role !== "Admin") return res.status(403).json({ error: "forbidden" });
@@ -491,11 +518,35 @@ router.put("/entitlements", requireAuthenticated, async (req, res, next) => {
         licenseTier: updated.licenseTier,
         seatPack: updated.seatPack,
         seatSoftLimit: updated.seatSoftLimit,
-        seatPolicy: updated.seatPolicy
+        seatPolicy: updated.seatPolicy,
+        modulePolicyProfile: updated.modulePolicyProfile
       }
     });
 
     res.json(updated);
+  } catch (err) {
+    if (err?.status) return res.status(err.status).json({ error: err.code });
+    next(err);
+  }
+});
+
+router.get("/module-policy/profiles", requireAuthenticated, async (req, res, next) => {
+  try {
+    res.json(getModulePolicyProfiles());
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/module-policy/evaluate", requireAuthenticated, async (req, res, next) => {
+  try {
+    if (req.auth.user.role !== "Admin") return res.status(403).json({ error: "forbidden" });
+
+    const result = evaluateModulePolicy({
+      profile: req.body?.modulePolicyProfile ?? req.body?.profile,
+      moduleFlags: req.body?.moduleFlags
+    });
+    res.json(result);
   } catch (err) {
     if (err?.status) return res.status(err.status).json({ error: err.code });
     next(err);

@@ -4,9 +4,13 @@
 Commercialization controls: license metadata, entitlement policy, seat-pack rules, module activation logic, and update entitlement state.
 
 ## Provides
-- `COMM-LICENSE-v1`: site license and module entitlement metadata contract.
+- `COMM-LICENSE-v1`: site license and module entitlement metadata contract, including module policy profile selection for entitlement activation.
 - `COMM-SEAT-v1`: soft seat visibility/warning contract.
 - `COMM-SEAT-v2`: optional paid hard-seat enforcement contract.
+
+`COMM-LICENSE-v1` surface:
+- Entitlements persist `modulePolicyProfile` and resulting `moduleFlags` for audit-safe activation.
+- Policy evaluation uses `/api/auth/module-policy/profiles` (list profiles) and `/api/auth/module-policy/evaluate` (preview module flag outcomes).
 
 `COMM-SEAT-v1` surface:
 - `GET /api/auth/seats`: admin seat-usage snapshot (`activeUsers`, `activeSessions`, `seatSoftLimit`, warning flags).

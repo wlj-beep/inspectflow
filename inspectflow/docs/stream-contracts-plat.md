@@ -15,6 +15,10 @@ Platform foundations: auth, authorization enforcement, deployment/runtime reliab
 `PLAT-ENT-v1` API surface:
 - `GET /api/auth/entitlements`: authenticated read contract for module gating consumers.
 - `PUT /api/auth/entitlements`: admin policy update (`moduleFlags`, seat policy, diagnostics opt-in).
+- `GET /api/auth/module-policy/profiles`: list available module policy profiles.
+- `POST /api/auth/module-policy/evaluate`: evaluate a profile to produce module flag outcomes (no persistence).
+
+Entitlements persist `modulePolicyProfile` and resulting `moduleFlags` for module activation governance.
 
 ## Consumes
 - `COMM-LICENSE-v1` for entitlement policy metadata.
