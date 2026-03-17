@@ -15,3 +15,8 @@ inspectflow/**/dist/
 # Local env files
 inspectflow/**/.env
 inspectflow/**/.env.local
+
+# Code review system
+code-review/node_modules/
+code-review/.env
+code-review/reports/*.md
