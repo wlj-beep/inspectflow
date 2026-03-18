@@ -14,6 +14,7 @@ async function resetAuthEntitlementBaseline() {
          seat_soft_limit=25,
          seat_policy='{"mode":"soft","enforced":false,"hardLimit":0,"namedUsers":[],"allowedDevices":[]}'::jsonb,
          module_flags='{"CORE":true,"QUALITY_PRO":false,"INTEGRATION_SUITE":false,"ANALYTICS_SUITE":false,"MULTISITE":false,"EDGE":false}'::jsonb,
+         module_policy_profile='core_starter',
          updated_at=NOW()
      WHERE id=1`
   );
