@@ -1,0 +1,67 @@
+name: AI Code Review
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "PR number to review (e.g. 47)"
+        required: true
+        type: string
+      base_sha:
+        description: "Base commit SHA (the PR base — find in PR details)"
+        required: true
+        type: string
+      head_sha:
+        description: "Head commit SHA (the tip of the PR branch — find in PR details)"
+        required: true
+        type: string
+
+# Read-only access. No PR commenting, no code modifications.
+permissions:
+  contents: read
+
+jobs:
+  ai-code-review:
+    runs-on: ubuntu-latest
+
+    # Prevent multiple concurrent reviews for the same PR
+    concurrency:
+      group: code-review-pr-${{ inputs.pr_number }}
+      cancel-in-progress: true
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Full history required so git diff can reach both base and head SHAs
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: code-review/package-lock.json
+
+      - name: Install review system dependencies
+        run: npm ci
+        working-directory: code-review
+
+      - name: Run AI code review
+        run: node orchestrator.js incremental
+        working-directory: code-review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          BASE_REF: ${{ inputs.base_sha }}
+          HEAD_REF: ${{ inputs.head_sha }}
+          REPO_ROOT: ${{ github.workspace }}
+
+      - name: Upload review report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: code-review-pr-${{ inputs.pr_number }}
+          path: code-review/reports/
+          retention-days: 90
+          if-no-files-found: warn

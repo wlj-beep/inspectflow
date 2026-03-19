@@ -14,7 +14,7 @@ export const MART_TABLES = [
   {
     name: "ana_mart_inspection_fact",
     description: "Piece-level inspection facts for reproducible KPI calculations.",
-    grain: "record_id + dimension_id + piece_number",
+    grain: "site_id + record_id + dimension_id + piece_number",
     sourceContracts: ["QUAL-TRACE-v1", "INT-CONNECTOR-v2"],
     columns: [
       { name: "record_id", type: "INTEGER", nullable: false },
@@ -39,7 +39,7 @@ export const MART_TABLES = [
   {
     name: "ana_mart_connector_run_fact",
     description: "Connector reliability fact table for ingestion quality analytics.",
-    grain: "run_id",
+    grain: "site_id + run_id",
     sourceContracts: ["INT-CONNECTOR-v2"],
     columns: [
       { name: "run_id", type: "INTEGER", nullable: false },

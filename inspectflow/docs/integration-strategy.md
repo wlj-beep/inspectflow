@@ -27,6 +27,7 @@ Implemented integration surfaces include:
 - Add idempotent external keys via `INT-IDEMPOTENCY-v2`.
 - Add adapter packs for ERP/MES sources while preserving canonical contracts.
 - Provide governance controls for import conflict policy and setup revision coupling.
+- Introduce partner connector kit + validation harness via `/api/partner-connectors` (validate/register/list) as the onboarding path for third-party connectors under `INT-CONNECTOR-v2`.
 
 ### R3 (Intelligence and Scale)
 - Feed analytics contracts with validated ingestion provenance.
@@ -58,6 +59,7 @@ Adapters must map source-specific payloads into this envelope before domain proc
   - `error`: terminal failure with no successful row persistence.
 - Duplicate replay attempts short-circuit via idempotency keys and return `duplicate=true` with no additional row writes.
 - Run logs persist runtime attempt metadata (attempt count/details, idempotency key, replay metadata) in `import_runs.summary.runtime`.
+- Partner connector onboarding uses `/api/partner-connectors` with `sdkPluginId` tied to enabled `platform_extensions` runtime before activation.
 
 ## Idempotency and External-ID Contract (`INT-IDEMPOTENCY-v2`)
 - Connector idempotency keys persist in `import_idempotency_ledger` with first/last run linkage and hit counts for audit-safe replay tracking.

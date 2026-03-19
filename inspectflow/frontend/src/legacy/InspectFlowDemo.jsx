@@ -2349,6 +2349,8 @@ function AdminRecords({ records, parts, toolLibrary, usersById, loadRecordDetail
   const [loadingId,setLoadingId]=useState(null);
   const [exporting,setExporting]=useState(false);
   const [exportErr,setExportErr]=useState("");
+  const [exportSelectionMode,setExportSelectionMode]=useState(false);
+  const [selectedRecordIds,setSelectedRecordIds]=useState({});
   const [sortKey,setSortKey]=useState("timestamp");
   const [sortDir,setSortDir]=useState("desc");
   const allOps=[...new Set(records.map(r=>r.operation))].sort();
@@ -2388,6 +2390,16 @@ function AdminRecords({ records, parts, toolLibrary, usersById, loadRecordDetail
     if(typeof av==="number"&&typeof bv==="number") return (av-bv)*dir;
     return String(av).localeCompare(String(bv))*dir;
   });
+  useEffect(() => {
+    setSelectedRecordIds((prev) => {
+      const visibleIds = new Set(sorted.map((record) => String(record.id)));
+      const next = {};
+      for (const id of Object.keys(prev)) {
+        if (visibleIds.has(id)) next[id] = true;
+      }
+      return next;
+    });
+  }, [sorted]);
   const sb=r=>{
     if(r.status==="incomplete")return <span className="badge badge-incomplete">Incomplete</span>;
     if(r.oot)return <span className="badge badge-oot">OOT</span>;
@@ -2424,19 +2436,56 @@ function AdminRecords({ records, parts, toolLibrary, usersById, loadRecordDetail
     if(updated) setSelected(updated);
     return updated;
   }
+  const selectedRows = exportSelectionMode
+    ? sorted.filter((record) => !!selectedRecordIds[String(record.id)])
+    : sorted;
+  const exportActionLabel = exportSelectionMode ? "Export Selected Records CSV" : "Export Filtered CSV";
+  const exportActionDisabled = exporting || selectedRows.length === 0;
+  const allVisibleSelected = sorted.length > 0 && sorted.every((record) => !!selectedRecordIds[String(record.id)]);
+  const anyVisibleSelected = sorted.some((record) => !!selectedRecordIds[String(record.id)]);
+  function toggleRecordSelection(recordId, checked){
+    const key = String(recordId);
+    setSelectedRecordIds((prev) => {
+      if (checked) return { ...prev, [key]: true };
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  }
+  function toggleAllVisibleSelection(checked){
+    if (!checked) {
+      setSelectedRecordIds((prev) => {
+        const next = { ...prev };
+        for (const record of sorted) {
+          delete next[String(record.id)];
+        }
+        return next;
+      });
+      return;
+    }
+    setSelectedRecordIds((prev) => {
+      const next = { ...prev };
+      for (const record of sorted) {
+        next[String(record.id)] = true;
+      }
+      return next;
+    });
+  }
   function csvEscape(v){
     const s=(v??"").toString();
     if(s.includes(",")||s.includes("\"")||s.includes("\n")) return `"${s.replace(/\"/g,'""')}"`;
     return s;
   }
-  async function handleExportFiltered(){
+  async function handleExportRecords(){
     if(!loadRecordDetail) return;
+    const rowsToExport = selectedRows;
+    if(rowsToExport.length===0) return;
     setExportErr("");setExporting(true);
     try{
       const lines=[];
       const header=["Job #","Part","Operation","Lot","Qty","Piece","Dimension","Sampling Plan","Value","Is OOT","Tool","IT #","Operator","Timestamp","Status","Comment","Override Count","Last Override By","Last Override Timestamp","Override Reason","Prior Value","Corrected Value","Missing Reason","Missing Details"];
       lines.push(header.join(","));
-      for(const r of sorted){
+      for(const r of rowsToExport){
         const detail = (r.values && Object.keys(r.values).length>0) ? r : await loadRecordDetail(r.id);
         const part = parts[detail.partNumber];
         const opData = part?.operations?.[detail.operation];
@@ -2569,8 +2618,21 @@ function AdminRecords({ records, parts, toolLibrary, usersById, loadRecordDetail
           <div className="card-title">Records</div>
           <div style={{display:"flex",alignItems:"center",gap:".75rem"}}>
             <div className="text-muted" style={{fontSize:".7rem"}}>Click any row to view full detail</div>
-            <button className="btn btn-ghost btn-sm" onClick={handleExportFiltered} disabled={exporting||sorted.length===0}>
-              {exporting?"Exporting…":"Export Filtered CSV"}
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => {
+                if (exportSelectionMode) {
+                  setExportSelectionMode(false);
+                  setSelectedRecordIds({});
+                } else {
+                  setExportSelectionMode(true);
+                }
+              }}
+            >
+              {exportSelectionMode ? "Cancel Selection" : "Select Records for Export"}
+            </button>
+            <button className="btn btn-ghost btn-sm" onClick={handleExportRecords} disabled={exportActionDisabled}>
+              {exporting?"Exporting…":exportActionLabel}
             </button>
           </div>
         </div>
@@ -2578,6 +2640,20 @@ function AdminRecords({ records, parts, toolLibrary, usersById, loadRecordDetail
         <table className="data-table">
           <thead>
             <tr>
+              {exportSelectionMode && (
+                <th style={{width:"44px",textAlign:"center"}}>
+                  <input
+                    type="checkbox"
+                    aria-label="Select all records for export"
+                    checked={allVisibleSelected}
+                    ref={(el) => {
+                      if (!el) return;
+                      el.indeterminate = !allVisibleSelected && anyVisibleSelected;
+                    }}
+                    onChange={(event) => toggleAllVisibleSelection(event.target.checked)}
+                  />
+                </th>
+              )}
               <th onClick={()=>toggleSort("timestamp")} style={{cursor:"pointer"}}>Timestamp {sortIcon("timestamp")}</th>
               <th onClick={()=>toggleSort("jobNumber")} style={{cursor:"pointer"}}>Job # {sortIcon("jobNumber")}</th>
               <th onClick={()=>toggleSort("partNumber")} style={{cursor:"pointer"}}>Part {sortIcon("partNumber")}</th>
@@ -2590,9 +2666,19 @@ function AdminRecords({ records, parts, toolLibrary, usersById, loadRecordDetail
             </tr>
           </thead>
           <tbody>
-            {sorted.length===0&&<tr><td colSpan={9}><div className="empty-state">No records match.</div></td></tr>}
+            {sorted.length===0&&<tr><td colSpan={exportSelectionMode ? 10 : 9}><div className="empty-state">No records match.</div></td></tr>}
             {sorted.map(r=>(
               <tr key={r.id} className="tr-click" onClick={()=>handleSelect(r)}>
+                {exportSelectionMode && (
+                  <td style={{textAlign:"center"}} onClick={(event) => event.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      aria-label={`Select ${r.jobNumber} for export`}
+                      checked={!!selectedRecordIds[String(r.id)]}
+                      onChange={(event) => toggleRecordSelection(r.id, event.target.checked)}
+                    />
+                  </td>
+                )}
                 <td className="mono" style={{fontSize:".74rem",whiteSpace:"nowrap"}}>{r.timestamp}</td>
                 <td className="mono accent-text">{r.jobNumber}</td><td className="mono">{r.partNumber}</td>
                 <td>Op {r.operation}</td><td>{r.lot}</td><td className="mono">{r.qty}</td>
@@ -3583,7 +3669,7 @@ function TransitionBanner({ state }) {
   );
 }
 
-export default function App({ authUser = null, onLogout = null }) {
+export default function App({ authUser = null, seatUsage = null, onLogout = null }) {
   const [view,setView]=useState("operator");
   const [users,setUsers]=useState([]);
   const [usersById,setUsersById]=useState({});
@@ -4302,6 +4388,16 @@ export default function App({ authUser = null, onLogout = null }) {
   }
   const dataChipLabel = dataStatus==="live" ? "Live Data" : dataStatus==="loading" ? "Loading" : "Local Demo";
   const dataChipClass = dataStatus==="live" ? "data-live" : dataStatus==="loading" ? "data-loading" : "data-fallback";
+  const seatChipText = seatUsage
+    ? `${seatUsage.softLimitExceeded ? "Seats Exceeded" : seatUsage.softLimitWarning ? "Seats Warning" : "Seats"} ${seatUsage.activeUsers}/${seatUsage.seatSoftLimit}`
+    : "";
+  const seatChipClass = !seatUsage
+    ? "data-loading"
+    : seatUsage.softLimitExceeded
+      ? "data-fallback"
+      : seatUsage.softLimitWarning
+        ? "data-loading"
+        : "data-live";
   return (
     <ErrorBoundary>
       <>
@@ -4313,20 +4409,37 @@ export default function App({ authUser = null, onLogout = null }) {
           <div className="header-right">
             <div className="user-ctrl">
               <div className="user-ctrl-label">Current User</div>
-              <div className="user-ctrl-row">
-                <select value={currentUserId} onChange={(e)=>setCurrentUserId(e.target.value)} disabled={!!authUser?.id}>
-                  <option value="">Select user…</option>
-                  {users.map(u=>(
-                    <option key={u.id} value={u.id}>{u.name} — {u.role}</option>
-                  ))}
-                </select>
-                <span className={`role-chip role-${(currentRole||"").toLowerCase()}`}>{currentRole||"Unknown"}</span>
-              </div>
-              {authUser?.id?<div className="user-ctrl-hint">Authenticated session user is fixed for protected actions.</div>:null}
+              {authUser?.id ? (
+                <div className="user-ctrl-row" data-testid="authenticated-user">
+                  <div style={{fontWeight:700,color:"var(--text)",fontSize:".84rem"}}>
+                    {authUser.name || usersById?.[String(currentUserId)] || "Authenticated User"}
+                  </div>
+                  <span className={`role-chip role-${(currentRole||"").toLowerCase()}`}>{currentRole||"Unknown"}</span>
+                </div>
+              ) : (
+                <div className="user-ctrl-row">
+                  <select value={currentUserId} onChange={(e)=>setCurrentUserId(e.target.value)}>
+                    <option value="">Select user…</option>
+                    {users.map(u=>(
+                      <option key={u.id} value={u.id}>{u.name} — {u.role}</option>
+                    ))}
+                  </select>
+                  <span className={`role-chip role-${(currentRole||"").toLowerCase()}`}>{currentRole||"Unknown"}</span>
+                </div>
+              )}
               {userLoadErr?<div className="user-ctrl-hint">{userLoadErr}</div>:null}
               {dataErr?<div className="user-ctrl-hint">{dataErr}</div>:null}
             </div>
-            <span className={`data-chip ${dataChipClass}`}>{dataChipLabel}</span>
+            {seatUsage ? (
+              <span
+                className={`data-chip ${seatChipClass}`}
+                title={`License ${seatUsage.licenseTier} · active sessions ${seatUsage.activeSessions}`}
+                data-testid="seat-usage-chip"
+              >
+                {seatChipText}
+              </span>
+            ) : null}
+            <span className={`data-chip ${dataChipClass}`} data-testid="data-status-chip">{dataChipLabel}</span>
             {onLogout ? <button className="nav-btn" onClick={onLogout}>Sign Out</button> : null}
             <nav className="nav">
               {canViewOperator && <button className={`nav-btn ${view==="operator"?"active":""}`} onClick={()=>setView("operator")}>Operator Entry</button>}

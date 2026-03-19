@@ -1,0 +1,17 @@
+{
+  "name": "inspectflow-code-review",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "description": "AI-powered code review agents for InspectFlow",
+  "scripts": {
+    "review": "node orchestrator.js incremental"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.36.0",
+    "glob": "^11.0.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

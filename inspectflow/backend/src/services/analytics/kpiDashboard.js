@@ -74,7 +74,7 @@ function normalizeDefinition(definition) {
   };
 }
 
-async function loadDashboardTotals(window) {
+async function loadDashboardTotals(window, siteId) {
   const inspection = await query(
     `SELECT
        COALESCE(SUM(measurement_count), 0)::INT AS total_pieces,
@@ -82,8 +82,9 @@ async function loadDashboardTotals(window) {
        COALESCE(SUM(oot_count), 0)::INT AS oot_pieces,
        COALESCE(SUM(rework_count), 0)::INT AS correction_events
      FROM ana_mart_inspection_fact
-     WHERE event_at >= $1 AND event_at <= $2`,
-    [window.dateFrom, window.dateTo]
+     WHERE event_at >= $1 AND event_at <= $2
+       AND site_id=$3`,
+    [window.dateFrom, window.dateTo, siteId]
   );
 
   const connector = await query(
@@ -92,8 +93,9 @@ async function loadDashboardTotals(window) {
        COALESCE(SUM(replayed_count), 0)::INT AS connector_replayed_runs,
        COALESCE(SUM(failure_count), 0)::INT AS connector_failed_runs
      FROM ana_mart_connector_run_fact
-     WHERE run_ended_at >= $1 AND run_ended_at <= $2`,
-    [window.dateFrom, window.dateTo]
+     WHERE run_ended_at >= $1 AND run_ended_at <= $2
+       AND site_id=$3`,
+    [window.dateFrom, window.dateTo, siteId]
   );
 
   return {
@@ -102,7 +104,7 @@ async function loadDashboardTotals(window) {
   };
 }
 
-async function loadWorkCenterBreakdown(window, limit) {
+async function loadWorkCenterBreakdown(window, limit, siteId) {
   const { rows } = await query(
     `SELECT
        COALESCE(work_center_id, 'unassigned') AS work_center_id,
@@ -112,10 +114,11 @@ async function loadWorkCenterBreakdown(window, limit) {
        COALESCE(SUM(rework_count), 0)::INT AS correction_events
      FROM ana_mart_inspection_fact
      WHERE event_at >= $1 AND event_at <= $2
+       AND site_id=$3
      GROUP BY COALESCE(work_center_id, 'unassigned')
      ORDER BY total_pieces DESC, work_center_id ASC
-     LIMIT $3`,
-    [window.dateFrom, window.dateTo, limit]
+     LIMIT $4`,
+    [window.dateFrom, window.dateTo, siteId, limit]
   );
 
   return rows.map((row) => {
@@ -128,7 +131,7 @@ async function loadWorkCenterBreakdown(window, limit) {
   });
 }
 
-async function loadOperatorBreakdown(window, limit) {
+async function loadOperatorBreakdown(window, limit, siteId) {
   const { rows } = await query(
     `SELECT
        amif.operator_user_id,
@@ -140,10 +143,11 @@ async function loadOperatorBreakdown(window, limit) {
      FROM ana_mart_inspection_fact amif
      LEFT JOIN users u ON u.id=amif.operator_user_id
      WHERE amif.event_at >= $1 AND amif.event_at <= $2
+       AND amif.site_id=$3
      GROUP BY amif.operator_user_id, COALESCE(u.name, 'Unknown')
      ORDER BY total_pieces DESC, operator_name ASC
-     LIMIT $3`,
-    [window.dateFrom, window.dateTo, limit]
+     LIMIT $4`,
+    [window.dateFrom, window.dateTo, siteId, limit]
   );
 
   return rows.map((row) => {
@@ -157,7 +161,7 @@ async function loadOperatorBreakdown(window, limit) {
   });
 }
 
-async function loadDailyTrend(window, limit) {
+async function loadDailyTrend(window, limit, siteId) {
   const inspectionRes = await query(
     `SELECT
        (event_at AT TIME ZONE 'UTC')::DATE::TEXT AS day,
@@ -167,10 +171,11 @@ async function loadDailyTrend(window, limit) {
        COALESCE(SUM(rework_count), 0)::INT AS correction_events
      FROM ana_mart_inspection_fact
      WHERE event_at >= $1 AND event_at <= $2
+       AND site_id=$3
      GROUP BY (event_at AT TIME ZONE 'UTC')::DATE
      ORDER BY day DESC
-     LIMIT $3`,
-    [window.dateFrom, window.dateTo, limit]
+     LIMIT $4`,
+    [window.dateFrom, window.dateTo, siteId, limit]
   );
 
   const connectorRes = await query(
@@ -181,10 +186,11 @@ async function loadDailyTrend(window, limit) {
        COALESCE(SUM(failure_count), 0)::INT AS connector_failed_runs
      FROM ana_mart_connector_run_fact
      WHERE run_ended_at >= $1 AND run_ended_at <= $2
+       AND site_id=$3
      GROUP BY (run_ended_at AT TIME ZONE 'UTC')::DATE
      ORDER BY day DESC
-     LIMIT $3`,
-    [window.dateFrom, window.dateTo, limit]
+     LIMIT $4`,
+    [window.dateFrom, window.dateTo, siteId, limit]
   );
 
   const merged = new Map();
@@ -227,7 +233,8 @@ export function listKpiDashboardDefinitions() {
 export async function getKpiDashboard({
   dateFrom = null,
   dateTo = null,
-  limit = DEFAULT_BREAKDOWN_LIMIT
+  limit = DEFAULT_BREAKDOWN_LIMIT,
+  siteId = "default"
 } = {}) {
   const validation = validateKpiContracts(KPI_DEFINITIONS);
   if (!validation.ok) {
@@ -236,21 +243,22 @@ export async function getKpiDashboard({
 
   const window = buildWindow({ dateFrom, dateTo });
   const safeLimit = toPositiveInt(limit, DEFAULT_BREAKDOWN_LIMIT);
-  const totals = await loadDashboardTotals(window);
+  const totals = await loadDashboardTotals(window, siteId);
   const metrics = buildMetricPayload({
     inspectionRow: totals.inspection,
     connectorRow: totals.connector
   });
 
   const [workCenters, operators, dailyTrend] = await Promise.all([
-    loadWorkCenterBreakdown(window, safeLimit),
-    loadOperatorBreakdown(window, safeLimit),
-    loadDailyTrend(window, Math.max(safeLimit, 30))
+    loadWorkCenterBreakdown(window, safeLimit, siteId),
+    loadOperatorBreakdown(window, safeLimit, siteId),
+    loadDailyTrend(window, Math.max(safeLimit, 30), siteId)
   ]);
 
   return {
     contractId: KPI_CONTRACT_VERSION,
     dashboardId: "operator_supervisor_kpi_v1",
+    siteId,
     martContractId: ANA_MART_CONTRACT_ID,
     window,
     definitions: KPI_DEFINITIONS.map((definition) => normalizeDefinition(definition)),

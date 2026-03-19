@@ -93,6 +93,7 @@ function LoginView({
 export default function App() {
   const [status, setStatus] = useState("loading");
   const [authUser, setAuthUser] = useState(null);
+  const [seatUsage, setSeatUsage] = useState(null);
   const [users, setUsers] = useState([]);
   const [selectedUserId, setSelectedUserId] = useState("");
   const [password, setPassword] = useState("");
@@ -111,12 +112,15 @@ export default function App() {
         setUsers(Array.isArray(usersRes) ? usersRes : []);
         if (sessionRes?.valid && sessionRes.user) {
           setAuthUser(sessionRes.user);
+          setSeatUsage(sessionRes.seatUsage || null);
           setStatus("authenticated");
           return;
         }
+        setSeatUsage(null);
         setStatus("unauthenticated");
       } catch {
         if (!active) return;
+        setSeatUsage(null);
         setStatus("unauthenticated");
       }
     }
@@ -142,6 +146,7 @@ export default function App() {
         password
       });
       setAuthUser(response.user);
+      setSeatUsage(response.seatUsage || null);
       setPassword("");
       setStatus("authenticated");
     } catch (err) {
@@ -154,6 +159,7 @@ export default function App() {
   async function handleLogout() {
     await api.auth.logout().catch(() => {});
     setAuthUser(null);
+    setSeatUsage(null);
     setStatus("unauthenticated");
     setError("");
     setPassword("");
@@ -178,5 +184,5 @@ export default function App() {
     );
   }
 
-  return <InspectFlowDemo authUser={authUser} onLogout={handleLogout} />;
+  return <InspectFlowDemo authUser={authUser} seatUsage={seatUsage} onLogout={handleLogout} />;
 }

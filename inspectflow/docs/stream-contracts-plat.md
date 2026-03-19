@@ -5,13 +5,20 @@ Platform foundations: auth, authorization enforcement, deployment/runtime reliab
 
 ## Provides
 - `PLAT-AUTH-v1`: local account auth/session contract.
+- `PLAT-AUTH-v1` optional extension: env-gated SSO session bootstrap path (`POST /api/auth/sso/login`) with local auth parity retained.
+- `PLAT-AUTH-v1` multi-site extension: user site-scope assignments (`GET/PUT /api/users/:id/sites`) used for site-level authorization separation.
 - `PLAT-ENT-v1`: entitlement and module-flag read contract.
 - `PLAT-DEPLOY-v1`: install/health/preflight/update status contract.
 - `PLAT-BACKUP-v1`: backup/restore execution and audit contract.
+- `PLAT-DEPLOY-v1` extension surface (`EDGE-SDK-v1`): policy-safe plugin runtime scaffolding (`/api/extensions/*`) for R4 ecosystem work (BL-046).
 
 `PLAT-ENT-v1` API surface:
 - `GET /api/auth/entitlements`: authenticated read contract for module gating consumers.
 - `PUT /api/auth/entitlements`: admin policy update (`moduleFlags`, seat policy, diagnostics opt-in).
+- `GET /api/auth/module-policy/profiles`: list available module policy profiles.
+- `POST /api/auth/module-policy/evaluate`: evaluate a profile to produce module flag outcomes (no persistence).
+
+Entitlements persist `modulePolicyProfile` and resulting `moduleFlags` for module activation governance.
 
 ## Consumes
 - `COMM-LICENSE-v1` for entitlement policy metadata.

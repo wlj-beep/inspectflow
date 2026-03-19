@@ -19,15 +19,19 @@ import authRouter from "./routes/auth.js";
 import { attachAuthSession } from "./middleware/authSession.js";
 import analyticsRouter from "./routes/analytics.js";
 import technicalOpsRouter from "./routes/technicalOps.js";
+import extensionsRouter from "./routes/extensions.js";
+import partnerConnectorsRouter from "./routes/partnerConnectors.js";
+import edgeSyncRouter from "./routes/edgeSync.js";
 
 dotenv.config();
 
 const app = express();
+const jsonBodyLimit = process.env.API_JSON_BODY_LIMIT || "2mb";
 app.use(cors({
-  origin: true,
+  origin: process.env.FRONTEND_ORIGIN || true,
   credentials: true
 }));
-app.use(express.json());
+app.use(express.json({ limit: jsonBodyLimit }));
 app.use(attachAuthSession);
 
 app.get("/health", (req, res) => {
@@ -37,6 +41,9 @@ app.get("/health", (req, res) => {
 app.use("/api/auth", authRouter);
 app.use("/api/analytics", analyticsRouter);
 app.use("/api/technical-ops", technicalOpsRouter);
+app.use("/api/extensions", extensionsRouter);
+app.use("/api/partner-connectors", partnerConnectorsRouter);
+app.use("/api/edge-sync", edgeSyncRouter);
 app.use("/api/users", usersRouter);
 app.use("/api/tools", toolsRouter);
 app.use("/api/parts", partsRouter);

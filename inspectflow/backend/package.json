@@ -11,7 +11,7 @@
     "db:migrate:test": "NODE_ENV=test node src/scripts/migrate.js",
     "db:seed:test": "NODE_ENV=test node src/scripts/seed.js",
     "db:test:setup": "npm run db:migrate:test && npm run db:seed:test",
-    "test": "NODE_ENV=test npm run db:test:setup && NODE_ENV=test vitest run"
+    "test": "NODE_ENV=test npm run db:test:setup && NODE_ENV=test vitest run --poolOptions.threads.singleThread --no-file-parallelism"
   },
   "dependencies": {
     "cors": "^2.8.5",

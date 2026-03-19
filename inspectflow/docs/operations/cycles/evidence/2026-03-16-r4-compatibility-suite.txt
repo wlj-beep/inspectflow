@@ -1,0 +1,276 @@
+== Coordination gate ==
+
+> inspectflow@0.1.0 test:coordination
+> npm run coordination:check
+
+
+> inspectflow@0.1.0 coordination:check
+> node scripts/validate-coordination.mjs
+
+Coordination validation passed.
+== Backend test DB setup ==
+
+> inspectflow-backend@0.1.0 db:test:setup
+> npm run db:migrate:test && npm run db:seed:test
+
+
+> inspectflow-backend@0.1.0 db:migrate:test
+> NODE_ENV=test node src/scripts/migrate.js
+
+Schema applied.
+
+> inspectflow-backend@0.1.0 db:seed:test
+> NODE_ENV=test node src/scripts/seed.js
+
+Seeded local credentials for 10 users.
+Seed applied.
+== Backend R4 focused tests ==
+
+ RUN  v2.1.9 /Users/joshlane/Documents/Playground 2/inspectflow/backend
+
+ ✓ test/partner-connector-kit.test.js (4 tests) 88ms
+ ✓ test/extensions-runtime.test.js (5 tests) 106ms
+ ❯ test/r4-ecosystem-compatibility.test.js (1 test | 1 failed) 117ms
+   × R4 ecosystem compatibility suite (BL-050) > keeps core workflows healthy while extension and edge module surfaces are toggled 116ms
+     → expected false to be true // Object.is equality
+ ❯ test/edge-sync.test.js (6 tests | 1 failed) 120ms
+   × Edge sync API > accepts valid payload and writes run log 13ms
+     → expected 403 to be 200 // Object.is equality
+ ✓ test/module-policy.test.js (4 tests) 308ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/edge-sync.test.js > Edge sync API > accepts valid payload and writes run log
+AssertionError: expected 403 to be 200 // Object.is equality
+
+- Expected
++ Received
+
+- 200
++ 403
+
+ ❯ test/edge-sync.test.js:128:24
+    126|       .send(snapshot.body);
+    127| 
+    128|     expect(res.status).toBe(200);
+       |                        ^
+    129|     expect(res.body.validationStatus).toBe("valid");
+    130|     expect(res.body.runId).toBeTruthy();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  test/r4-ecosystem-compatibility.test.js > R4 ecosystem compatibility suite (BL-050) > keeps core workflows healthy while extension and edge module surfaces are toggled
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ test/r4-ecosystem-compatibility.test.js:91:47
+     89|       .send({ modulePolicyProfile: "edge_ops" });
+     90|     expect(edgeProfile.status).toBe(200);
+     91|     expect(edgeProfile.body.moduleFlags.EDGE).toBe(true);
+       |                                               ^
+     92| 
+     93|     const runtime = await admin.get("/api/extensions/runtime");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+ Test Files  2 failed | 3 passed (5)
+      Tests  2 failed | 18 passed (20)
+   Start at  04:38:27
+   Duration  1.33s (transform 319ms, setup 0ms, collect 3.56s, tests 740ms, environment 1ms, prepare 457ms)
+
+== Coordination gate ==
+
+> inspectflow@0.1.0 test:coordination
+> npm run coordination:check
+
+
+> inspectflow@0.1.0 coordination:check
+> node scripts/validate-coordination.mjs
+
+Coordination validation passed.
+== Backend test DB setup ==
+
+> inspectflow-backend@0.1.0 db:test:setup
+> npm run db:migrate:test && npm run db:seed:test
+
+
+> inspectflow-backend@0.1.0 db:migrate:test
+> NODE_ENV=test node src/scripts/migrate.js
+
+Schema applied.
+
+> inspectflow-backend@0.1.0 db:seed:test
+> NODE_ENV=test node src/scripts/seed.js
+
+Seeded local credentials for 10 users.
+Seed applied.
+== Backend R4 focused tests ==
+
+ RUN  v2.1.9 /Users/joshlane/Documents/Playground 2/inspectflow/backend
+
+ ✓ test/r4-ecosystem-compatibility.test.js (1 test) 136ms
+ ✓ test/extensions-runtime.test.js (5 tests) 50ms
+ ✓ test/partner-connector-kit.test.js (4 tests) 41ms
+ ✓ test/module-policy.test.js (4 tests) 201ms
+ ✓ test/edge-sync.test.js (6 tests) 76ms
+
+ Test Files  5 passed (5)
+      Tests  20 passed (20)
+   Start at  04:39:01
+   Duration  1.60s (transform 114ms, setup 0ms, collect 592ms, tests 503ms, environment 0ms, prepare 131ms)
+
+== Standardized gate ==
+
+> inspectflow@0.1.0 test:standardized
+> npm run test:coordination && npm run test:api && npm run test:ui:mock && npm run test:ui:live
+
+
+> inspectflow@0.1.0 test:coordination
+> npm run coordination:check
+
+
+> inspectflow@0.1.0 coordination:check
+> node scripts/validate-coordination.mjs
+
+Coordination validation passed.
+
+> inspectflow@0.1.0 test:api
+> npm run test --prefix backend
+
+
+> inspectflow-backend@0.1.0 test
+> NODE_ENV=test npm run db:test:setup && NODE_ENV=test vitest run --poolOptions.threads.singleThread --no-file-parallelism
+
+
+> inspectflow-backend@0.1.0 db:test:setup
+> npm run db:migrate:test && npm run db:seed:test
+
+
+> inspectflow-backend@0.1.0 db:migrate:test
+> NODE_ENV=test node src/scripts/migrate.js
+
+Schema applied.
+
+> inspectflow-backend@0.1.0 db:seed:test
+> NODE_ENV=test node src/scripts/seed.js
+
+Seeded local credentials for 10 users.
+Seed applied.
+
+ RUN  v2.1.9 /Users/joshlane/Documents/Playground 2/inspectflow/backend
+
+ ✓ test/backlog-validation.test.js (28 tests) 392ms
+ ✓ test/auth-hardening-entitlements.test.js (5 tests) 1121ms
+   ✓ Auth hardening + entitlement contract > records password change and reset events 448ms
+ ✓ test/analytics-kpi-dashboard-risk-workflow.test.js (2 tests) 195ms
+ ✓ test/analytics-calibration-impact.test.js (2 tests) 148ms
+ ✓ test/technical-ops-api.test.js (5 tests) 100ms
+ ✓ test/analytics-mart-runtime.test.js (2 tests) 181ms
+ ✓ test/ops-routing-workflows.test.js (3 tests) 145ms
+ ✓ test/r4-ecosystem-compatibility.test.js (1 test) 135ms
+ ✓ test/idempotency-entrypoints.test.js (3 tests) 93ms
+ ✓ test/operational-regression.test.js (3 tests) 74ms
+ ✓ test/extensions-runtime.test.js (5 tests) 45ms
+ ✓ test/partner-connector-kit.test.js (4 tests) 37ms
+ ✓ test/integration-connector-runtime.test.js (4 tests) 4ms
+ ✓ test/module-policy.test.js (4 tests) 188ms
+ ✓ test/auth-route-contracts.test.js (3 tests) 184ms
+ ✓ test/quality-export.test.js (1 test) 66ms
+ ✓ test/edge-sync.test.js (6 tests) 66ms
+ ✓ test/integration-adapter-support-bundle.test.js (2 tests) 46ms
+ ✓ test/future-analytics-anomaly.test.js (6 tests) 2ms
+ ✓ test/future-analytics-kpi.test.js (5 tests) 3ms
+ ✓ test/analytics-contracts.test.js (5 tests) 2ms
+ ✓ test/integration-envelope.test.js (5 tests) 3ms
+ ✓ test/future-quality-export-engine.test.js (4 tests) 4ms
+ ✓ test/auth-sso.test.js (3 tests) 94ms
+ ✓ test/integration-runtime-policy.test.js (4 tests) 3ms
+ ✓ test/auth.test.js (3 tests) 119ms
+ ✓ test/analytics-multisite-partition.test.js (2 tests) 180ms
+ ✓ test/future-quality-risk-escalation.test.js (4 tests) 2ms
+ ✓ test/future-idempotency-envelope.test.js (4 tests) 2ms
+ ✓ test/future-integration-policy.test.js (4 tests) 2ms
+ ✓ test/permissions.test.js (4 tests) 35ms
+ ✓ test/analytics-performance-slo.test.js (2 tests) 113ms
+ ✓ test/revisions.test.js (2 tests) 1ms
+ ✓ test/smoke.test.js (2 tests) 23ms
+
+ Test Files  34 passed (34)
+      Tests  142 passed (142)
+   Start at  04:39:04
+   Duration  9.25s (transform 157ms, setup 0ms, collect 2.15s, tests 3.81s, environment 3ms, prepare 778ms)
+
+
+> inspectflow@0.1.0 test:ui:mock
+> npm run test:ui --prefix frontend -- --grep @mock
+
+
+> inspectflow-frontend@0.1.0 test:ui
+> playwright test --grep @mock
+
+[2m[WebServer] [22m(node:34400) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[2m[WebServer] [22m(Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 7 tests using 1 worker
+
+(node:34407) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:34407) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 tests/mocked.smoke.spec.js:203:3 › Mocked UI smoke @mock › loads the InspectFlow shell (757ms)
+  ✓  2 tests/mocked.smoke.spec.js:212:3 › Mocked UI smoke @mock › shows COMM-SEAT soft warning chip in authenticated shell when seat usage is high (204ms)
+  ✓  3 tests/mocked.smoke.spec.js:231:3 › Mocked UI smoke @mock › shows loading and success transitions during part creation (1.4s)
+  ✓  4 tests/mocked.smoke.spec.js:250:3 › Mocked UI smoke @mock › shows failure transition when part creation fails (597ms)
+  ✓  5 tests/mocked.smoke.spec.js:268:3 › Mocked UI smoke @mock › reuses original base prefix and increments family run index for duplicate lot jobs (416ms)
+  ✓  6 tests/mocked.smoke.spec.js:305:3 › Mocked UI smoke @mock › allows admins to import tools via CSV from the Data Imports tab (569ms)
+  ✓  7 tests/mocked.smoke.spec.js:322:3 › Mocked UI smoke @mock › supports optional selected-record export mode with checkbox-only selection (640ms)
+
+  7 passed (7.0s)
+
+> inspectflow@0.1.0 test:ui:live
+> bash scripts/run-ui-live-tests.sh
+
+[ui-live] Preparing test database...
+
+> inspectflow@0.1.0 db:test:setup
+> npm run db:test:setup --prefix backend
+
+
+> inspectflow-backend@0.1.0 db:test:setup
+> npm run db:migrate:test && npm run db:seed:test
+
+
+> inspectflow-backend@0.1.0 db:migrate:test
+> NODE_ENV=test node src/scripts/migrate.js
+
+Schema applied.
+
+> inspectflow-backend@0.1.0 db:seed:test
+> NODE_ENV=test node src/scripts/seed.js
+
+Seeded local credentials for 10 users.
+Seed applied.
+[ui-live] Starting backend API...
+[ui-live] Running live Playwright suite...
+
+> inspectflow-frontend@0.1.0 test:ui
+> playwright test --grep @live
+
+[2m[WebServer] [22m(node:35338) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[2m[WebServer] [22m(Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 1 test using 1 worker
+
+(node:35340) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:35340) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 tests/live.critical.spec.js:36:3 › Live UI critical path @live › admin creates job, operator submits measurements, record persists (1.8s)
+
+  1 passed (3.2s)
+PASS: R4 compatibility suite completed.

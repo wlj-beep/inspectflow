@@ -36,7 +36,27 @@ const DEFAULT_PART_DETAIL = {
   ]
 };
 
-async function mockApi(page, { createPartMode = "success", createPartDelayMs = 0, jobs = [], enableImports = false } = {}) {
+async function mockApi(
+  page,
+  {
+    createPartMode = "success",
+    createPartDelayMs = 0,
+    jobs = [],
+    records = [],
+    enableImports = false,
+    seatUsage = {
+      contractId: "COMM-SEAT-v1",
+      entitlementContractId: "PLAT-ENT-v1",
+      licenseTier: "core",
+      seatPack: 25,
+      seatSoftLimit: 25,
+      activeSessions: 1,
+      activeUsers: 1,
+      softLimitWarning: false,
+      softLimitExceeded: false
+    }
+  } = {}
+) {
   const routeHandler = async (route) => {
     const req = route.request();
     const method = req.method();
@@ -55,7 +75,8 @@ async function mockApi(page, { createPartMode = "success", createPartDelayMs = 0
         json: {
           ok: true,
           user: { id: 1, name: "Admin User", role: "Admin" },
-          expiresAt: "2026-03-15T00:00:00.000Z"
+          expiresAt: "2026-03-15T00:00:00.000Z",
+          seatUsage
         }
       });
     }
@@ -84,7 +105,7 @@ async function mockApi(page, { createPartMode = "success", createPartDelayMs = 0
       return route.fulfill({ status: 200, json: jobs });
     }
     if (method === "GET" && path === "/api/records") {
-      return route.fulfill({ status: 200, json: [] });
+      return route.fulfill({ status: 200, json: records });
     }
     if (method === "GET" && path === "/api/roles") {
       return route.fulfill({
@@ -184,6 +205,27 @@ test.describe("Mocked UI smoke @mock", () => {
     await page.goto("/");
     await loginAsAdmin(page);
     await expect(page.getByText("InspectFlow", { exact: false })).toBeVisible();
+    await expect(page.getByTestId("authenticated-user")).toContainText("Admin User");
+    await expect(page.getByTestId("authenticated-user")).not.toContainText("Select user");
+  });
+
+  test("shows COMM-SEAT soft warning chip in authenticated shell when seat usage is high", async ({ page }) => {
+    await mockApi(page, {
+      seatUsage: {
+        contractId: "COMM-SEAT-v1",
+        entitlementContractId: "PLAT-ENT-v1",
+        licenseTier: "core_plus",
+        seatPack: 30,
+        seatSoftLimit: 25,
+        activeSessions: 28,
+        activeUsers: 26,
+        softLimitWarning: true,
+        softLimitExceeded: true
+      }
+    });
+    await page.goto("/");
+    await loginAsAdmin(page);
+    await expect(page.getByTestId("seat-usage-chip")).toContainText("Seats Exceeded 26/25");
   });
 
   test("shows loading and success transitions during part creation", async ({ page }) => {
@@ -275,5 +317,56 @@ test.describe("Mocked UI smoke @mock", () => {
 
     await expect(page.getByText('"ok": true')).toBeVisible();
     await expect(page.getByText('"inserted": 1')).toBeVisible();
+  });
+
+  test("supports optional selected-record export mode with checkbox-only selection", async ({ page }) => {
+    await mockApi(page, {
+      records: [
+        {
+          id: 901,
+          job_id: "J-REC-001",
+          part_id: "1234",
+          operation_id: 20,
+          lot: "Lot X",
+          qty: 2,
+          timestamp: "2026-03-15T12:00:00.000Z",
+          operator_user_id: 1,
+          status: "complete",
+          oot: false,
+          comment: "first"
+        },
+        {
+          id: 902,
+          job_id: "J-REC-002",
+          part_id: "1234",
+          operation_id: 20,
+          lot: "Lot Y",
+          qty: 2,
+          timestamp: "2026-03-15T12:05:00.000Z",
+          operator_user_id: 1,
+          status: "complete",
+          oot: false,
+          comment: "second"
+        }
+      ]
+    });
+    await page.goto("/");
+    await loginAsAdmin(page);
+
+    await page.getByRole("button", { name: "Records", exact: true }).click();
+
+    await expect(page.getByRole("button", { name: "Select Records for Export" })).toBeVisible();
+    await expect(page.getByRole("checkbox", { name: /Select J-REC-001 for export/i })).toHaveCount(0);
+
+    await page.getByRole("button", { name: "Select Records for Export" }).click();
+    const exportSelectedBtn = page.getByRole("button", { name: "Export Selected Records CSV" });
+    await expect(exportSelectedBtn).toBeDisabled();
+
+    await page.getByRole("checkbox", { name: /Select J-REC-001 for export/i }).check();
+    await expect(exportSelectedBtn).toBeEnabled();
+
+    await page.getByRole("button", { name: "Cancel Selection" }).click();
+    await expect(page.getByRole("button", { name: "Export Filtered CSV" })).toBeEnabled();
+    await expect(page.getByRole("checkbox", { name: /Select J-REC-001 for export/i })).toHaveCount(0);
   });
 });

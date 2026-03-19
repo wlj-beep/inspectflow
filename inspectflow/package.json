@@ -12,6 +12,8 @@
     "test:ui:mock": "npm run test:ui --prefix frontend -- --grep @mock",
     "test:ui:live": "bash scripts/run-ui-live-tests.sh",
     "test:standardized": "npm run test:coordination && npm run test:api && npm run test:ui:mock && npm run test:ui:live",
+    "test:r1:acceptance": "bash scripts/run-r1-acceptance-matrix.sh",
+    "test:r4:compatibility": "bash scripts/run-r4-compatibility-suite.sh",
     "db:test:setup": "npm run db:test:setup --prefix backend",
     "deploy:onprem:install": "bash deploy/onprem/install.sh",
     "deploy:onprem:start": "bash deploy/onprem/start.sh",

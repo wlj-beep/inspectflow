@@ -24,7 +24,13 @@ try {
       `INSERT INTO auth_local_credentials
          (user_id, password_salt, password_hash, failed_attempts, locked_until, must_rotate_password)
        VALUES ($1,$2,$3,0,NULL,true)
-       ON CONFLICT (user_id) DO NOTHING`,
+       ON CONFLICT (user_id) DO UPDATE
+       SET password_salt=EXCLUDED.password_salt,
+           password_hash=EXCLUDED.password_hash,
+           failed_attempts=0,
+           locked_until=NULL,
+           must_rotate_password=true,
+           password_updated_at=NOW()`,
       [row.id, hashed.salt, hashed.hash]
     );
   }

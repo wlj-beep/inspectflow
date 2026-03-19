@@ -7,6 +7,14 @@ CREATE TABLE IF NOT EXISTS users (
   active BOOLEAN NOT NULL DEFAULT TRUE
 );
 
+CREATE TABLE IF NOT EXISTS user_site_access (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  site_id TEXT NOT NULL,
+  is_default BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (user_id, site_id)
+);
+
 CREATE TABLE IF NOT EXISTS tools (
   id SERIAL PRIMARY KEY,
   name TEXT NOT NULL UNIQUE,
@@ -305,7 +313,9 @@ CREATE TABLE IF NOT EXISTS auth_event_log (
     'password_changed',
     'password_change_failure',
     'password_reset_default',
-    'entitlements_updated'
+    'entitlements_updated',
+    'seat_soft_limit_warning',
+    'seat_hard_limit_block'
   )),
   user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
   actor_role TEXT CHECK (actor_role IS NULL OR actor_role IN ('Operator','Quality','Supervisor','Admin')),
@@ -316,6 +326,19 @@ CREATE TABLE IF NOT EXISTS auth_event_log (
   metadata JSONB NOT NULL DEFAULT '{}'::JSONB,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+ALTER TABLE auth_event_log DROP CONSTRAINT IF EXISTS auth_event_log_event_type_check;
+ALTER TABLE auth_event_log ADD CONSTRAINT auth_event_log_event_type_check CHECK (event_type IN (
+  'login_success',
+  'login_failure',
+  'login_locked',
+  'logout',
+  'password_changed',
+  'password_change_failure',
+  'password_reset_default',
+  'entitlements_updated',
+  'seat_soft_limit_warning',
+  'seat_hard_limit_block'
+));
 
 CREATE TABLE IF NOT EXISTS platform_entitlements (
   id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -323,11 +346,17 @@ CREATE TABLE IF NOT EXISTS platform_entitlements (
   license_tier TEXT NOT NULL DEFAULT 'core',
   seat_pack INTEGER NOT NULL DEFAULT 25 CHECK (seat_pack > 0),
   seat_soft_limit INTEGER NOT NULL DEFAULT 25 CHECK (seat_soft_limit > 0),
+  seat_policy JSONB NOT NULL DEFAULT '{"mode":"soft","enforced":false,"hardLimit":0,"namedUsers":[],"allowedDevices":[]}'::JSONB,
   diagnostics_opt_in BOOLEAN NOT NULL DEFAULT FALSE,
   module_flags JSONB NOT NULL DEFAULT '{"CORE": true, "QUALITY_PRO": false, "INTEGRATION_SUITE": false, "ANALYTICS_SUITE": false, "MULTISITE": false, "EDGE": false}'::JSONB,
+  module_policy_profile TEXT NOT NULL DEFAULT 'core_starter',
   updated_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+ALTER TABLE platform_entitlements
+  ADD COLUMN IF NOT EXISTS seat_policy JSONB NOT NULL DEFAULT '{"mode":"soft","enforced":false,"hardLimit":0,"namedUsers":[],"allowedDevices":[]}'::JSONB;
+ALTER TABLE platform_entitlements
+  ADD COLUMN IF NOT EXISTS module_policy_profile TEXT NOT NULL DEFAULT 'core_starter';
 
 CREATE TABLE IF NOT EXISTS user_sessions (
   id SERIAL PRIMARY KEY,
@@ -435,11 +464,11 @@ CREATE TABLE IF NOT EXISTS ana_mart_inspection_fact (
   rework_count INTEGER NOT NULL DEFAULT 0,
   source_run_id INTEGER REFERENCES import_runs(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  PRIMARY KEY (record_id, dimension_id, piece_number)
+  PRIMARY KEY (site_id, record_id, dimension_id, piece_number)
 );
 
 CREATE TABLE IF NOT EXISTS ana_mart_connector_run_fact (
-  run_id INTEGER PRIMARY KEY REFERENCES import_runs(id) ON DELETE CASCADE,
+  run_id INTEGER NOT NULL REFERENCES import_runs(id) ON DELETE CASCADE,
   site_id TEXT NOT NULL DEFAULT 'default',
   connector_id TEXT NOT NULL,
   status TEXT NOT NULL,
@@ -449,7 +478,8 @@ CREATE TABLE IF NOT EXISTS ana_mart_connector_run_fact (
   processed_count INTEGER NOT NULL DEFAULT 0,
   avg_latency_ms INTEGER,
   run_ended_at TIMESTAMPTZ,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (site_id, run_id)
 );
 
 CREATE TABLE IF NOT EXISTS ana_mart_job_rollup_day (
@@ -467,6 +497,7 @@ CREATE TABLE IF NOT EXISTS ana_mart_job_rollup_day (
 
 CREATE TABLE IF NOT EXISTS ana_mart_build_runs (
   id BIGSERIAL PRIMARY KEY,
+  site_id TEXT NOT NULL DEFAULT 'default',
   trigger_source TEXT NOT NULL,
   requested_by_role TEXT,
   requested_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
@@ -479,6 +510,7 @@ CREATE TABLE IF NOT EXISTS ana_mart_build_runs (
   completed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+ALTER TABLE ana_mart_build_runs ADD COLUMN IF NOT EXISTS site_id TEXT NOT NULL DEFAULT 'default';
 
 CREATE TABLE IF NOT EXISTS ana_risk_event_log (
   id BIGSERIAL PRIMARY KEY,
@@ -506,6 +538,51 @@ CREATE TABLE IF NOT EXISTS ana_risk_event_log (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS platform_extensions (
+  plugin_id TEXT PRIMARY KEY,
+  display_name TEXT NOT NULL,
+  version TEXT NOT NULL,
+  sdk_version TEXT NOT NULL DEFAULT 'EDGE-SDK-v1',
+  manifest_json JSONB NOT NULL DEFAULT '{}'::JSONB,
+  policy_status TEXT NOT NULL DEFAULT 'blocked' CHECK (policy_status IN ('allowed','blocked')),
+  policy_findings_json JSONB NOT NULL DEFAULT '[]'::JSONB,
+  enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  required_module TEXT NOT NULL DEFAULT 'EDGE',
+  updated_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  updated_by_role TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS partner_connector_kits (
+  connector_id TEXT PRIMARY KEY,
+  display_name TEXT NOT NULL,
+  version TEXT NOT NULL,
+  sdk_plugin_id TEXT REFERENCES platform_extensions(plugin_id) ON DELETE SET NULL,
+  source_types_json JSONB NOT NULL DEFAULT '[]'::JSONB,
+  import_types_json JSONB NOT NULL DEFAULT '[]'::JSONB,
+  manifest_json JSONB NOT NULL DEFAULT '{}'::JSONB,
+  validation_status TEXT NOT NULL DEFAULT 'invalid' CHECK (validation_status IN ('valid','invalid')),
+  validation_findings_json JSONB NOT NULL DEFAULT '[]'::JSONB,
+  enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  updated_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  updated_by_role TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS edge_sync_runs (
+  id BIGSERIAL PRIMARY KEY,
+  contract_id TEXT NOT NULL,
+  direction TEXT NOT NULL CHECK (direction IN ('snapshot_export','payload_validate')),
+  validation_status TEXT NOT NULL CHECK (validation_status IN ('valid','invalid')),
+  payload_summary JSONB NOT NULL DEFAULT '{}'::JSONB,
+  findings_json JSONB NOT NULL DEFAULT '[]'::JSONB,
+  actor_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  actor_role TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 ALTER TABLE missing_pieces DROP CONSTRAINT IF EXISTS missing_pieces_reason_check;
 ALTER TABLE missing_pieces ADD CONSTRAINT missing_pieces_reason_check CHECK (reason IN ('Scrapped','Lost','Damaged','Other','Unable to Measure'));
 ALTER TABLE dimensions ADD COLUMN IF NOT EXISTS sampling_interval INTEGER;
@@ -528,9 +605,22 @@ ALTER TABLE ana_risk_event_log ADD COLUMN IF NOT EXISTS acknowledged_by_user_id 
 ALTER TABLE ana_risk_event_log ADD COLUMN IF NOT EXISTS acknowledgement_note TEXT;
 ALTER TABLE ana_risk_event_log ADD COLUMN IF NOT EXISTS acknowledged_at TIMESTAMPTZ;
 ALTER TABLE ana_risk_event_log ADD COLUMN IF NOT EXISTS linked_issue_id INTEGER REFERENCES issue_reports(id) ON DELETE SET NULL;
+ALTER TABLE ana_mart_inspection_fact DROP CONSTRAINT IF EXISTS ana_mart_inspection_fact_pkey;
+ALTER TABLE ana_mart_inspection_fact
+  ADD CONSTRAINT ana_mart_inspection_fact_pkey PRIMARY KEY (site_id, record_id, dimension_id, piece_number);
+ALTER TABLE ana_mart_connector_run_fact DROP CONSTRAINT IF EXISTS ana_mart_connector_run_fact_pkey;
+ALTER TABLE ana_mart_connector_run_fact
+  ADD CONSTRAINT ana_mart_connector_run_fact_pkey PRIMARY KEY (site_id, run_id);
+INSERT INTO user_site_access (user_id, site_id, is_default)
+SELECT id, 'default', true
+FROM users
+ON CONFLICT (user_id, site_id) DO NOTHING;
 
 CREATE INDEX IF NOT EXISTS idx_part_setup_revisions_part_latest
 ON part_setup_revisions (part_id, revision_index DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_user_site_access_default
+ON user_site_access (user_id)
+WHERE is_default;
 CREATE INDEX IF NOT EXISTS idx_tool_locations_type
 ON tool_locations (location_type);
 CREATE INDEX IF NOT EXISTS idx_import_integrations_enabled
@@ -555,10 +645,24 @@ CREATE INDEX IF NOT EXISTS idx_ana_mart_job_rollup_date
 ON ana_mart_job_rollup_day (rollup_date DESC, part_id, job_id);
 CREATE INDEX IF NOT EXISTS idx_ana_mart_build_runs_created
 ON ana_mart_build_runs (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ana_mart_build_runs_site_created
+ON ana_mart_build_runs (site_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_ana_risk_event_status
 ON ana_risk_event_log (status, last_seen_at DESC);
 CREATE INDEX IF NOT EXISTS idx_ana_risk_event_linked_issue
 ON ana_risk_event_log (linked_issue_id);
+CREATE INDEX IF NOT EXISTS idx_platform_extensions_enabled
+ON platform_extensions (enabled, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_platform_extensions_policy_status
+ON platform_extensions (policy_status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_partner_connector_kits_enabled
+ON partner_connector_kits (enabled, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_partner_connector_kits_validation_status
+ON partner_connector_kits (validation_status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_edge_sync_runs_created
+ON edge_sync_runs (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_edge_sync_runs_status
+ON edge_sync_runs (validation_status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_operations_work_center_id
 ON operations (work_center_id);
 CREATE INDEX IF NOT EXISTS idx_work_centers_active
