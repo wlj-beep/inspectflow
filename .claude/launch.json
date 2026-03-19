@@ -1,0 +1,20 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "InspectFlow Backend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "cwd": "inspectflow/backend",
+      "port": 4000
+    },
+    {
+      "name": "InspectFlow Frontend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "cwd": "inspectflow/frontend",
+      "port": 5173,
+      "autoPort": true
+    }
+  ]
+}

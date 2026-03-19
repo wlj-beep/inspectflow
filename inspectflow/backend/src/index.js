@@ -28,7 +28,7 @@ dotenv.config();
 const app = express();
 const jsonBodyLimit = process.env.API_JSON_BODY_LIMIT || "2mb";
 app.use(cors({
-  origin: true,
+  origin: process.env.FRONTEND_ORIGIN || true,
   credentials: true
 }));
 app.use(express.json({ limit: jsonBodyLimit }));
