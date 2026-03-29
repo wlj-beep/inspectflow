@@ -1,4 +1,3 @@
-import { query } from "../../db.js";
 import {
   computeAllKpis,
   KPI_CONTRACT_VERSION,
@@ -9,6 +8,8 @@ import {
   ANA_KPI_METRIC_KEYS,
   ANA_MART_CONTRACT_ID
 } from "./anaV3Vocabulary.js";
+import { analyticsQuery } from "./statementTimeout.js";
+import { normalizeIsoTimestamp } from "../dateValidation.js";
 
 const DEFAULT_LOOKBACK_DAYS = 30;
 const DEFAULT_BREAKDOWN_LIMIT = 12;
@@ -17,15 +18,6 @@ function toPositiveInt(value, fallback) {
   const n = Number(value);
   if (Number.isInteger(n) && n > 0) return n;
   return fallback;
-}
-
-function toOptionalIso(value, fieldName) {
-  if (value === undefined || value === null || String(value).trim() === "") return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    throw new Error(`invalid_${fieldName}`);
-  }
-  return date.toISOString();
 }
 
 function defaultWindow() {
@@ -38,8 +30,8 @@ function defaultWindow() {
 }
 
 function buildWindow({ dateFrom, dateTo }) {
-  const normalizedFrom = toOptionalIso(dateFrom, "date_from");
-  const normalizedTo = toOptionalIso(dateTo, "date_to");
+  const normalizedFrom = normalizeIsoTimestamp(dateFrom, "date_from");
+  const normalizedTo = normalizeIsoTimestamp(dateTo, "date_to");
   if (normalizedFrom && normalizedTo && normalizedFrom > normalizedTo) {
     throw new Error("invalid_window_range");
   }
@@ -75,7 +67,7 @@ function normalizeDefinition(definition) {
 }
 
 async function loadDashboardTotals(window, siteId) {
-  const inspection = await query(
+  const inspection = await analyticsQuery(
     `SELECT
        COALESCE(SUM(measurement_count), 0)::INT AS total_pieces,
        COALESCE(SUM(pass_count), 0)::INT AS pass_pieces,
@@ -87,7 +79,7 @@ async function loadDashboardTotals(window, siteId) {
     [window.dateFrom, window.dateTo, siteId]
   );
 
-  const connector = await query(
+  const connector = await analyticsQuery(
     `SELECT
        COALESCE(SUM(run_count), 0)::INT AS connector_total_runs,
        COALESCE(SUM(replayed_count), 0)::INT AS connector_replayed_runs,
@@ -105,7 +97,7 @@ async function loadDashboardTotals(window, siteId) {
 }
 
 async function loadWorkCenterBreakdown(window, limit, siteId) {
-  const { rows } = await query(
+  const { rows } = await analyticsQuery(
     `SELECT
        COALESCE(work_center_id, 'unassigned') AS work_center_id,
        COALESCE(SUM(measurement_count), 0)::INT AS total_pieces,
@@ -132,7 +124,7 @@ async function loadWorkCenterBreakdown(window, limit, siteId) {
 }
 
 async function loadOperatorBreakdown(window, limit, siteId) {
-  const { rows } = await query(
+  const { rows } = await analyticsQuery(
     `SELECT
        amif.operator_user_id,
        COALESCE(u.name, 'Unknown') AS operator_name,
@@ -162,7 +154,7 @@ async function loadOperatorBreakdown(window, limit, siteId) {
 }
 
 async function loadDailyTrend(window, limit, siteId) {
-  const inspectionRes = await query(
+  const inspectionRes = await analyticsQuery(
     `SELECT
        (event_at AT TIME ZONE 'UTC')::DATE::TEXT AS day,
        COALESCE(SUM(measurement_count), 0)::INT AS total_pieces,
@@ -178,7 +170,7 @@ async function loadDailyTrend(window, limit, siteId) {
     [window.dateFrom, window.dateTo, siteId, limit]
   );
 
-  const connectorRes = await query(
+  const connectorRes = await analyticsQuery(
     `SELECT
        (run_ended_at AT TIME ZONE 'UTC')::DATE::TEXT AS day,
        COALESCE(SUM(run_count), 0)::INT AS connector_total_runs,

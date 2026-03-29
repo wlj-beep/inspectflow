@@ -10,7 +10,8 @@ const connectionString =
   process.env.NODE_ENV === "test" && testUrl ? testUrl : process.env.DATABASE_URL;
 
 export const pool = new Pool({
-  connectionString
+  connectionString,
+  options: "-c timezone=UTC"
 });
 
 export async function query(text, params) {

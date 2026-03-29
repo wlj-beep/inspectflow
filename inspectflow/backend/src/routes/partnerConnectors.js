@@ -2,6 +2,10 @@ import { Router } from "express";
 import { requireCapability } from "../middleware/requireCapability.js";
 import { getActorRole, getActorUserId } from "../middleware/authSession.js";
 import {
+  isLegacyPartnerIntegrationSurfaceEnabled,
+  legacyPartnerSurfaceDisabledDetail
+} from "../services/integration/partnerSurfaceFlags.js";
+import {
   isConnectorIdValid,
   listPartnerConnectors,
   registerPartnerConnector,
@@ -26,8 +30,16 @@ function actorFromRequest(req) {
   };
 }
 
+function respondDisabled(res) {
+  res.status(404).json({
+    error: "legacy_integration_surface_disabled",
+    detail: legacyPartnerSurfaceDisabledDetail()
+  });
+}
+
 router.post("/validate", requireCapability("view_admin"), async (req, res, next) => {
   try {
+    if (!isLegacyPartnerIntegrationSurfaceEnabled()) return respondDisabled(res);
     if (!ensureAdmin(req, res)) return;
     const result = await validatePartnerConnectorManifest(req.body || {});
     res.json({
@@ -42,6 +54,7 @@ router.post("/validate", requireCapability("view_admin"), async (req, res, next)
 
 router.post("/", requireCapability("view_admin"), async (req, res, next) => {
   try {
+    if (!isLegacyPartnerIntegrationSurfaceEnabled()) return respondDisabled(res);
     if (!ensureAdmin(req, res)) return;
     const connectorId = String(req.body?.connectorId || req.body?.id || "").trim();
     if (connectorId && !isConnectorIdValid(connectorId)) {
@@ -69,6 +82,7 @@ router.post("/", requireCapability("view_admin"), async (req, res, next) => {
 
 router.get("/", requireCapability("view_admin"), async (req, res, next) => {
   try {
+    if (!isLegacyPartnerIntegrationSurfaceEnabled()) return respondDisabled(res);
     if (!ensureAdmin(req, res)) return;
     res.json(await listPartnerConnectors());
   } catch (err) {

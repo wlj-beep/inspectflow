@@ -1,5 +1,9 @@
 -- Seed placeholder data for local development
 
+-- BL-120: system actor for IoT collector auto-submissions
+INSERT INTO users (name, role, active) VALUES ('_iot_system', 'Operator', false)
+ON CONFLICT (name) DO NOTHING;
+
 INSERT INTO users (name, role, active) VALUES
   ('J. Morris','Operator',true),
   ('R. Tatum','Operator',true),
@@ -17,6 +21,7 @@ INSERT INTO role_capabilities (role, capability) VALUES
   ('Operator','view_operator'),
   ('Operator','submit_records'),
   ('Operator','view_records'),
+  ('Operator','acknowledge_instructions'),
   ('Quality','view_admin'),
   ('Quality','view_jobs'),
   ('Quality','view_records'),
@@ -24,11 +29,13 @@ INSERT INTO role_capabilities (role, capability) VALUES
   ('Supervisor','view_admin'),
   ('Supervisor','view_jobs'),
   ('Supervisor','manage_jobs'),
+  ('Supervisor','manage_instructions'),
   ('Supervisor','view_records'),
   ('Supervisor','edit_records'),
   ('Admin','view_admin'),
   ('Admin','view_jobs'),
   ('Admin','manage_jobs'),
+  ('Admin','manage_instructions'),
   ('Admin','view_records'),
   ('Admin','edit_records'),
   ('Admin','manage_parts'),

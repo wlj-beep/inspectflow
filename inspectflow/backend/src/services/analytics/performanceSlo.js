@@ -1,4 +1,4 @@
-import { query } from "../../db.js";
+import { analyticsQuery } from "./statementTimeout.js";
 
 const DEFAULT_WINDOW_DAYS = 30;
 const DEFAULT_BUILD_P95_MS = 30000;
@@ -39,7 +39,7 @@ export async function getAnalyticsPerformanceSlo({
   const maxErrorRate = toPositiveNumber(process.env.ANALYTICS_SLO_MAX_ERROR_RATE, DEFAULT_MAX_ERROR_RATE);
   const storageBudgetMb = toPositiveInt(process.env.ANALYTICS_SLO_STORAGE_BUDGET_MB, DEFAULT_STORAGE_BUDGET_MB);
 
-  const buildStats = await query(
+  const buildStats = await analyticsQuery(
     `SELECT
        COUNT(*)::INT AS total_builds,
        COUNT(*) FILTER (WHERE status='success')::INT AS success_builds,
@@ -52,7 +52,7 @@ export async function getAnalyticsPerformanceSlo({
     [siteId, windowDays]
   );
 
-  const storageRes = await query(
+  const storageRes = await analyticsQuery(
     `SELECT (
        pg_total_relation_size('ana_mart_inspection_fact')
        + pg_total_relation_size('ana_mart_connector_run_fact')

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "./api/index.js";
-import InspectFlowDemo from "./legacy/InspectFlowDemo.jsx";
+import InspectFlowApp from "./domains/jobflow/InspectFlowApp.jsx";
 
 function LoginView({
   users,
@@ -18,31 +18,31 @@ function LoginView({
       display: "grid",
       placeItems: "center",
       background: "linear-gradient(160deg, #f3f7fb 0%, #e2ebf5 55%, #d9e6f3 100%)",
-      padding: "1rem"
+      padding: "16px"
     }}>
       <section style={{
         width: "min(460px, 100%)",
         border: "1px solid #b9c8d8",
         background: "#ffffff",
-        borderRadius: "10px",
+        borderRadius: "8px",
         boxShadow: "0 12px 35px rgba(18, 32, 48, 0.16)",
-        padding: "1.2rem 1.1rem"
+        padding: "24px"
       }}>
-        <h1 style={{ margin: 0, fontSize: "1.4rem", color: "#13263b" }}>InspectFlow Login</h1>
-        <p style={{ marginTop: ".45rem", marginBottom: "1rem", color: "#3f5268", fontSize: ".92rem" }}>
+        <h1 style={{ margin: 0, fontSize: "20px", color: "#13263b" }}>InspectFlow Login</h1>
+        <p style={{ marginTop: "8px", marginBottom: "16px", color: "#3f5268", fontSize: "14px" }}>
           Authenticate with a local account to open protected production workflows.
         </p>
         <form
           onSubmit={onSubmit}
-          style={{ display: "grid", gap: ".72rem" }}
+          style={{ display: "grid", gap: "16px" }}
         >
-          <label style={{ display: "grid", gap: ".35rem", color: "#1f3248", fontWeight: 600, fontSize: ".88rem" }}>
+          <label style={{ display: "grid", gap: "4px", color: "#1f3248", fontWeight: 600, fontSize: "14px" }}>
             User
             <select
               value={selectedUserId}
               onChange={(event) => onSelectUser(event.target.value)}
               disabled={busy}
-              style={{ minHeight: "2.2rem", border: "1px solid #9eb2c6", borderRadius: "7px", padding: ".2rem .5rem" }}
+              style={{ minHeight: "36px", border: "1px solid #9eb2c6", borderRadius: "4px", padding: "4px 8px" }}
             >
               <option value="">Select user...</option>
               {users.map((user) => (
@@ -52,7 +52,7 @@ function LoginView({
               ))}
             </select>
           </label>
-          <label style={{ display: "grid", gap: ".35rem", color: "#1f3248", fontWeight: 600, fontSize: ".88rem" }}>
+          <label style={{ display: "grid", gap: "4px", color: "#1f3248", fontWeight: 600, fontSize: "14px" }}>
             Password
             <input
               type="password"
@@ -60,16 +60,16 @@ function LoginView({
               onChange={(event) => onPasswordChange(event.target.value)}
               disabled={busy}
               placeholder="Enter password"
-              style={{ minHeight: "2.2rem", border: "1px solid #9eb2c6", borderRadius: "7px", padding: ".2rem .5rem" }}
+              style={{ minHeight: "36px", border: "1px solid #9eb2c6", borderRadius: "4px", padding: "4px 8px" }}
             />
           </label>
           <button
             type="submit"
             disabled={busy || !selectedUserId || !password}
             style={{
-              minHeight: "2.25rem",
+              minHeight: "36px",
               border: "none",
-              borderRadius: "7px",
+              borderRadius: "4px",
               background: busy ? "#8ea5ba" : "#20456d",
               color: "#fff",
               fontWeight: 700,
@@ -79,9 +79,9 @@ function LoginView({
             {busy ? "Signing in..." : "Sign In"}
           </button>
           {error ? (
-            <div style={{ color: "#a02020", fontSize: ".85rem", fontWeight: 600 }}>{error}</div>
+            <div style={{ color: "#a02020", fontSize: "14px", fontWeight: 600 }}>{error}</div>
           ) : null}
-          <div style={{ color: "#52667c", fontSize: ".78rem" }}>
+          <div style={{ color: "#52667c", fontSize: "12px" }}>
             Default local password can be set with `INSPECTFLOW_DEFAULT_PASSWORD` (fallback: `inspectflow`).
           </div>
         </form>
@@ -157,7 +157,9 @@ export default function App() {
   }
 
   async function handleLogout() {
-    await api.auth.logout().catch(() => {});
+    await api.auth.logout().catch((err) => {
+      console.warn("[auth] logout request failed:", err?.message || err);
+    });
     setAuthUser(null);
     setSeatUsage(null);
     setStatus("unauthenticated");
@@ -184,5 +186,5 @@ export default function App() {
     );
   }
 
-  return <InspectFlowDemo authUser={authUser} seatUsage={seatUsage} onLogout={handleLogout} />;
+  return <InspectFlowApp authUser={authUser} seatUsage={seatUsage} onLogout={handleLogout} />;
 }

@@ -20,7 +20,7 @@
 - R1 Scope: `mvp-scope.md`
 - Architecture: `architecture.md`
 - Architecture Risks: `architecture-risks.md`
-- Data Model: `data-model.md`
+- Data Model: `data-model.md` (`npm run docs:schema:validate`)
 - Integration Strategy: `integration-strategy.md`
 - Backup Plan: `backup-plan.md`
 - Backup and Restore Runbook: `backup-restore-runbook.md`
@@ -30,7 +30,8 @@
 
 ## Planning and Governance
 - Backlog Framework: `backlog-framework.md`
-- Backlog (Active): `backlog.md`
+- Backlog (Index): `backlog.md`
+- Backlog Shards: `backlog/`
 - Backlog Snapshot (v1 baseline): `backlog-v1-baseline-2026-03.md`
 - Coordination Plan: `coordination-plan.md`
 - Deployment Governance: `deployment-governance.md`
@@ -50,5 +51,8 @@
 ## Operations and Supporting Docs
 - Multi-Agent Playbook: `operations/multi-agent-playbook.md`
 - Agent Roles: `agent-roles.md`
+- Token-Efficiency Commands: `operations/token-efficiency-commands.md` (`context:all` / `context:all:report`)
+- Token-Efficiency Troubleshooting: `operations/token-efficiency-troubleshooting.md`
+- Token-Efficiency Session Checklist Template: `operations/token-efficiency-session-checklist-template.md`
 - ADRs: `adr/`
 - Import Templates: `templates/`

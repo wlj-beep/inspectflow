@@ -1,0 +1,94 @@
+name: inspectflow-cloud
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-inspectflow}
+      POSTGRES_USER: ${POSTGRES_USER:-inspectflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  backend:
+    build:
+      context: ../../
+      dockerfile: deploy/cloud/backend.Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: ${BACKEND_PORT:-4000}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-inspectflow}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-inspectflow}
+      FRONTEND_ORIGIN: ${CLOUD_PUBLIC_ORIGIN:?set CLOUD_PUBLIC_ORIGIN}
+      AUTH_TOKEN_PEPPER: ${AUTH_TOKEN_PEPPER:?set AUTH_TOKEN_PEPPER}
+      AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-false}
+      AUTH_COOKIE_SAMESITE: ${AUTH_COOKIE_SAMESITE:-lax}
+      AUTH_COOKIE_DOMAIN: ${AUTH_COOKIE_DOMAIN:-}
+      AUTH_SESSION_TTL_HOURS: ${AUTH_SESSION_TTL_HOURS:-12}
+      AUTH_LOGIN_RATE_LIMIT_MAX: ${AUTH_LOGIN_RATE_LIMIT_MAX:-10}
+      AUTH_LOGIN_RATE_LIMIT_WINDOW_MS: ${AUTH_LOGIN_RATE_LIMIT_WINDOW_MS:-900000}
+      INSPECTFLOW_DEFAULT_PASSWORD: ${INSPECTFLOW_DEFAULT_PASSWORD:-inspectflow}
+      INSPECTFLOW_SEED_ON_INSTALL: ${INSPECTFLOW_SEED_ON_INSTALL:-true}
+      BACKUP_ROOT: /app/var/backups
+      BACKUP_LOG_FILE: /app/var/log/backup-workflow.log
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+      ALLOW_LEGACY_ROLE_HEADER: "false"
+    volumes:
+      - inspectflow-var:/app/var
+    expose:
+      - "${BACKEND_PORT:-4000}"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:$$PORT/health >/dev/null"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  frontend:
+    build:
+      context: ../../
+      dockerfile: deploy/cloud/frontend.Dockerfile
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      CLOUD_CADDY_SITE: ${CLOUD_CADDY_SITE:?set CLOUD_CADDY_SITE}
+      CLOUD_TLS_EMAIL: ${CLOUD_TLS_EMAIL:-}
+    ports:
+      - "${CLOUD_HTTP_PORT:-8080}:80"
+      - "${CLOUD_HTTPS_PORT:-8443}:443"
+
+  backup:
+    build:
+      context: ../../
+      dockerfile: deploy/cloud/backend.Dockerfile
+    profiles: ["backup"]
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-inspectflow}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-inspectflow}
+      BACKUP_ROOT: /app/var/backups
+      BACKUP_LOG_FILE: /app/var/log/backup-workflow.log
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+      INSPECTFLOW_ENV_FILE: /dev/null
+    volumes:
+      - inspectflow-var:/app/var
+    command: ["bash", "scripts/backup/run-scheduled-backup.sh"]
+
+volumes:
+  db-data:
+  inspectflow-var:

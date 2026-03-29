@@ -30,18 +30,26 @@ Implements BL-015.
 - Password minimum length: 8 characters (`AUTH_PASSWORD_MIN_LENGTH`).
 - Failed login lockout: 5 attempts / 15 minutes (`AUTH_LOCKOUT_ATTEMPTS`, `AUTH_LOCKOUT_MINUTES`).
 
-## Optional SSO Mode (BL-036)
-- `AUTH_SSO_ENABLED=false` by default (local auth-only mode remains unchanged).
-- When enabled, `POST /api/auth/sso/login` accepts a principal from:
-  - `AUTH_SSO_PRINCIPAL_HEADER` (default `x-forwarded-user`) or
-  - request body `principal`/`username`.
+## OIDC Standardized SSO Mode (BL-082)
+- Production standardization target is OIDC SSO-first.
+- Required when `AUTH_SSO_ENABLED=true` outside test:
+  - `AUTH_OIDC_ISSUER_URL`
+  - `AUTH_OIDC_CLIENT_ID`
+  - `AUTH_SSO_PROXY_SECRET`
+- When enabled, `POST /api/auth/sso/login` accepts principal/role from trusted proxy headers:
+  - `AUTH_SSO_PRINCIPAL_HEADER` (default `x-forwarded-user`)
+  - `AUTH_SSO_ROLE_HEADER` (default `x-forwarded-role`)
 - Optional role hint sources:
-  - `AUTH_SSO_ROLE_HEADER` (default `x-forwarded-role`) or
-  - request body `role`.
+  - request body `role` only when `AUTH_SSO_ALLOW_BODY_PRINCIPAL=true` (or in test runtime).
 - `AUTH_SSO_AUTO_PROVISION=false` by default. When enabled, unknown principals can be created as active users.
 - `AUTH_SSO_DEFAULT_ROLE=Operator` controls fallback role for auto-provision.
-- Local account login (`POST /api/auth/login`) remains available regardless of SSO mode.
+- `AUTH_LOCAL_LOGIN_ENABLED` controls local login availability:
+  - default `false` in production
+  - default `true` outside production
+  - when disabled, `POST /api/auth/login` returns `403 local_login_disabled`.
 - `PLAT-ENT-v1` `seatPolicy` fields enable optional `COMM-SEAT-v2` hard-seat modes.
+- Legacy `SSO_PROXY_SECRET` and `SSO_PROXY_SECRET_HEADER` env keys are deprecated. Use `AUTH_SSO_*` keys.
+- Migration checker: `npm run auth:oidc:migration:check`.
 
 ## Auth Event Coverage (BL-016)
 - `login_success`
@@ -82,3 +90,4 @@ Audit fields include actor/user/session linkage, request context (IP/user-agent)
 - Compatibility role-header mode is intended only for tightly controlled transition/test contexts.
 - Production deployment recommendation: keep `ALLOW_LEGACY_ROLE_HEADER=false`.
 - Even when role headers are present, authenticated session role is authoritative when a session exists.
+- Legacy SSO env aliases can be temporarily enabled only with `AUTH_ALLOW_LEGACY_SSO_ENV=true` during migration windows.

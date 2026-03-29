@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import request from "supertest";
-import app from "../src/index.js";
 import { query } from "../src/db.js";
+import { createTestSession, cleanupTestUsers } from "./helpers/sessionFixtures.js";
 
 const BASELINE_MODULE_FLAGS = {
   CORE: true,
@@ -39,17 +38,7 @@ async function resetEntitlementBaseline() {
   );
 }
 
-async function login(agent, username, password = "inspectflow") {
-  return agent.post("/api/auth/login").send({ username, password });
-}
-
-async function loginAdmin(agent) {
-  const primary = await login(agent, "S. Admin", "inspectflow");
-  if (primary.status === 200) return primary;
-  const fallback = await login(agent, "S. Admin", "inspectflow-v2");
-  if (fallback.status === 200) return fallback;
-  return primary;
-}
+const createdUserIds = [];
 
 describe("Module policy engine (BL-049)", () => {
   beforeEach(async () => {
@@ -57,15 +46,15 @@ describe("Module policy engine (BL-049)", () => {
   });
 
   afterEach(async () => {
+    await cleanupTestUsers(createdUserIds);
     await resetEntitlementBaseline();
   });
 
   it("returns module policy profile catalog for authenticated sessions", async () => {
-    const operator = request.agent(app);
-    const loginRes = await login(operator, "J. Morris");
-    expect(loginRes.status).toBe(200);
+    const operator = await createTestSession("Operator");
+    createdUserIds.push(operator.userId);
 
-    const profiles = await operator.get("/api/auth/module-policy/profiles");
+    const profiles = await operator.agent.get("/api/auth/module-policy/profiles");
     expect(profiles.status).toBe(200);
     expect(profiles.body.contractId).toBe("COMM-LICENSE-v1");
     expect(Array.isArray(profiles.body.profiles)).toBe(true);
@@ -73,23 +62,21 @@ describe("Module policy engine (BL-049)", () => {
   });
 
   it("enforces admin-only module policy evaluation", async () => {
-    const operator = request.agent(app);
-    const loginRes = await login(operator, "J. Morris");
-    expect(loginRes.status).toBe(200);
+    const operator = await createTestSession("Operator");
+    createdUserIds.push(operator.userId);
 
     const evaluate = await operator
-      .post("/api/auth/module-policy/evaluate")
+      .agent.post("/api/auth/module-policy/evaluate")
       .send({ profile: "edge_ops" });
     expect(evaluate.status).toBe(403);
     expect(evaluate.body).toMatchObject({ error: "forbidden" });
   });
 
   it("returns invalid profile errors for unknown policy profile IDs", async () => {
-    const admin = request.agent(app);
-    const loginRes = await loginAdmin(admin);
-    expect(loginRes.status).toBe(200);
+    const admin = await createTestSession("Admin");
+    createdUserIds.push(admin.userId);
 
-    const evaluate = await admin
+    const evaluate = await admin.agent
       .post("/api/auth/module-policy/evaluate")
       .send({ profile: "unknown_profile" });
     expect(evaluate.status).toBe(400);
@@ -97,11 +84,10 @@ describe("Module policy engine (BL-049)", () => {
   });
 
   it("applies module policy profile and enforces dependency rules", async () => {
-    const admin = request.agent(app);
-    const loginRes = await loginAdmin(admin);
-    expect(loginRes.status).toBe(200);
+    const admin = await createTestSession("Admin");
+    createdUserIds.push(admin.userId);
 
-    const updated = await admin
+    const updated = await admin.agent
       .put("/api/auth/entitlements")
       .send({ modulePolicyProfile: "edge_ops" });
     expect(updated.status).toBe(200);
@@ -112,7 +98,7 @@ describe("Module policy engine (BL-049)", () => {
     });
 
     const evaluated = await admin
-      .post("/api/auth/module-policy/evaluate")
+      .agent.post("/api/auth/module-policy/evaluate")
       .send({
         profile: "enterprise_all",
         moduleFlags: {

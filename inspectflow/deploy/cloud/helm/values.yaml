@@ -1,0 +1,62 @@
+global:
+  publicHost: app.example.com
+  publicOrigin: https://app.example.com
+  tls:
+    secretName: inspectflow-tls
+
+backend:
+  replicaCount: 1
+  image:
+    repository: ghcr.io/inspectflow/backend
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+  service:
+    port: 4000
+  env:
+    nodeEnv: production
+    authCookieSecure: "true"
+    authCookieSameSite: lax
+    authCookieDomain: ""
+    authSessionTtlHours: 12
+    authLoginRateLimitMax: 10
+    authLoginRateLimitWindowMs: 900000
+    inspectflowSeedOnInstall: "false"
+    inspectflowDefaultPassword: inspectflow
+    backupRetentionDays: 14
+    allowLegacyRoleHeader: "false"
+  secrets:
+    databaseUrl: postgresql://inspectflow:change-me@postgresql.example.internal:5432/inspectflow
+    authTokenPepper: change-me
+  resources: {}
+
+frontend:
+  replicaCount: 1
+  image:
+    repository: ghcr.io/inspectflow/frontend
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+  service:
+    port: 80
+  caddy:
+    site: ":80"
+    tlsEmail: ops@example.com
+  resources: {}
+
+runtime:
+  storageClassName: ""
+  size: 10Gi
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+
+backup:
+  enabled: true
+  schedule: "0 1 * * *"
+  image:
+    repository: ghcr.io/inspectflow/backend
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+  resources: {}

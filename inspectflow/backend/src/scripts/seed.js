@@ -18,23 +18,27 @@ try {
     throw new Error(`default_seed_password_invalid: ${policyError}`);
   }
   const users = await pool.query("SELECT id FROM users", []);
+  let seededCount = 0;
   for (const row of users.rows) {
     const hashed = makePasswordHash(defaultPassword);
-    await pool.query(
+    const result = await pool.query(
       `INSERT INTO auth_local_credentials
          (user_id, password_salt, password_hash, failed_attempts, locked_until, must_rotate_password)
-       VALUES ($1,$2,$3,0,NULL,true)
+       SELECT u.id, $2, $3, 0, NULL, false
+       FROM users u
+       WHERE u.id = $1
        ON CONFLICT (user_id) DO UPDATE
        SET password_salt=EXCLUDED.password_salt,
            password_hash=EXCLUDED.password_hash,
            failed_attempts=0,
            locked_until=NULL,
-           must_rotate_password=true,
+           must_rotate_password=false,
            password_updated_at=NOW()`,
       [row.id, hashed.salt, hashed.hash]
     );
+    seededCount += result.rowCount ?? 0;
   }
-  console.log(`Seeded local credentials for ${users.rows.length} users.`);
+  console.log(`Seeded local credentials for ${seededCount} users.`);
   console.log("Seed applied.");
 } finally {
   await pool.end();

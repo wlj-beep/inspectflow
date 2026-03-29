@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "inspectflow-cloud.fullname" . }}-backend
+  labels:
+    {{- include "inspectflow-cloud.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.backend.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "inspectflow-cloud.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: backend
+  template:
+    metadata:
+      labels:
+        {{- include "inspectflow-cloud.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: backend
+    spec:
+      containers:
+        - name: backend
+          image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
+          imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.backend.service.port }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "inspectflow-cloud.fullname" . }}-config
+            - secretRef:
+                name: {{ include "inspectflow-cloud.fullname" . }}-secret
+          env:
+            - name: PORT
+              value: {{ .Values.backend.service.port | quote }}
+            - name: BACKUP_ROOT
+              value: /app/var/backups
+            - name: BACKUP_LOG_FILE
+              value: /app/var/log/backup-workflow.log
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          {{- with .Values.backend.resources }}
+          resources:
+{{ toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: runtime
+              mountPath: /app/var
+      volumes:
+        - name: runtime
+          persistentVolumeClaim:
+            claimName: {{ include "inspectflow-cloud.fullname" . }}-runtime

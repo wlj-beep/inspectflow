@@ -19,10 +19,28 @@ import {
 } from "../services/analytics/calibrationImpact.js";
 import { resolveAnalyticsSiteScope } from "../services/analytics/siteScope.js";
 import { getAnalyticsPerformanceSlo } from "../services/analytics/performanceSlo.js";
+import { getWorkforcePerformanceDashboard } from "../services/analytics/workforcePerformance.js";
+import { getSpcCharacteristicAnalysis } from "../services/analytics/spcAnalysis.js";
+import {
+  buildAnalyticsTimeoutResponse,
+  isAnalyticsTimeoutError
+} from "../services/analytics/statementTimeout.js";
 
 const router = Router();
 
 const KPI_DASHBOARD_CAPABILITIES = ["submit_records", "view_jobs", "manage_jobs", "view_admin"];
+const WORKFORCE_DASHBOARD_CAPABILITIES = ["manage_jobs", "view_admin"];
+
+function respondWithAnalyticsError(res, next, error) {
+  if (isAnalyticsTimeoutError(error)) {
+    return res.status(504).json(buildAnalyticsTimeoutResponse());
+  }
+  if (error?.status && error?.code) return res.status(error.status).json({ error: error.code });
+  if (String(error?.message || "").startsWith("invalid_")) {
+    return res.status(400).json({ error: error.message });
+  }
+  return next(error);
+}
 
 router.get("/marts/status", requireCapability("view_admin"), async (req, res, next) => {
   try {
@@ -34,8 +52,7 @@ router.get("/marts/status", requireCapability("view_admin"), async (req, res, ne
     const status = await getAnalyticsMartStatus({ siteId: siteScope.siteId });
     res.json({ ...status, siteScope });
   } catch (error) {
-    if (error?.status && error?.code) return res.status(error.status).json({ error: error.code });
-    next(error);
+    respondWithAnalyticsError(res, next, error);
   }
 });
 
@@ -57,8 +74,7 @@ router.post("/marts/rebuild", requireCapability("view_admin"), async (req, res, 
     const statusCode = result.ok ? 200 : 500;
     res.status(statusCode).json({ ...result, siteScope });
   } catch (error) {
-    if (error?.status && error?.code) return res.status(error.status).json({ error: error.code });
-    next(error);
+    respondWithAnalyticsError(res, next, error);
   }
 });
 
@@ -89,14 +105,13 @@ router.get("/kpis/dashboard", requireAnyCapability(KPI_DASHBOARD_CAPABILITIES), 
     });
     res.json({ ...result, siteScope });
   } catch (error) {
-    if (error?.status && error?.code) return res.status(error.status).json({ error: error.code });
     if (String(error?.message || "").startsWith("invalid_")) {
       return res.status(400).json({ error: error.message });
     }
     if (String(error?.message || "").startsWith("invalid_kpi_contracts")) {
       return res.status(500).json({ error: "invalid_kpi_contracts" });
     }
-    next(error);
+    respondWithAnalyticsError(res, next, error);
   }
 });
 
@@ -115,11 +130,7 @@ router.get("/performance/calibration-impact", requireCapability("view_admin"), a
     });
     res.json({ ...result, siteScope });
   } catch (error) {
-    if (error?.status && error?.code) return res.status(error.status).json({ error: error.code });
-    if (String(error?.message || "").startsWith("invalid_")) {
-      return res.status(400).json({ error: error.message });
-    }
-    next(error);
+    respondWithAnalyticsError(res, next, error);
   }
 });
 
@@ -138,11 +149,7 @@ router.post("/performance/calibration-impact/refresh", requireCapability("view_a
     });
     res.json({ ...result, siteScope });
   } catch (error) {
-    if (error?.status && error?.code) return res.status(error.status).json({ error: error.code });
-    if (String(error?.message || "").startsWith("invalid_")) {
-      return res.status(400).json({ error: error.message });
-    }
-    next(error);
+    respondWithAnalyticsError(res, next, error);
   }
 });
 
@@ -156,8 +163,51 @@ router.get("/performance/slo", requireCapability("view_admin"), async (req, res,
     const result = await getAnalyticsPerformanceSlo({ siteId: siteScope.siteId });
     res.json({ ...result, siteScope });
   } catch (error) {
-    if (error?.status && error?.code) return res.status(error.status).json({ error: error.code });
-    next(error);
+    respondWithAnalyticsError(res, next, error);
+  }
+});
+
+router.get("/performance/workforce", requireAnyCapability(WORKFORCE_DASHBOARD_CAPABILITIES), async (req, res, next) => {
+  try {
+    const siteScope = await resolveAnalyticsSiteScope({
+      requestedSiteId: req.query.siteId,
+      actorRole: getActorRole(req),
+      actorUserId: getActorUserId(req)
+    });
+    const result = await getWorkforcePerformanceDashboard({
+      dateFrom: req.query.dateFrom,
+      dateTo: req.query.dateTo,
+      limit: req.query.limit,
+      siteId: siteScope.siteId
+    });
+    res.json({ ...result, siteScope });
+  } catch (error) {
+    respondWithAnalyticsError(res, next, error);
+  }
+});
+
+router.get("/performance/spc", requireAnyCapability(WORKFORCE_DASHBOARD_CAPABILITIES), async (req, res, next) => {
+  try {
+    const siteScope = await resolveAnalyticsSiteScope({
+      requestedSiteId: req.query.siteId,
+      actorRole: getActorRole(req),
+      actorUserId: getActorUserId(req)
+    });
+    const result = await getSpcCharacteristicAnalysis({
+      dimensionId: req.query.dimensionId,
+      operationId: req.query.operationId,
+      jobId: req.query.jobId,
+      workCenterId: req.query.workCenterId,
+      toolId: req.query.toolId,
+      dateFrom: req.query.dateFrom,
+      dateTo: req.query.dateTo,
+      limit: req.query.limit,
+      rules: req.query.rules,
+      siteId: siteScope.siteId
+    });
+    res.json({ ...result, siteScope });
+  } catch (error) {
+    respondWithAnalyticsError(res, next, error);
   }
 });
 
@@ -169,7 +219,7 @@ router.get("/risk-events", requireCapability("view_admin"), async (req, res, nex
     });
     res.json(rows);
   } catch (error) {
-    next(error);
+    respondWithAnalyticsError(res, next, error);
   }
 });
 
@@ -187,7 +237,7 @@ router.post("/risk-events/:id/acknowledge", requireCapability("view_admin"), asy
     if (String(error?.message || "") === "invalid_event_id") {
       return res.status(400).json({ error: "invalid_event_id" });
     }
-    next(error);
+    respondWithAnalyticsError(res, next, error);
   }
 });
 
@@ -208,7 +258,7 @@ router.post("/risk-events/:id/escalate-issue", requireCapability("view_admin"), 
     if (String(error?.message || "") === "submitted_by_user_required") {
       return res.status(400).json({ error: "submitted_by_user_required" });
     }
-    next(error);
+    respondWithAnalyticsError(res, next, error);
   }
 });
 
@@ -226,7 +276,7 @@ router.post("/risk-events/:id/resolve", requireCapability("view_admin"), async (
     if (String(error?.message || "") === "invalid_event_id") {
       return res.status(400).json({ error: "invalid_event_id" });
     }
-    next(error);
+    respondWithAnalyticsError(res, next, error);
   }
 });
 

@@ -1,0 +1,68 @@
+== Coordination gate ==
+
+> inspectflow@0.1.0 test:coordination
+> npm run coordination:check
+
+
+> inspectflow@0.1.0 coordination:check
+> node scripts/validate-coordination.mjs
+
+Coordination validation passed.
+== Backend test DB setup ==
+
+> inspectflow-backend@0.1.0 db:test:setup
+> npm run db:migrate:test && npm run db:seed:test
+
+
+> inspectflow-backend@0.1.0 db:migrate:test
+> NODE_ENV=test node src/scripts/migrate.js
+
+Schema applied.
+
+> inspectflow-backend@0.1.0 db:seed:test
+> NODE_ENV=test node src/scripts/seed.js
+
+Seeded local credentials for 10 users.
+Seed applied.
+== Backend FAI workflow tests ==
+
+ RUN  v2.1.9 /Users/joshlane/Documents/Playground 2/inspectflow/backend
+
+ ✓ test/fai-packages.test.js (2 tests) 572ms
+   ✓ FAI package workflow > creates a record-scoped package, enforces readiness gating, and finalizes after signoff 525ms
+ ✓ test/quality-export.test.js (1 test) 105ms
+
+ Test Files  2 passed (2)
+      Tests  3 passed (3)
+   Start at  21:37:01
+   Duration  1.37s (transform 169ms, setup 0ms, collect 466ms, tests 677ms, environment 0ms, prepare 65ms)
+
+== Frontend mocked FAI + role-gate tests ==
+
+> inspectflow-frontend@0.1.0 test:ui
+> playwright test tests/mocked.smoke.spec.js --grep FAI workflow|FAI package|FAI Workflow|operators do not see the FAI workflow panel|@mock
+
+[2m[WebServer] [22m(node:79050) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[2m[WebServer] [22m(Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 16 tests using 1 worker
+
+  ✓   1 tests/mocked.smoke.spec.js:788:3 › Mocked UI smoke @mock › loads the InspectFlow shell (753ms)
+  ✓   2 tests/mocked.smoke.spec.js:797:3 › Mocked UI smoke @mock › shows COMM-SEAT soft warning chip in authenticated shell when seat usage is high (289ms)
+  ✓   3 tests/mocked.smoke.spec.js:816:3 › Mocked UI smoke @mock › shows loading and success transitions during part creation (1.4s)
+  ✓   4 tests/mocked.smoke.spec.js:835:3 › Mocked UI smoke @mock › shows failure transition when part creation fails (640ms)
+  ✓   5 tests/mocked.smoke.spec.js:853:3 › Mocked UI smoke @mock › reuses original base prefix and increments family run index for duplicate lot jobs (370ms)
+  ✓   6 tests/mocked.smoke.spec.js:890:3 › Mocked UI smoke @mock › allows admins to import tools via CSV from the Data Imports tab (566ms)
+  ✓   7 tests/mocked.smoke.spec.js:907:3 › Mocked UI smoke @mock › supports optional selected-record export mode with checkbox-only selection (488ms)
+  ✓   8 tests/mocked.smoke.spec.js:958:3 › Mocked UI smoke @mock › tablet viewport keeps admin part setup flow usable @mock (615ms)
+  ✓   9 tests/mocked.smoke.spec.js:975:3 › Mocked UI smoke @mock › tablet viewport lets admins create and publish instruction versions with media links @mock (899ms)
+  ✓  10 tests/mocked.smoke.spec.js:1017:3 › Mocked UI smoke @mock › quality users can load, sign off, and finalize an FAI package @mock (889ms)
+  ✓  11 tests/mocked.smoke.spec.js:1094:3 › Mocked UI smoke @mock › operators do not see the FAI workflow panel @mock (330ms)
+  ✓  12 tests/mocked.smoke.spec.js:1110:3 › Mocked UI smoke @mock › mobile viewport keeps records export selection controls reachable @mock (405ms)
+  ✓  13 tests/mocked.smoke.spec.js:1138:3 › Mocked UI smoke @mock › mobile operator can load an open job into measurement entry @mock (508ms)
+  ✓  14 tests/mocked.smoke.spec.js:1194:3 › Mocked UI smoke @mock › mobile operator acknowledges the active instruction before submitting @mock (758ms)
+  ✓  15 tests/mocked.smoke.spec.js:1249:3 › Mocked UI smoke @mock › mobile operator can stage an attachment and submit it with the record @mock (645ms)
+  ✓  16 tests/mocked.smoke.spec.js:1298:3 › Mocked UI smoke @mock › mobile admin can upload, inspect, and update attachment retention from record detail @mock (869ms)
+
+  16 passed (13.0s)
+PASS: R4 FAI acceptance matrix completed.

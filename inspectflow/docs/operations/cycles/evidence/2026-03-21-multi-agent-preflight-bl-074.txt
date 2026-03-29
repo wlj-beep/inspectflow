@@ -1,0 +1,34 @@
+== mark restart ==
+
+> inspectflow@0.1.0 ops:multi-agent:mark-restart
+> bash scripts/check-multi-agent-setup.sh --mark-restart
+
+scripts/check-multi-agent-setup.sh: line 51: /Users/joshlane/.codex/multi-agent-restart.ack: Operation not permitted
+
+== preflight BL-074 ==
+
+> inspectflow@0.1.0 ops:multi-agent:check
+> bash scripts/check-multi-agent-setup.sh --bl BL-074 --run-context-validate
+
+InspectFlow multi-agent deployment preflight
+Repo: /Users/joshlane/Documents/Playground 2/inspectflow
+Config: /Users/joshlane/.codex/config.toml
+
+PASS: multi_agent = true detected in [features].
+PASS: restart marker present and newer than config.
+PASS: required file exists: STATUS.md
+PASS: required file exists: WORKLOG.md
+PASS: required file exists: docs/backlog.md
+PASS: required file exists: docs/operations/multi-agent-playbook.md
+PASS: required file exists: docs/operations/controller-prompts.md
+PASS: required file exists: docs/operations/launch-checklist.md
+PASS: node is installed.
+PASS: npm is installed.
+PASS: active In Progress claim(s) owned by @codex: BL-074
+PASS: target backlog item is actively claimed: BL-074
+
+Running context validation...
+PASS: context validation passed.
+
+Preflight result: PASS
+Next: launch controller session, spawn bounded sub-agents, and merge evidence per docs/operations/multi-agent-playbook.md.

@@ -32,7 +32,7 @@ export async function loginWithLocalCredentials({ userId, username, password }) 
     }
 
     const credRes = await client.query(
-      `SELECT user_id, password_salt, password_hash, failed_attempts, locked_until
+      `SELECT user_id, password_salt, password_hash, failed_attempts, locked_until, must_rotate_password
        FROM auth_local_credentials
        WHERE user_id=$1
        LIMIT 1`,
@@ -50,7 +50,7 @@ export async function loginWithLocalCredentials({ userId, username, password }) 
 
     if (cred.locked_until && new Date(cred.locked_until).getTime() > Date.now()) {
       return {
-        error: "account_locked",
+        error: "invalid_credentials",
         userId: Number(user.id),
         username: user.name,
         lockedUntil: cred.locked_until,
@@ -62,20 +62,22 @@ export async function loginWithLocalCredentials({ userId, username, password }) 
     if (!validPassword) {
       const attempts = Number(cred.failed_attempts || 0) + 1;
       const shouldLock = attempts >= LOCKOUT_ATTEMPTS;
-      await client.query(
+      const updated = await client.query(
         `UPDATE auth_local_credentials
          SET failed_attempts=$2,
              locked_until=CASE WHEN $3::boolean THEN NOW() + ($4::text || ' minutes')::interval ELSE locked_until END
-         WHERE user_id=$1`,
+         WHERE user_id=$1
+         RETURNING locked_until`,
         [user.id, attempts, shouldLock, LOCKOUT_MINUTES]
       );
       if (shouldLock) {
         return {
-          error: "account_locked",
+          error: "invalid_credentials",
           userId: Number(user.id),
           username: user.name,
           reason: "failed_attempts_exceeded",
-          failedAttempts: attempts
+          failedAttempts: attempts,
+          lockedUntil: updated.rows[0]?.locked_until || null
         };
       }
       return {
@@ -95,6 +97,9 @@ export async function loginWithLocalCredentials({ userId, username, password }) 
       [user.id]
     );
 
-    return { user };
+    return {
+      user,
+      mustRotatePassword: cred.must_rotate_password === true
+    };
   });
 }

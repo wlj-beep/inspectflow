@@ -86,7 +86,7 @@ describe("quality export endpoints", () => {
       .get(`/api/records/${recordId}/export`)
       .set("x-user-role", "Supervisor");
     expect(csv.status).toBe(200);
-    expect(csv.text).toContain("record_id,dimension_id,dimension_name,piece_number,value,is_oot");
+    expect(csv.text).toContain("record_id,dimension_id,dimension_name,bubble_number,feature_type,gdt_class,tolerance_zone,feature_quantity,feature_units,feature_modifiers,source_characteristic_key,piece_number,value,is_oot");
     expect(csv.text).toContain(String(recordId));
 
     const as9102 = await request(app)
@@ -99,6 +99,8 @@ describe("quality export endpoints", () => {
       version: "0.1.0"
     });
     expect(as9102.body.input?.part?.id).toBe("1234");
+    expect(Array.isArray(as9102.body.input?.characteristics)).toBe(true);
+    expect(as9102.body.input.characteristics.length).toBeGreaterThan(0);
     expect(Array.isArray(as9102.body.output?.artifacts)).toBe(true);
     expect(as9102.body.output.artifacts.length).toBeGreaterThan(0);
     const summary = as9102.body.output.artifacts.find((a) => a.templateId === "fai-summary-v1");

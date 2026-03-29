@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "inspectflow-cloud.fullname" . }}-runtime
+  labels:
+    {{- include "inspectflow-cloud.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  {{- if .Values.runtime.storageClassName }}
+  storageClassName: {{ .Values.runtime.storageClassName | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.runtime.size | quote }}

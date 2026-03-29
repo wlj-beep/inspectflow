@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import request from "supertest";
-import app from "../src/index.js";
 import { query } from "../src/db.js";
+import { createTestSession, cleanupTestUsers } from "./helpers/sessionFixtures.js";
 
 const BASELINE_MODULE_FLAGS = {
   CORE: true,
@@ -56,17 +55,7 @@ async function cleanupArtifacts() {
   }
 }
 
-async function login(agent, username, password) {
-  return agent.post("/api/auth/login").send({ username, password });
-}
-
-async function loginAdmin(agent) {
-  const primary = await login(agent, "S. Admin", "inspectflow");
-  if (primary.status === 200) return primary;
-  const fallback = await login(agent, "S. Admin", "inspectflow-v2");
-  if (fallback.status === 200) return fallback;
-  return primary;
-}
+const createdUserIds = [];
 
 describe("R4 ecosystem compatibility suite (BL-050)", () => {
   beforeEach(async () => {
@@ -75,22 +64,22 @@ describe("R4 ecosystem compatibility suite (BL-050)", () => {
   });
 
   afterEach(async () => {
+    await cleanupTestUsers(createdUserIds);
     await cleanupArtifacts();
     await resetEntitlementBaseline();
   });
 
   it("keeps core workflows healthy while extension and edge module surfaces are toggled", async () => {
-    const admin = request.agent(app);
-    const adminLogin = await loginAdmin(admin);
-    expect(adminLogin.status).toBe(200);
+    const admin = await createTestSession("Admin");
+    createdUserIds.push(admin.userId);
 
-    const edgeProfile = await admin
+    const edgeProfile = await admin.agent
       .put("/api/auth/entitlements")
       .send({ modulePolicyProfile: "edge_ops" });
     expect(edgeProfile.status).toBe(200);
     expect(edgeProfile.body.moduleFlags.EDGE).toBe(true);
 
-    const runtime = await admin.get("/api/extensions/runtime");
+    const runtime = await admin.agent.get("/api/extensions/runtime");
     expect(runtime.status).toBe(200);
     const allowedHook = runtime.body.sdkBoundary.allowedHooks[0];
     const allowedCapability = runtime.body.sdkBoundary.allowedCapabilities[0];
@@ -100,7 +89,7 @@ describe("R4 ecosystem compatibility suite (BL-050)", () => {
     const pluginId = `r4-plugin-${Date.now()}`;
     createdPluginIds.push(pluginId);
 
-    const registeredPlugin = await admin
+    const registeredPlugin = await admin.agent
       .post("/api/extensions/plugins")
       .send({
         pluginId,
@@ -112,13 +101,13 @@ describe("R4 ecosystem compatibility suite (BL-050)", () => {
     expect(registeredPlugin.status).toBe(200);
     expect(registeredPlugin.body.plugin.policyStatus).toBe("allowed");
 
-    const enabledPlugin = await admin.post(`/api/extensions/plugins/${pluginId}/enable`);
+    const enabledPlugin = await admin.agent.post(`/api/extensions/plugins/${pluginId}/enable`);
     expect(enabledPlugin.status).toBe(200);
     expect(enabledPlugin.body.plugin.enabled).toBe(true);
 
     const connectorId = `r4-connector-${Date.now()}`;
     createdConnectorIds.push(connectorId);
-    const connector = await admin
+    const connector = await admin.agent
       .post("/api/partner-connectors")
       .send({
         connectorId,
@@ -131,13 +120,13 @@ describe("R4 ecosystem compatibility suite (BL-050)", () => {
     expect(connector.status).toBe(200);
     expect(connector.body.validationStatus).toBe("valid");
 
-    const snapshot = await admin.get("/api/edge-sync/snapshot");
+    const snapshot = await admin.agent.get("/api/edge-sync/snapshot");
     expect(snapshot.status).toBe(200);
     expect(snapshot.body.contractId).toBe("EDGE-SYNC-v1");
     expect(snapshot.body.runId).toBeTruthy();
     createdRunIds.push(Number(snapshot.body.runId));
 
-    const validated = await admin
+    const validated = await admin.agent
       .post("/api/edge-sync/validate")
       .send(snapshot.body);
     expect(validated.status).toBe(200);
@@ -145,17 +134,17 @@ describe("R4 ecosystem compatibility suite (BL-050)", () => {
     expect(validated.body.runId).toBeTruthy();
     createdRunIds.push(Number(validated.body.runId));
 
-    const coreProfile = await admin
+    const coreProfile = await admin.agent
       .put("/api/auth/entitlements")
       .send({ modulePolicyProfile: "core_starter" });
     expect(coreProfile.status).toBe(200);
     expect(coreProfile.body.moduleFlags.EDGE).toBe(false);
 
-    const blockedEdge = await admin.get("/api/edge-sync/contracts");
+    const blockedEdge = await admin.agent.get("/api/edge-sync/contracts");
     expect(blockedEdge.status).toBe(403);
     expect(blockedEdge.body).toMatchObject({ error: "edge_module_disabled" });
 
-    const coreUsers = await admin.get("/api/users");
+    const coreUsers = await admin.agent.get("/api/users");
     expect(coreUsers.status).toBe(200);
     expect(Array.isArray(coreUsers.body)).toBe(true);
     expect(coreUsers.body.length).toBeGreaterThan(0);

@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "inspectflow-cloud.fullname" . }}-config
+  labels:
+    {{- include "inspectflow-cloud.labels" . | nindent 4 }}
+data:
+  NODE_ENV: {{ .Values.backend.env.nodeEnv | quote }}
+  FRONTEND_ORIGIN: {{ .Values.global.publicOrigin | quote }}
+  AUTH_COOKIE_SECURE: {{ .Values.backend.env.authCookieSecure | quote }}
+  AUTH_COOKIE_SAMESITE: {{ .Values.backend.env.authCookieSameSite | quote }}
+  AUTH_COOKIE_DOMAIN: {{ .Values.backend.env.authCookieDomain | quote }}
+  AUTH_SESSION_TTL_HOURS: {{ .Values.backend.env.authSessionTtlHours | quote }}
+  AUTH_LOGIN_RATE_LIMIT_MAX: {{ .Values.backend.env.authLoginRateLimitMax | quote }}
+  AUTH_LOGIN_RATE_LIMIT_WINDOW_MS: {{ .Values.backend.env.authLoginRateLimitWindowMs | quote }}
+  INSPECTFLOW_SEED_ON_INSTALL: {{ .Values.backend.env.inspectflowSeedOnInstall | quote }}
+  INSPECTFLOW_DEFAULT_PASSWORD: {{ .Values.backend.env.inspectflowDefaultPassword | quote }}
+  BACKUP_ROOT: /app/var/backups
+  BACKUP_LOG_FILE: /app/var/log/backup-workflow.log
+  BACKUP_RETENTION_DAYS: {{ .Values.backend.env.backupRetentionDays | quote }}
+  ALLOW_LEGACY_ROLE_HEADER: {{ .Values.backend.env.allowLegacyRoleHeader | quote }}
+  CLOUD_CADDY_SITE: {{ .Values.frontend.caddy.site | quote }}
+  CLOUD_TLS_EMAIL: {{ .Values.frontend.caddy.tlsEmail | quote }}

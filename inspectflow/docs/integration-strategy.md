@@ -59,7 +59,10 @@ Adapters must map source-specific payloads into this envelope before domain proc
   - `error`: terminal failure with no successful row persistence.
 - Duplicate replay attempts short-circuit via idempotency keys and return `duplicate=true` with no additional row writes.
 - Run logs persist runtime attempt metadata (attempt count/details, idempotency key, replay metadata) in `import_runs.summary.runtime`.
-- Partner connector onboarding uses `/api/partner-connectors` with `sdkPluginId` tied to enabled `platform_extensions` runtime before activation.
+- BL-081 simplification default:
+  - Core operator/admin value surfaces remain active: integration config, run logs, unresolved queue.
+  - Legacy partner/extension complexity is disabled by default and gated behind `INTEGRATION_LEGACY_PARTNER_SURFACES=true`.
+  - When disabled, `/api/extensions` and `/api/partner-connectors` return `legacy_integration_surface_disabled`.
 
 ## Idempotency and External-ID Contract (`INT-IDEMPOTENCY-v2`)
 - Connector idempotency keys persist in `import_idempotency_ledger` with first/last run linkage and hit counts for audit-safe replay tracking.

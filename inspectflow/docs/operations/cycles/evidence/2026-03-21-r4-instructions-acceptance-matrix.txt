@@ -1,0 +1,65 @@
+== Coordination gate ==
+
+> inspectflow@0.1.0 test:coordination
+> npm run coordination:check
+
+
+> inspectflow@0.1.0 coordination:check
+> node scripts/validate-coordination.mjs
+
+Coordination validation passed.
+== Backend test DB setup ==
+
+> inspectflow-backend@0.1.0 db:test:setup
+> npm run db:migrate:test && npm run db:seed:test
+
+
+> inspectflow-backend@0.1.0 db:migrate:test
+> NODE_ENV=test node src/scripts/migrate.js
+
+Schema applied.
+
+> inspectflow-backend@0.1.0 db:seed:test
+> NODE_ENV=test node src/scripts/seed.js
+
+Seeded local credentials for 10 users.
+Seed applied.
+== Backend instructions + permission tests ==
+
+ RUN  v2.1.9 /Users/joshlane/Documents/Playground 2/inspectflow/backend
+
+ ✓ test/instruction-versions.test.js (2 tests) 245ms
+ ✓ test/permissions.test.js (5 tests) 122ms
+
+ Test Files  2 passed (2)
+      Tests  7 passed (7)
+   Start at  20:38:21
+   Duration  1.16s (transform 184ms, setup 0ms, collect 530ms, tests 368ms, environment 0ms, prepare 96ms)
+
+== Frontend mocked instruction + operator flow tests ==
+
+> inspectflow-frontend@0.1.0 test:ui
+> playwright test tests/mocked.smoke.spec.js --grep instruction|@mock
+
+[2m[WebServer] [22m(node:71033) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[2m[WebServer] [22m(Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 14 tests using 1 worker
+
+  ✓   1 tests/mocked.smoke.spec.js:593:3 › Mocked UI smoke @mock › loads the InspectFlow shell (637ms)
+  ✓   2 tests/mocked.smoke.spec.js:602:3 › Mocked UI smoke @mock › shows COMM-SEAT soft warning chip in authenticated shell when seat usage is high (316ms)
+  ✓   3 tests/mocked.smoke.spec.js:621:3 › Mocked UI smoke @mock › shows loading and success transitions during part creation (1.5s)
+  ✓   4 tests/mocked.smoke.spec.js:640:3 › Mocked UI smoke @mock › shows failure transition when part creation fails (669ms)
+  ✓   5 tests/mocked.smoke.spec.js:658:3 › Mocked UI smoke @mock › reuses original base prefix and increments family run index for duplicate lot jobs (462ms)
+  ✓   6 tests/mocked.smoke.spec.js:695:3 › Mocked UI smoke @mock › allows admins to import tools via CSV from the Data Imports tab (569ms)
+  ✓   7 tests/mocked.smoke.spec.js:712:3 › Mocked UI smoke @mock › supports optional selected-record export mode with checkbox-only selection (555ms)
+  ✓   8 tests/mocked.smoke.spec.js:763:3 › Mocked UI smoke @mock › tablet viewport keeps admin part setup flow usable @mock (533ms)
+  ✓   9 tests/mocked.smoke.spec.js:780:3 › Mocked UI smoke @mock › tablet viewport lets admins create and publish instruction versions with media links @mock (904ms)
+  ✓  10 tests/mocked.smoke.spec.js:822:3 › Mocked UI smoke @mock › mobile viewport keeps records export selection controls reachable @mock (459ms)
+  ✓  11 tests/mocked.smoke.spec.js:850:3 › Mocked UI smoke @mock › mobile operator can load an open job into measurement entry @mock (497ms)
+  ✓  12 tests/mocked.smoke.spec.js:906:3 › Mocked UI smoke @mock › mobile operator acknowledges the active instruction before submitting @mock (781ms)
+  ✓  13 tests/mocked.smoke.spec.js:961:3 › Mocked UI smoke @mock › mobile operator can stage an attachment and submit it with the record @mock (542ms)
+  ✓  14 tests/mocked.smoke.spec.js:1010:3 › Mocked UI smoke @mock › mobile admin can upload, inspect, and update attachment retention from record detail @mock (1.0s)
+
+  14 passed (11.6s)
+PASS: R4 instructions acceptance matrix completed.

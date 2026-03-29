@@ -1,13 +1,20 @@
 import { Router } from "express";
 import { query, transaction } from "../db.js";
 import { requireAnyCapability, requireCapability } from "../middleware/requireCapability.js";
-import { getActorRole } from "../middleware/authSession.js";
+import { getActorRole, getActorUserId } from "../middleware/authSession.js";
 import {
   createPartSetupRevision,
   ensurePartSetupBaselineRevision,
   getLatestPartRevision,
   nextRevisionCode
 } from "../revisions.js";
+import {
+  createInstructionVersion,
+  listOperationInstructionVersions,
+  normalizeInstructionVersionInput,
+  publishInstructionVersion,
+  updateInstructionVersion
+} from "../services/instructions.js";
 
 const router = Router();
 
@@ -37,6 +44,23 @@ function normalizeOptionalUserId(value) {
   const n = Number(value);
   if (!Number.isInteger(n) || n <= 0) return null;
   return n;
+}
+
+function resolveActorUserId(req, bodyUserId) {
+  const sessionUserId = getActorUserId(req);
+  if (Number.isInteger(sessionUserId) && sessionUserId > 0) {
+    const requestedUserId = normalizeOptionalUserId(bodyUserId);
+    if (requestedUserId != null && requestedUserId !== sessionUserId) {
+      return { error: "auth_user_mismatch" };
+    }
+    return { actorUserId: sessionUserId };
+  }
+
+  const fallbackUserId = normalizeOptionalUserId(bodyUserId);
+  if (bodyUserId !== undefined && fallbackUserId == null) {
+    return { error: "invalid_user_id" };
+  }
+  return { actorUserId: fallbackUserId };
 }
 
 function parseWorkCenterId(value) {
@@ -234,6 +258,9 @@ router.post("/resequence", requireCapability("manage_parts"), async (req, res, n
 
     res.json(resequenced);
   } catch (err) {
+    if (err?.code === "23505") {
+      return res.status(409).json({ error: "op_number_conflict" });
+    }
     next(err);
   }
 });
@@ -690,6 +717,151 @@ router.get("/:id/work-center-history", requireAnyCapability(["view_operator", "v
     );
     res.json(rows);
   } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/:id/instructions", requireCapability("manage_instructions"), async (req, res, next) => {
+  try {
+    const operationId = Number(req.params.id);
+    if (!Number.isInteger(operationId) || operationId <= 0) {
+      return res.status(400).json({ error: "invalid_operation_id" });
+    }
+
+    const bundle = await listOperationInstructionVersions({ query }, operationId);
+    if (!bundle) return res.status(404).json({ error: "not_found" });
+    res.json(bundle);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/:id/instructions/versions", requireCapability("manage_instructions"), async (req, res, next) => {
+  try {
+    const operationId = Number(req.params.id);
+    if (!Number.isInteger(operationId) || operationId <= 0) {
+      return res.status(400).json({ error: "invalid_operation_id" });
+    }
+
+    const normalized = normalizeInstructionVersionInput(req.body || {});
+    if (normalized.error) return res.status(400).json({ error: normalized.error });
+
+    const actor = resolveActorUserId(req, req.body?.userId);
+    if (actor.error === "auth_user_mismatch") return res.status(403).json({ error: "auth_user_mismatch" });
+    if (actor.error) return res.status(400).json({ error: actor.error });
+
+    const actorRole = requestRole(req);
+    const created = await transaction(async (client) => {
+      const operationRes = await client.query("SELECT id FROM operations WHERE id=$1 LIMIT 1", [operationId]);
+      if (!operationRes.rows[0]) return { error: "not_found" };
+
+      if (actor.actorUserId != null) {
+        const userRes = await client.query("SELECT id FROM users WHERE id=$1 LIMIT 1", [actor.actorUserId]);
+        if (!userRes.rows[0]) return { error: "user_not_found" };
+      }
+
+      const draft = await createInstructionVersion(client, {
+        operationId,
+        title: normalized.title,
+        content: normalized.content,
+        changeSummary: normalized.changeSummary || null,
+        mediaLinks: normalized.mediaLinks || [],
+        actorUserId: actor.actorUserId,
+        actorRole
+      });
+
+      if (!req.body?.publish) return draft;
+      return publishInstructionVersion(client, {
+        operationId,
+        versionId: draft.id,
+        actorUserId: actor.actorUserId,
+        actorRole
+      });
+    });
+
+    if (created?.error === "not_found") return res.status(404).json({ error: "not_found" });
+    if (created?.error === "user_not_found") return res.status(400).json({ error: "user_not_found" });
+    res.status(201).json(created);
+  } catch (err) {
+    if (err?.code === "23505") {
+      return res.status(409).json({ error: "already_exists" });
+    }
+    next(err);
+  }
+});
+
+router.put("/:id/instructions/versions/:versionId", requireCapability("manage_instructions"), async (req, res, next) => {
+  try {
+    const operationId = Number(req.params.id);
+    const versionId = Number(req.params.versionId);
+    if (!Number.isInteger(operationId) || operationId <= 0) {
+      return res.status(400).json({ error: "invalid_operation_id" });
+    }
+    if (!Number.isInteger(versionId) || versionId <= 0) {
+      return res.status(400).json({ error: "invalid_instruction_version_id" });
+    }
+
+    const normalized = normalizeInstructionVersionInput(req.body || {}, { allowPartial: true });
+    if (normalized.error) return res.status(400).json({ error: normalized.error });
+
+    const updated = await transaction(async (client) => updateInstructionVersion(client, {
+      operationId,
+      versionId,
+      title: normalized.title,
+      content: normalized.content,
+      changeSummary: normalized.changeSummary,
+      mediaLinks: normalized.mediaLinks
+    }));
+
+    if (updated?.error === "not_found") return res.status(404).json({ error: "not_found" });
+    if (updated?.error === "instruction_version_immutable") {
+      return res.status(409).json({ error: "instruction_version_immutable" });
+    }
+    res.json(updated);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/:id/instructions/versions/:versionId/publish", requireCapability("manage_instructions"), async (req, res, next) => {
+  try {
+    const operationId = Number(req.params.id);
+    const versionId = Number(req.params.versionId);
+    if (!Number.isInteger(operationId) || operationId <= 0) {
+      return res.status(400).json({ error: "invalid_operation_id" });
+    }
+    if (!Number.isInteger(versionId) || versionId <= 0) {
+      return res.status(400).json({ error: "invalid_instruction_version_id" });
+    }
+
+    const actor = resolveActorUserId(req, req.body?.userId);
+    if (actor.error === "auth_user_mismatch") return res.status(403).json({ error: "auth_user_mismatch" });
+    if (actor.error) return res.status(400).json({ error: actor.error });
+
+    const actorRole = requestRole(req);
+    const published = await transaction(async (client) => {
+      if (actor.actorUserId != null) {
+        const userRes = await client.query("SELECT id FROM users WHERE id=$1 LIMIT 1", [actor.actorUserId]);
+        if (!userRes.rows[0]) return { error: "user_not_found" };
+      }
+      return publishInstructionVersion(client, {
+        operationId,
+        versionId,
+        actorUserId: actor.actorUserId,
+        actorRole
+      });
+    });
+
+    if (published?.error === "not_found") return res.status(404).json({ error: "not_found" });
+    if (published?.error === "user_not_found") return res.status(400).json({ error: "user_not_found" });
+    if (published?.error === "instruction_version_immutable") {
+      return res.status(409).json({ error: "instruction_version_immutable" });
+    }
+    res.json(published);
+  } catch (err) {
+    if (err?.code === "23505") {
+      return res.status(409).json({ error: "already_exists" });
+    }
     next(err);
   }
 });

@@ -2,8 +2,12 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import request from "supertest";
 import app from "../src/index.js";
 import { query } from "../src/db.js";
+import { getDefaultSeedPassword } from "../src/auth.js";
 
-async function login(agent, username, password = "inspectflow") {
+const DEFAULT_PASSWORD = getDefaultSeedPassword();
+const ROTATED_PASSWORD = "Inspectflow2!";
+
+async function login(agent, username, password = DEFAULT_PASSWORD) {
   return agent.post("/api/auth/login").send({ username, password });
 }
 
@@ -34,9 +38,9 @@ async function resetAuthEntitlementBaseline() {
 async function loginAdmin(agent) {
   await resetAuthEntitlementBaseline();
 
-  const primary = await login(agent, "S. Admin", "inspectflow");
+  const primary = await login(agent, "S. Admin", DEFAULT_PASSWORD);
   if (primary.status === 200) return primary;
-  const fallback = await login(agent, "S. Admin", "inspectflow-v2");
+  const fallback = await login(agent, "S. Admin", ROTATED_PASSWORD);
   if (fallback.status === 200) return fallback;
   return primary;
 }
@@ -113,5 +117,14 @@ describe("Auth route contracts (BL-029)", () => {
     expect(Array.isArray(events.body.events)).toBe(true);
     expect(events.body.count).toBeGreaterThan(0);
     expect(events.body.events.every((event) => event.event_type === "login_success")).toBe(true);
+  });
+
+  it("blocks local login when AUTH_LOCAL_LOGIN_ENABLED is false", async () => {
+    process.env.AUTH_LOCAL_LOGIN_ENABLED = "false";
+    const agent = request.agent(app);
+    const loginRes = await login(agent, "J. Morris");
+    expect(loginRes.status).toBe(403);
+    expect(loginRes.body).toMatchObject({ error: "local_login_disabled" });
+    delete process.env.AUTH_LOCAL_LOGIN_ENABLED;
   });
 });

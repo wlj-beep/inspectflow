@@ -10,9 +10,12 @@ Primary intent:
 
 ## Canonical Sources (Check Before Decision)
 - `docs/backlog.md`
+- `docs/backlog/*.md`
 - `STATUS.md`
 - `WORKLOG.md`
+- `WORKLOG.archive-*.md`
 - `docs/coordination-plan.md`
+- Review Finding (`RV-###`) — findings surfaced by the Independent Reviewer and approved by the owner. See `docs/reviews/reviewer-charter.md`. Approved `RV-###` findings are not exempt from any intake step; they still require a full duplicate scan and realism gate before receiving a `BL-###` ID.
 
 ## Evaluation Flow
 1. Intake the request in plain language.
@@ -27,8 +30,8 @@ Primary intent:
    - `Defer`: potentially valid but blocked or underspecified.
    - `Accept`: ready for backlog entry now.
 5. On `Accept` only, update planning artifacts:
-   - Add the item to `docs/backlog.md` with full required metadata.
-   - Append an intake decision entry to `WORKLOG.md`.
+   - Add the item to `docs/backlog.md` plus the relevant release shard with full required metadata.
+   - Append an intake decision entry to `WORKLOG.md` or the appropriate archive shard.
 
 ## Operating Rules
 - Every new idea must pass duplicate + realism checks before backlog insertion.
@@ -54,4 +57,4 @@ Use this structure when recording intake outcomes in `WORKLOG.md`:
 
 ## Default Assumptions
 - "Brutally honest" means delivery realism is prioritized over idea preservation.
-- If `STATUS.md` has no active queue rows, duplicate checks rely primarily on `docs/backlog.md` and recent `WORKLOG.md` history.
+- If `STATUS.md` has no active queue rows, duplicate checks rely primarily on `docs/backlog.md`, `docs/backlog/*.md`, and recent `WORKLOG.md` history.

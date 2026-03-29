@@ -1,4 +1,7 @@
-import { query, transaction } from "../../db.js";
+import {
+  analyticsQuery,
+  withAnalyticsStatementTimeout
+} from "./statementTimeout.js";
 import {
   buildRiskEventEnvelope,
   evaluateAnomalyRule
@@ -7,6 +10,7 @@ import {
   createEscalationRecord,
   validateEscalationRecord
 } from "../../future/quality/riskEscalation.js";
+import { normalizeIsoTimestamp } from "../dateValidation.js";
 
 const DEFAULT_LIMIT = 200;
 const DEFAULT_RISK_RULE = Object.freeze({
@@ -26,17 +30,6 @@ function toPositiveInt(value, fallback = null) {
   const n = Number(value);
   if (Number.isInteger(n) && n > 0) return n;
   return fallback;
-}
-
-function toOptionalIso(value, fieldName) {
-  if (value === undefined || value === null || String(value).trim() === "") {
-    return null;
-  }
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    throw new Error(`invalid_${fieldName}`);
-  }
-  return date.toISOString();
 }
 
 function rate(numerator, denominator) {
@@ -101,7 +94,7 @@ function buildWindowFilter({ dateFrom, dateTo, siteId = "default" }, alias = "am
 
 async function loadMachinePerformance({ dateFrom, dateTo, siteId }) {
   const { where, params } = buildWindowFilter({ dateFrom, dateTo, siteId }, "amif");
-  const { rows } = await query(
+  const { rows } = await analyticsQuery(
     `SELECT
        COALESCE(amif.work_center_id, 'unassigned') AS work_center_id,
        COUNT(*)::INT AS measurement_count,
@@ -141,7 +134,7 @@ async function loadToolPerformance({ dateFrom, dateTo, limit, siteId }) {
   const { where, params } = buildWindowFilter({ dateFrom, dateTo, siteId }, "amif");
   params.push(safeLimit);
 
-  const { rows } = await query(
+  const { rows } = await analyticsQuery(
     `SELECT
        t.id AS tool_id,
        t.name AS tool_name,
@@ -316,7 +309,7 @@ async function persistRiskPreview(preview) {
 
   let persisted = 0;
   let updated = 0;
-  await transaction(async (client) => {
+  await withAnalyticsStatementTimeout(async (client) => {
     for (let i = 0; i < events.length; i += 1) {
       const event = events[i];
       const escalation = escalations[i];
@@ -384,8 +377,8 @@ export async function getCalibrationImpactAnalytics({
   limit = DEFAULT_LIMIT,
   siteId = "default"
 } = {}) {
-  const normalizedDateFrom = toOptionalIso(dateFrom, "date_from");
-  const normalizedDateTo = toOptionalIso(dateTo, "date_to");
+  const normalizedDateFrom = normalizeIsoTimestamp(dateFrom, "date_from");
+  const normalizedDateTo = normalizeIsoTimestamp(dateTo, "date_to");
   const machinePerformance = await loadMachinePerformance({
     dateFrom: normalizedDateFrom,
     dateTo: normalizedDateTo,
@@ -433,7 +426,7 @@ export async function refreshCalibrationImpactAnalytics(options = {}) {
 export async function listCalibrationRiskEvents({ status = "open", limit = 100 } = {}) {
   const normalizedStatus = normalizeStatus(status);
   const safeLimit = toPositiveInt(limit, 100);
-  const { rows } = await query(
+  const { rows } = await analyticsQuery(
     `SELECT id, dedupe_key, contract_id, source, severity, status, event_envelope,
             escalation_record, context, hit_count, first_seen_at, last_seen_at,
             acknowledged_by_role, acknowledged_by_user_id, acknowledgement_note, acknowledged_at,
@@ -460,7 +453,7 @@ export async function acknowledgeCalibrationRiskEvent({
     throw new Error("invalid_event_id");
   }
 
-  const { rows } = await query(
+  const { rows } = await analyticsQuery(
     `UPDATE ana_risk_event_log
      SET status='acknowledged',
          acknowledged_by_role=$2,
@@ -496,9 +489,19 @@ export async function escalateCalibrationRiskEventToIssue({
     throw new Error("submitted_by_user_required");
   }
 
-  return transaction(async (client) => {
+  return withAnalyticsStatementTimeout(async (client) => {
     const riskRes = await client.query(
-      `SELECT *
+      `SELECT id,
+              status,
+              linked_issue_id,
+              event_envelope,
+              escalation_record,
+              context,
+              severity,
+              dedupe_key,
+              acknowledged_by_role,
+              acknowledged_by_user_id,
+              acknowledged_at
        FROM ana_risk_event_log
        WHERE id=$1
        LIMIT 1`,
@@ -573,7 +576,7 @@ export async function resolveCalibrationRiskEvent({
     throw new Error("invalid_event_id");
   }
 
-  const { rows } = await query(
+  const { rows } = await analyticsQuery(
     `UPDATE ana_risk_event_log
      SET status='resolved',
          resolved_by_role=$2,

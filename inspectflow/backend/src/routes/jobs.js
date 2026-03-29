@@ -3,8 +3,13 @@ import { query, transaction } from "../db.js";
 import { getRoleCaps, requireAnyCapability, requireCapability } from "../middleware/requireCapability.js";
 import { getActorRole, getActorUserId } from "../middleware/authSession.js";
 import { ensurePartSetupBaselineRevision, getPartRevisionByCode } from "../revisions.js";
+import {
+  acknowledgeInstructionForContext,
+  getActiveInstructionContext
+} from "../services/instructions.js";
 
 const router = Router();
+const JOB_LOCK_COLUMNS = ["id", "status", "lock_owner_user_id", "lock_timestamp"].join(", ");
 
 function normalizePartRevision(value) {
   const normalized = String(value || "")
@@ -28,6 +33,18 @@ function resolveActorUserId(req, bodyUserId) {
   const fromSession = getActorUserId(req);
   if (Number.isInteger(fromSession) && fromSession > 0) return fromSession;
   return parsePositiveInteger(bodyUserId);
+}
+
+function resolveInstructionOperatorUserId(req, value) {
+  const actorUserId = getActorUserId(req);
+  const requestedUserId = parsePositiveInteger(value);
+  if (Number.isInteger(actorUserId) && actorUserId > 0) {
+    if (requestedUserId && requestedUserId !== actorUserId) {
+      return { error: "auth_user_mismatch" };
+    }
+    return { operatorUserId: actorUserId };
+  }
+  return { operatorUserId: requestedUserId };
 }
 
 async function listQuantityAdjustmentsByJobId(jobId) {
@@ -60,8 +77,9 @@ router.get("/", requireAnyCapability(["view_operator", "view_jobs", "manage_jobs
     if (partRevision) { params.push(normalizePartRevision(partRevision)); filters.push(`part_revision_code=$${params.length}`); }
     const where = filters.length ? `WHERE ${filters.join(" AND ")}` : "";
 
+    // Explicit projection: list all job columns (no sensitive fields in jobs table)
     const { rows } = await query(
-      `SELECT * FROM jobs ${where} ORDER BY id DESC`,
+      `SELECT id, part_id, part_revision_code, operation_id, lot, qty, status, lock_owner_user_id, lock_timestamp FROM jobs ${where} ORDER BY id DESC`,
       params
     );
     res.json(rows);
@@ -73,7 +91,8 @@ router.get("/", requireAnyCapability(["view_operator", "view_jobs", "manage_jobs
 router.get("/:id", requireAnyCapability(["view_operator", "view_jobs", "manage_jobs", "view_admin"]), async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { rows } = await query("SELECT * FROM jobs WHERE id=$1", [id]);
+    // Explicit projection: list all job columns (no sensitive fields in jobs table)
+    const { rows } = await query("SELECT id, part_id, part_revision_code, operation_id, lot, qty, status, lock_owner_user_id, lock_timestamp FROM jobs WHERE id=$1", [id]);
     if (!rows[0]) return res.status(404).json({ error: "not_found" });
     const adjustments = await listQuantityAdjustmentsByJobId(id);
     res.json({
@@ -81,6 +100,81 @@ router.get("/:id", requireAnyCapability(["view_operator", "view_jobs", "manage_j
       quantityAdjustments: adjustments
     });
   } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/:id/instructions/active", requireAnyCapability(["submit_records", "view_jobs", "manage_jobs", "view_admin"]), async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const resolvedUser = resolveInstructionOperatorUserId(req, req.query.operatorUserId);
+    if (resolvedUser.error === "auth_user_mismatch") {
+      return res.status(403).json({ error: "auth_user_mismatch" });
+    }
+
+    const active = await getActiveInstructionContext(
+      { query },
+      {
+        contextType: "job",
+        contextId: id,
+        operatorUserId: resolvedUser.operatorUserId
+      }
+    );
+    if (!active) return res.status(404).json({ error: "not_found" });
+    res.json(active);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/:id/instructions/acknowledgments", requireCapability("acknowledge_instructions"), async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    if (req.body?.role !== undefined || req.body?.actorRole !== undefined) {
+      return res.status(400).json({ error: "role_field_not_allowed" });
+    }
+    const resolvedUser = resolveInstructionOperatorUserId(req, req.body?.operatorUserId);
+    if (resolvedUser.error === "auth_user_mismatch") {
+      return res.status(403).json({ error: "auth_user_mismatch" });
+    }
+
+    const requestedVersionId = req.body?.instructionVersionId == null
+      ? null
+      : parsePositiveInteger(req.body.instructionVersionId);
+    if (req.body?.instructionVersionId != null && requestedVersionId == null) {
+      return res.status(400).json({ error: "invalid_instruction_version_id" });
+    }
+
+    const acknowledged = await transaction(async (client) => acknowledgeInstructionForContext(client, {
+      contextType: "job",
+      contextId: id,
+      operatorUserId: resolvedUser.operatorUserId,
+      actorRole: requestRole(req),
+      instructionVersionId: requestedVersionId
+    }));
+
+    if (acknowledged?.error === "operator_user_required") {
+      return res.status(400).json({ error: "operator_user_required" });
+    }
+    if (acknowledged?.error === "operator_not_found") {
+      return res.status(400).json({ error: "operator_not_found" });
+    }
+    if (acknowledged?.error === "operator_role_required") {
+      return res.status(400).json({ error: "operator_role_required" });
+    }
+    if (acknowledged?.error === "instruction_not_published") {
+      return res.status(409).json({ error: "instruction_not_published" });
+    }
+    if (acknowledged?.error === "instruction_version_not_active") {
+      return res.status(409).json({ error: "instruction_version_not_active" });
+    }
+    if (acknowledged?.error === "not_found") return res.status(404).json({ error: "not_found" });
+
+    res.status(acknowledged.created ? 201 : 200).json(acknowledged);
+  } catch (err) {
+    if (err?.code === "23505") {
+      return res.status(409).json({ error: "instruction_already_acknowledged" });
+    }
     next(err);
   }
 });
@@ -185,6 +279,9 @@ router.post("/", requireCapability("manage_jobs"), async (req, res, next) => {
     }
     res.status(201).json(created);
   } catch (err) {
+    if (err?.code === "23505") {
+      return res.status(409).json({ error: "already_exists" });
+    }
     next(err);
   }
 });
@@ -234,6 +331,9 @@ router.put("/:id", requireCapability("manage_jobs"), async (req, res, next) => {
     if (updated?.error === "not_found") return res.status(404).json({ error: "not_found" });
     res.json(updated);
   } catch (err) {
+    if (err?.code === "23505") {
+      return res.status(409).json({ error: "already_exists" });
+    }
     next(err);
   }
 });
@@ -257,7 +357,12 @@ router.post("/:id/lock", requireAnyCapability(["submit_records", "manage_jobs"])
     }
 
     const result = await transaction(async (client) => {
-      const jobRes = await client.query("SELECT * FROM jobs WHERE id=$1 FOR UPDATE", [id]);
+      const jobRes = await client.query(
+        `SELECT ${JOB_LOCK_COLUMNS}
+         FROM jobs
+         WHERE id=$1 FOR UPDATE`,
+        [id]
+      );
       const job = jobRes.rows[0];
       if (!job) return { error: "not_found" };
       if (!["open", "draft"].includes(job.status)) return { error: "job_not_open" };
@@ -291,7 +396,12 @@ router.post("/:id/unlock", requireAnyCapability(["submit_records", "manage_jobs"
     const unlockUserId = actorUserId || requestedUserId;
 
     const result = await transaction(async (client) => {
-      const jobRes = await client.query("SELECT * FROM jobs WHERE id=$1 FOR UPDATE", [id]);
+      const jobRes = await client.query(
+        `SELECT ${JOB_LOCK_COLUMNS}
+         FROM jobs
+         WHERE id=$1 FOR UPDATE`,
+        [id]
+      );
       const job = jobRes.rows[0];
       if (!job) return { error: "not_found" };
       if (canManage) {

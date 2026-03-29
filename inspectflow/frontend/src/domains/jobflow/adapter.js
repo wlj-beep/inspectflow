@@ -19,7 +19,9 @@ export function createJobflowAdapter(apiClient) {
         apiClient.toolLocations.list(role),
         apiClient.parts.list(role)
       ]);
-      const partDetails = await Promise.all((partsList || []).map((p) => apiClient.parts.get(p.id, role)));
+      const partDetails = await Promise.all(
+        (partsList || []).map((p) => apiClient.parts.get(p.id, role))
+      );
       const [jobsList, recordsList] = await Promise.all([
         apiClient.jobs.list({}, role),
         apiClient.records.list({}, role)

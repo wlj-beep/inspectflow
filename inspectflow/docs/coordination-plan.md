@@ -7,12 +7,12 @@
 - Keep execution focused on end-to-end backlog completion.
 
 ## Canonical Artifacts
-- `STATUS.md`: active ranked queue.
-- `docs/backlog.md`: release-aware backlog with metadata.
+- `STATUS.md`: active ranked queue; start with `docs/backlog.md` before drilling into release shards.
+- `docs/backlog.md`: index-first backlog entry point with release shards under `docs/backlog/*.md`.
 - `docs/backlog-framework.md`: required metadata and scoring model.
 - `docs/backlog-intake-protocol.md`: mandatory pre-backlog intake gate.
 - `docs/stream-contracts-*.md`: cross-stream interface contracts.
-- `WORKLOG.md`: historical completion record.
+- `WORKLOG.md`: recent-window completion record with older history archived in `WORKLOG.archive-*.md`.
 
 ## Stream Ownership
 - `PLAT` -> Team Atlas
@@ -30,7 +30,7 @@ Each backlog item has exactly one owning stream/team.
 3. Stream/team tags appear in `Work Item` text only.
 4. Cross-stream work must reference a contract ID.
 5. Breaking contract changes require version bump and release approval.
-6. Completed work updates backlog state and appends `WORKLOG.md`.
+6. Completed work updates backlog state and appends `WORKLOG.md` or the appropriate archive shard.
 7. Multi-agent execution is mandatory for non-trivial work: one controller plus parallel sub-agents.
 8. Sub-agent scopes must be independent and BL-mapped.
 9. Every finding/deliverable must include evidence (`file:line`, command/test output, or explicit reproduction steps).
@@ -49,10 +49,10 @@ Each backlog item has exactly one owning stream/team.
 ## Intake and Prioritization
 - New requests are mapped to release (`R1`-`R4`) and stream.
 - Intake must follow `docs/backlog-intake-protocol.md` before any backlog insertion.
-- Candidate ideas require duplicate scan across `docs/backlog.md`, `STATUS.md`, and recent `WORKLOG.md` entries.
+- Candidate ideas require duplicate scan across `docs/backlog.md`, the release shards under `docs/backlog/*.md`, `STATUS.md`, and recent `WORKLOG.md` entries.
 - Realism gate outcome must be one of `Reject`, `Defer`, or `Accept`.
-- Only `Accept` outcomes may create a new `BL-###` row in `docs/backlog.md`.
-- Accepted intake items must be recorded in `WORKLOG.md` (default recording path: backlog + worklog).
+- Only `Accept` outcomes may create a new `BL-###` row in the backlog index plus the relevant release shard.
+- Accepted intake items must be recorded in `WORKLOG.md` (default recording path: backlog + worklog, with archive shards as needed).
 - Priority scoring follows `docs/backlog-framework.md`.
 - Coordinator maintains final rank order in `STATUS.md`.
 

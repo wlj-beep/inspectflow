@@ -7,9 +7,9 @@ This framework standardizes backlog design for parallel team execution across re
 Every candidate idea must be evaluated through `docs/backlog-intake-protocol.md` before adding a new `BL-###`.
 
 Required intake checks:
-- Duplicate scan against `docs/backlog.md`, `STATUS.md`, and recent `WORKLOG.md` history.
+- Duplicate scan against `docs/backlog.md`, the detailed release shards under `docs/backlog/*.md`, `STATUS.md`, and recent `WORKLOG.md` history.
 - Realism evaluation with explicit outcome: `Reject`, `Defer`, or `Accept`.
-- For `Accept`, write to both `docs/backlog.md` and `WORKLOG.md` (default logging path).
+- For `Accept`, write to the backlog index plus the relevant release shard and to `WORKLOG.md` (default logging path, with archive shards as needed).
 
 ## Required Metadata Per Backlog Item
 Each item must include:

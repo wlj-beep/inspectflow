@@ -1,0 +1,14 @@
+# Repository noise filters for agent scans.
+# Keep source, docs, and canonical config visible.
+.DS_Store
+node_modules/
+.npm-cache/
+.tools/
+dist/
+build/
+coverage/
+playwright-report/
+test-results/
+var/
+*.log
+*.tsbuildinfo

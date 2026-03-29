@@ -1,0 +1,6 @@
+apiVersion: v2
+name: inspectflow-cloud
+description: Single-tenant cloud baseline for InspectFlow
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

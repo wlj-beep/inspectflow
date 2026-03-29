@@ -6,13 +6,16 @@ Use this checklist before starting any non-trivial implementation run.
 1. Confirm the target `BL-###` row is claimed in `STATUS.md`.
 2. Confirm dependencies for the item are satisfied or explicitly blocked.
 3. Confirm acceptance criteria are clear in `docs/backlog.md`.
-4. Confirm multi-agent mode is enabled and Codex has been restarted.
+4. Run preflight check: `npm run ops:multi-agent:check -- --bl "BL-###" --run-context-validate`.
+   - The preflight includes a dry-run `var:cleanup` pass so stale `var/load` and `var/update-bundles` artifacts are surfaced before work starts.
+5. If config changed recently, restart Codex and record restart marker: `npm run ops:multi-agent:mark-restart`.
 
 ## Start Sequence
 1. Open one controller session.
-2. Prepare sub-agent task packets using `docs/operations/next-step-packet-template.md`.
-3. Spawn sub-agents for independent tracks only.
-4. Require structured output contract from every sub-agent.
+2. Build context packet: `npm run context:build -- --task "<summary>" --bl "BL-###" --signals "..."`.
+3. Prepare sub-agent task packets using `docs/operations/next-step-packet-template.md`.
+4. Spawn sub-agents for independent tracks only.
+5. Require structured output contract from every sub-agent.
 
 ## Merge and Gate
 1. Collect all sub-agent outputs.

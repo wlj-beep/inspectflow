@@ -4,10 +4,16 @@ on:
   push:
     branches: ["main"]
   pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   standardized-tests:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     services:
       postgres:
         image: postgres:15
@@ -23,10 +29,18 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
+      CI: true
+      NODE_ENV: test
       DATABASE_URL_TEST: postgres://postgres:postgres@localhost:5432/inspectflow_test
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/inspectflow_test
+      AUTH_TOKEN_PEPPER: ci-test-pepper
+      FRONTEND_ORIGIN: http://127.0.0.1:5173
       VITE_API_URL: http://127.0.0.1:4000
       PLAYWRIGHT_BASE_URL: http://127.0.0.1:5173
+      PLAYWRIGHT_API_URL: http://127.0.0.1:4000
+      ALLOW_LEGACY_ROLE_HEADER: false
+      AUTH_COOKIE_SAMESITE: lax
+      AUTH_COOKIE_SECURE: false
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -52,6 +66,61 @@ jobs:
         run: npx playwright install --with-deps chromium
         working-directory: inspectflow/frontend
 
-      - name: Run standardized test gates
+      - name: Run coordination gate
+        run: npm run test:coordination
+        working-directory: inspectflow
+
+      - name: Run token-efficiency aggregate report gate
+        run: npm run context:all:report
+        working-directory: inspectflow
+
+      - name: Run context budget report
+        run: |
+          if [ -f scripts/context/context-budget-report.mjs ]; then
+            npm run context:budget:report
+          else
+            echo "Skipping context:budget:report (script not yet present)"
+          fi
+        working-directory: inspectflow
+
+      - name: Run shard link check
+        run: |
+          if [ -f scripts/context/validate-shard-links.mjs ]; then
+            npm run context:shards:check
+          else
+            echo "Skipping context:shards:check (script not yet present)"
+          fi
+        working-directory: inspectflow
+
+      - name: Run untracked artifact check
+        run: |
+          if [ -f scripts/context/detect-large-untracked.mjs ]; then
+            npm run context:untracked:check
+          else
+            echo "Skipping context:untracked:check (script not yet present)"
+          fi
+        working-directory: inspectflow
+
+      - name: Run frontend lint gate
+        run: npm run lint:frontend
+        working-directory: inspectflow
+
+      - name: Run backend security gate
+        run: npm run security:backend
+        working-directory: inspectflow
+
+      - name: Run frontend mocked UI gate
+        run: npm run test:ui:mock
+        working-directory: inspectflow
+
+      - name: Run backend API gate
+        run: npm run test:api
+        working-directory: inspectflow
+
+      - name: Run frontend live UI gate
+        run: npm run test:ui:live
+        working-directory: inspectflow
+
+      - name: Run standardized gate
         run: npm run test:standardized
         working-directory: inspectflow

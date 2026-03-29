@@ -3,9 +3,8 @@ import { getAuthSessionByToken, readSessionTokenFromRequest } from "../auth.js";
 const VALID_ROLES = ["Operator", "Quality", "Supervisor", "Admin"];
 
 function allowLegacyRoleHeader() {
-  if (process.env.ALLOW_LEGACY_ROLE_HEADER === "true") return true;
-  if (process.env.ALLOW_LEGACY_ROLE_HEADER === "false") return false;
-  return process.env.NODE_ENV === "test";
+  if (String(process.env.NODE_ENV || "").trim().toLowerCase() !== "test") return false;
+  return String(process.env.ALLOW_LEGACY_ROLE_HEADER || "").trim().toLowerCase() === "true";
 }
 
 function parseLegacyRole(req) {

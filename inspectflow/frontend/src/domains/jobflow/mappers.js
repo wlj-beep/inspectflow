@@ -1,45 +1,4 @@
-function normalizeOpNumber(value) {
-  const raw = String(value ?? "").trim();
-  if (!/^\d{1,3}$/.test(raw)) return null;
-  const n = Number(raw);
-  if (!Number.isInteger(n) || n < 1 || n > 999) return null;
-  return String(n).padStart(3, "0");
-}
-
-function revisionCodeToIndex(value) {
-  const code = String(value || "").trim().toUpperCase();
-  if (!/^[A-Z]+$/.test(code)) return null;
-  let idx = 0;
-  for (const ch of code) {
-    idx = (idx * 26) + (ch.charCodeAt(0) - 64);
-  }
-  return idx;
-}
-
-function revisionIndexToCode(value) {
-  let n = Number(value);
-  if (!Number.isInteger(n) || n <= 0) return null;
-  let out = "";
-  while (n > 0) {
-    n -= 1;
-    out = String.fromCharCode(65 + (n % 26)) + out;
-    n = Math.floor(n / 26);
-  }
-  return out;
-}
-
-function nextRevisionCode(value) {
-  const idx = revisionCodeToIndex(value);
-  if (!idx) return "A";
-  return revisionIndexToCode(idx + 1) || "A";
-}
-
-function fmtTs(ts) {
-  if (!ts) return "";
-  const d = new Date(ts);
-  if (Number.isNaN(d.getTime())) return String(ts).slice(0, 16).replace("T", " ");
-  return d.toISOString().slice(0, 16).replace("T", " ");
-}
+import { fmtTs, nextRevisionCode, normalizeOpNumber } from "../../shared/utils/jobflowCore.ts";
 
 export function mapToolLibrary(apiTools) {
   const out = {};
@@ -84,6 +43,18 @@ export function buildPartsFromApi(partDetails) {
       const dims = (op.dimensions || []).map((d) => ({
         id: String(d.id),
         name: d.name,
+        bubbleNumber: d.bubbleNumber ?? d.bubble_number ?? "",
+        featureType: d.featureType ?? d.feature_type ?? "",
+        gdtClass: d.gdtClass ?? d.gdt_class ?? "",
+        toleranceZone: d.toleranceZone ?? d.tolerance_zone ?? "",
+        featureQuantity: d.featureQuantity ?? d.feature_quantity ?? "",
+        featureUnits: d.featureUnits ?? d.feature_units ?? "",
+        featureModifiers: Array.isArray(d.featureModifiers)
+          ? d.featureModifiers
+          : Array.isArray(d.feature_modifiers_json)
+            ? d.feature_modifiers_json
+            : [],
+        sourceCharacteristicKey: d.sourceCharacteristicKey ?? d.source_characteristic_key ?? "",
         nominal: Number(d.nominal),
         tolPlus: Number(d.tolPlus ?? d.tol_plus),
         tolMinus: Number(d.tolMinus ?? d.tol_minus),
@@ -100,7 +71,8 @@ export function buildPartsFromApi(partDetails) {
       partNumber: part.id,
       description: part.description,
       currentRevision,
-      nextRevision: part.nextRevision || (currentRevision ? nextRevisionCode(currentRevision) : "A"),
+      nextRevision:
+        part.nextRevision || (currentRevision ? nextRevisionCode(currentRevision) : "A"),
       revisions: Array.isArray(part.revisions) ? part.revisions : [],
       readOnlyRevision: !!part.readOnlyRevision,
       operations: opsObj
@@ -168,7 +140,11 @@ export function mapRecordDetailFromApi(r, opIdToNumber, usersById) {
   }
   const missingPieces = {};
   for (const m of r.missingPieces || []) {
-    missingPieces[String(m.piece_number)] = { reason: m.reason, ncNum: m.nc_num, details: m.details };
+    missingPieces[String(m.piece_number)] = {
+      reason: m.reason,
+      ncNum: m.nc_num,
+      details: m.details
+    };
   }
   const opNumber = opIdToNumber?.[String(r.operation_id)] || String(r.operation_id || "");
   const auditLog = (r.auditLog || []).map((a) => ({

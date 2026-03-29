@@ -1,0 +1,124 @@
+{
+  "version": 1,
+  "defaults": {
+    "tier1": [
+      "context/constitution.md",
+      "README.md",
+      "STATUS.md",
+      "docs/backlog.md",
+      "docs/architecture.md",
+      "docs/test-plan.md"
+    ],
+    "specialists": [
+      "docs-contracts",
+      "verifier"
+    ]
+  },
+  "specialists": {
+    "backend-api": {
+      "card": "context/specialists/backend-api.md",
+      "triggers": ["api", "route", "endpoint", "middleware", "db", "schema", "auth", "session"]
+    },
+    "frontend-ui": {
+      "card": "context/specialists/frontend-ui.md",
+      "triggers": ["ui", "frontend", "react", "screen", "component", "playwright"]
+    },
+    "integration-runtime": {
+      "card": "context/specialists/integration-runtime.md",
+      "triggers": ["integration", "connector", "erp", "runtime", "policy", "idempotency"]
+    },
+    "analytics-quality": {
+      "card": "context/specialists/analytics-quality.md",
+      "triggers": ["analytics", "kpi", "spc", "mart", "quality", "export", "as9102"]
+    },
+    "platform-auth": {
+      "card": "context/specialists/platform-auth.md",
+      "triggers": ["auth", "session", "sso", "entitlement", "role", "permission", "module policy"]
+    },
+    "docs-contracts": {
+      "card": "context/specialists/docs-contracts.md",
+      "triggers": ["docs", "contract", "handoff", "acceptance", "runbook", "status"]
+    },
+    "verifier": {
+      "card": "context/specialists/verifier.md",
+      "triggers": []
+    }
+  },
+  "retrievalRules": [
+    {
+      "id": "coordination-core",
+      "anySignals": ["bl-", "status", "handoff", "coordination"],
+      "paths": [
+        "docs/operations/multi-agent-playbook.md",
+        "docs/operations/controller-prompts.md",
+        "docs/operations/launch-checklist.md",
+        "docs/backlog-intake-protocol.md"
+      ]
+    },
+    {
+      "id": "backend-core",
+      "anySignals": ["api", "route", "endpoint", "middleware", "db", "schema"],
+      "paths": [
+        "backend/src/index.js",
+        "backend/db/schema.sql",
+        "docs/data-model.md",
+        "docs/architecture.md"
+      ]
+    },
+    {
+      "id": "frontend-core",
+      "anySignals": ["ui", "frontend", "react", "component", "playwright"],
+      "paths": [
+        "frontend/src/App.jsx",
+        "frontend/src/api/client.js",
+        "docs/frontend-notes.md",
+        "docs/mvp-scope.md"
+      ]
+    },
+    {
+      "id": "integration-runtime",
+      "anySignals": ["integration", "connector", "erp", "idempotency", "policy"],
+      "paths": [
+        "docs/integration-strategy.md",
+        "docs/integration-adapter-support-runbook.md",
+        "backend/src/services/integration/connectorRuntime.js",
+        "backend/src/services/integration/connectorRunPolicy.js",
+        "backend/src/services/integration/canonicalEnvelope.js"
+      ]
+    },
+    {
+      "id": "analytics-quality",
+      "anySignals": ["analytics", "kpi", "spc", "mart", "quality", "export", "as9102"],
+      "paths": [
+        "docs/analytics-mart-runbook.md",
+        "docs/analytics-kpi-risk-workflow-runbook.md",
+        "docs/quality-export-runbook.md",
+        "backend/src/services/analytics/kpiDashboard.js",
+        "backend/src/services/quality/as9102Exports.js"
+      ]
+    },
+    {
+      "id": "platform-auth",
+      "anySignals": ["auth", "session", "sso", "entitlement", "permission", "role"],
+      "paths": [
+        "docs/auth-session-foundation.md",
+        "backend/src/auth.js",
+        "backend/src/middleware/authSession.js",
+        "backend/src/services/platform/modulePolicy.js",
+        "backend/src/services/platform/entitlements.js"
+      ]
+    },
+    {
+      "id": "deployment-ops",
+      "anySignals": ["deploy", "onprem", "backup", "restore", "health"],
+      "paths": [
+        "docs/onprem-install-runbook.md",
+        "docs/backup-restore-runbook.md",
+        "docs/deployment-governance.md",
+        "deploy/onprem/healthcheck.sh",
+        "scripts/backup/run-scheduled-backup.sh"
+      ]
+    }
+  ]
+}
+

@@ -2,8 +2,11 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import request from "supertest";
 import app from "../src/index.js";
 import { query } from "../src/db.js";
+import { getDefaultSeedPassword } from "../src/auth.js";
 
-async function login(agent, username, password = "inspectflow") {
+const DEFAULT_PASSWORD = getDefaultSeedPassword();
+
+async function login(agent, username, password = DEFAULT_PASSWORD) {
   return agent.post("/api/auth/login").send({ username, password });
 }
 
@@ -45,6 +48,15 @@ describe("Optional SSO auth path (BL-036)", () => {
     delete process.env.AUTH_SSO_PRINCIPAL_HEADER;
     delete process.env.AUTH_SSO_ROLE_HEADER;
     delete process.env.AUTH_SSO_DEFAULT_ROLE;
+    delete process.env.AUTH_OIDC_ISSUER_URL;
+    delete process.env.AUTH_OIDC_CLIENT_ID;
+    delete process.env.AUTH_SSO_PROXY_SECRET;
+    delete process.env.AUTH_SSO_PROXY_SECRET_HEADER;
+    delete process.env.AUTH_ALLOW_LEGACY_SSO_ENV;
+    delete process.env.AUTH_LOCAL_LOGIN_ENABLED;
+    delete process.env.ALLOW_LEGACY_ROLE_HEADER;
+    delete process.env.SSO_PROXY_SECRET;
+    delete process.env.SSO_PROXY_SECRET_HEADER;
     await removeUserByName("SSO Auto 1");
   });
 
@@ -93,5 +105,54 @@ describe("Optional SSO auth path (BL-036)", () => {
 
     const lookup = await query("SELECT role, active FROM users WHERE name=$1 LIMIT 1", ["SSO Auto 1"]);
     expect(lookup.rows[0]).toMatchObject({ role: "Quality", active: true });
+  });
+
+  it("exposes explicit OIDC config and migration controls without leaking secrets", async () => {
+    process.env.AUTH_SSO_ENABLED = "true";
+    process.env.AUTH_OIDC_ISSUER_URL = "https://oidc.example.com/issuer";
+    process.env.AUTH_OIDC_CLIENT_ID = "inspectflow-web";
+    process.env.AUTH_SSO_PROXY_SECRET = "modern-migration-secret";
+    process.env.AUTH_SSO_PROXY_SECRET_HEADER = "x-sso-proxy-secret";
+    process.env.AUTH_SSO_PRINCIPAL_HEADER = "x-oidc-user";
+    process.env.AUTH_SSO_ROLE_HEADER = "x-oidc-role";
+    process.env.AUTH_ALLOW_LEGACY_SSO_ENV = "true";
+    process.env.AUTH_LOCAL_LOGIN_ENABLED = "false";
+    process.env.ALLOW_LEGACY_ROLE_HEADER = "true";
+    process.env.SSO_PROXY_SECRET = "legacy-secret";
+    process.env.SSO_PROXY_SECRET_HEADER = "x-legacy-sso-secret";
+
+    const agent = request.agent(app);
+    const ssoLogin = await agent
+      .post("/api/auth/sso/login")
+      .send({ principal: "J. Morris", role: "Operator" });
+    expect(ssoLogin.status).toBe(200);
+
+    const configRes = await agent.get("/api/auth/sso/config");
+    expect(configRes.status).toBe(200);
+    expect(configRes.body).toMatchObject({
+      contractId: "PLAT-AUTH-v1",
+      mode: "oidc_sso",
+      enabled: true,
+      localLoginEnabled: false,
+      oidc: {
+        issuerConfigured: true,
+        clientIdConfigured: true,
+        issuerRequiredOutsideTest: false,
+        clientIdRequiredOutsideTest: false
+      },
+      headers: {
+        principal: "x-oidc-user",
+        role: "x-oidc-role",
+        proxySecretHeader: "x-sso-proxy-secret"
+      },
+      migrationControls: {
+        legacyTrustedHeaderModeAllowed: true,
+        legacySsoEnvAliasesAllowed: true,
+        legacySsoEnvAliasesConfigured: true,
+        migrationChecker: "npm run auth:oidc:migration:check"
+      }
+    });
+    expect(JSON.stringify(configRes.body)).not.toContain("modern-migration-secret");
+    expect(JSON.stringify(configRes.body)).not.toContain("legacy-secret");
   });
 });

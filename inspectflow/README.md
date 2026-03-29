@@ -20,6 +20,14 @@ Production MVP scaffold (on-prem web app)..
 - Frontend: `http://localhost:5173`
 - API: `http://localhost:4000`
 
+### Hosted Frontend/API Wiring
+- Frontend API base is:
+  - `VITE_API_URL` when provided at frontend build time
+  - otherwise `http://localhost:4000` in dev
+  - otherwise relative (`/api/...`) in production builds
+- If frontend and API are hosted on different domains, set `VITE_API_URL` in the frontend host.
+- If frontend and API are same origin behind one domain/reverse proxy, leave `VITE_API_URL` unset.
+
 ### Local Auth
 - Protected APIs now require authenticated session identity.
 - Login in UI with a seeded user and local password.
@@ -52,16 +60,18 @@ Playwright requires browser binaries:
 - `npx playwright install`
 
 ## Notes
-- Demo remains frozen in Downloads.
+- The active frontend build target is `frontend/src/App.jsx` plus `frontend/src/domains/**`.
+- `frontend/src/legacy/InspectFlowDemo.jsx` is retired historical source from the BL-077 migration/removal.
 - This workspace is the active build target.
 
 ## Coordination and Deployment
 - `docs/coordination-plan.md` defines queue governance and multi-agent delivery rules.
 - `docs/operations/multi-agent-playbook.md` is the canonical operating playbook.
 - `docs/operations/controller-prompts.md` provides reusable controller/sub-agent prompt templates.
+- Multi-agent deployment preflight: `npm run ops:multi-agent:check -- --bl "BL-###" --run-context-validate`.
 - `STATUS.md` is the canonical global ranked queue for active backlog work.
-- `docs/backlog.md` stores detailed backlog items keyed by `BL-###`.
-- `WORKLOG.md` stores completed work history.
+- `docs/backlog.md` is the backlog index; detailed release shards live under `docs/backlog/*.md`.
+- `WORKLOG.md` stores the recent completion window; older history lives in `WORKLOG.archive-*.md`.
 - `docs/deployment-governance.md` defines change controls and pre-deploy checks.
 - `CONTRIBUTING.md` defines Git branching, commit, and PR best practices for this repo.
 - `docs/direct-push-mode.md` documents optional solo/offline direct push workflow for `main`.
