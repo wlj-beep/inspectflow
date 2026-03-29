@@ -7,15 +7,26 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test:ui": "playwright test"
+    "test:ui": "playwright test",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint \"src/**/*.{js,jsx}\"",
+    "format": "prettier --write \"src/domains/jobflow/**/*.{js,jsx,ts,tsx}\" \"src/shared/**/*.{js,jsx,ts,tsx}\"",
+    "format:check": "prettier --check \"src/domains/jobflow/**/*.{js,jsx,ts,tsx}\" \"src/shared/**/*.{js,jsx,ts,tsx}\"",
+    "precommit": "npm run lint && npm run typecheck && npm run format:check && npm run test:ui:mock --prefix .."
   },
   "dependencies": {
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
-    "@vitejs/plugin-react": "^4.3.1",
     "@playwright/test": "^1.48.2",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.1",
+    "eslint": "^8.57.1",
+    "eslint-plugin-react": "^7.37.5",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.2",
     "vite": "^5.4.2"
   }
 }

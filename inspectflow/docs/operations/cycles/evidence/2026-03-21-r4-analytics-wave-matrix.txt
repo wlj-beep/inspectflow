@@ -1,0 +1,64 @@
+== Coordination gate ==
+
+> inspectflow@0.1.0 test:coordination
+> npm run coordination:check
+
+
+> inspectflow@0.1.0 coordination:check
+> node scripts/validate-coordination.mjs
+
+Coordination validation passed.
+== Backend test DB setup ==
+
+> inspectflow-backend@0.1.0 db:test:setup
+> npm run db:migrate:test && npm run db:seed:test
+
+
+> inspectflow-backend@0.1.0 db:migrate:test
+> NODE_ENV=test node src/scripts/migrate.js
+
+Schema applied.
+
+> inspectflow-backend@0.1.0 db:seed:test
+> NODE_ENV=test node src/scripts/seed.js
+
+Seeded local credentials for 10 users.
+Seed applied.
+== Backend analytics wave tests ==
+
+ RUN  v2.1.9 /Users/joshlane/Documents/Playground 2/inspectflow/backend
+
+ ✓ test/analytics-spc.test.js (2 tests) 350ms
+   ✓ SPC analytics (BL-071) > returns SPC statistics, rule findings, and tooling/work-center context filters 347ms
+ ✓ test/record-attachments.test.js (2 tests) 138ms
+ ✓ test/analytics-incremental-refresh.test.js (2 tests) 113ms
+ ✓ test/analytics-workforce-performance.test.js (3 tests) 121ms
+
+ Test Files  4 passed (4)
+      Tests  9 passed (9)
+   Start at  20:08:41
+   Duration  1.87s (transform 169ms, setup 0ms, collect 702ms, tests 722ms, environment 0ms, prepare 118ms)
+
+== Frontend mocked mobile coverage ==
+
+> inspectflow-frontend@0.1.0 test:ui
+> playwright test --grep @mock|tablet viewport|mobile viewport|mobile operator
+
+[2m[WebServer] [22m(node:60278) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[2m[WebServer] [22m(Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 10 tests using 1 worker
+
+  ✓   1 tests/mocked.smoke.spec.js:228:3 › Mocked UI smoke @mock › loads the InspectFlow shell (675ms)
+  ✓   2 tests/mocked.smoke.spec.js:237:3 › Mocked UI smoke @mock › shows COMM-SEAT soft warning chip in authenticated shell when seat usage is high (310ms)
+  ✓   3 tests/mocked.smoke.spec.js:256:3 › Mocked UI smoke @mock › shows loading and success transitions during part creation (1.4s)
+  ✓   4 tests/mocked.smoke.spec.js:275:3 › Mocked UI smoke @mock › shows failure transition when part creation fails (601ms)
+  ✓   5 tests/mocked.smoke.spec.js:293:3 › Mocked UI smoke @mock › reuses original base prefix and increments family run index for duplicate lot jobs (436ms)
+  ✓   6 tests/mocked.smoke.spec.js:330:3 › Mocked UI smoke @mock › allows admins to import tools via CSV from the Data Imports tab (574ms)
+  ✓   7 tests/mocked.smoke.spec.js:347:3 › Mocked UI smoke @mock › supports optional selected-record export mode with checkbox-only selection (551ms)
+  ✓   8 tests/mocked.smoke.spec.js:398:3 › Mocked UI smoke @mock › tablet viewport keeps admin part setup flow usable @mock (676ms)
+  ✓   9 tests/mocked.smoke.spec.js:415:3 › Mocked UI smoke @mock › mobile viewport keeps records export selection controls reachable @mock (443ms)
+  ✓  10 tests/mocked.smoke.spec.js:443:3 › Mocked UI smoke @mock › mobile operator can load an open job into measurement entry @mock (626ms)
+
+  10 passed (8.6s)
+PASS: R4 analytics + mobile wave acceptance matrix completed.

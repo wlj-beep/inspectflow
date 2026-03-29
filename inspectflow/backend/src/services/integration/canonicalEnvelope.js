@@ -18,7 +18,12 @@ const SOURCE_TYPE_ALIASES = new Map([
   ["excel_sheet", "excel_sheet"],
   ["spreadsheet", "excel_sheet"],
   ["scheduled", "scheduled"],
-  ["replay", "replay"]
+  ["replay", "replay"],
+  // BL-120: IoT collector source types
+  ["opc_ua", "opc_ua"],
+  ["opcua", "opc_ua"],
+  ["mqtt", "mqtt"],
+  ["tcp", "tcp"]
 ]);
 
 const IMPORT_TYPE_ALIASES = new Map([

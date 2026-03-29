@@ -1,0 +1,158 @@
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import request from "supertest";
+import app from "../src/index.js";
+import { query } from "../src/db.js";
+import { getDefaultSeedPassword } from "../src/auth.js";
+
+const DEFAULT_PASSWORD = getDefaultSeedPassword();
+
+async function login(agent, username, password = DEFAULT_PASSWORD) {
+  return agent.post("/api/auth/login").send({ username, password });
+}
+
+async function removeUserByName(name) {
+  await query("DELETE FROM users WHERE name=$1", [name]);
+}
+
+async function resetAuthEntitlementBaseline() {
+  await query(
+    `UPDATE platform_entitlements
+     SET seat_pack=25,
+         seat_soft_limit=25,
+         seat_policy='{"mode":"soft","enforced":false,"hardLimit":0,"namedUsers":[],"allowedDevices":[]}'::jsonb,
+         module_flags='{"CORE":true,"QUALITY_PRO":false,"INTEGRATION_SUITE":false,"ANALYTICS_SUITE":false,"MULTISITE":false,"EDGE":false}'::jsonb,
+         updated_at=NOW()
+     WHERE id=1`
+  );
+
+  await query(
+    `UPDATE auth_local_credentials
+     SET failed_attempts=0,
+         locked_until=NULL
+     WHERE user_id IN (
+       SELECT id
+       FROM users
+       WHERE name IN ('S. Admin', 'J. Morris', 'R. Tatum')
+     )`
+  );
+}
+
+describe("Optional SSO auth path (BL-036)", () => {
+  beforeEach(async () => {
+    await resetAuthEntitlementBaseline();
+  });
+
+  afterEach(async () => {
+    delete process.env.AUTH_SSO_ENABLED;
+    delete process.env.AUTH_SSO_AUTO_PROVISION;
+    delete process.env.AUTH_SSO_PRINCIPAL_HEADER;
+    delete process.env.AUTH_SSO_ROLE_HEADER;
+    delete process.env.AUTH_SSO_DEFAULT_ROLE;
+    delete process.env.AUTH_OIDC_ISSUER_URL;
+    delete process.env.AUTH_OIDC_CLIENT_ID;
+    delete process.env.AUTH_SSO_PROXY_SECRET;
+    delete process.env.AUTH_SSO_PROXY_SECRET_HEADER;
+    delete process.env.AUTH_ALLOW_LEGACY_SSO_ENV;
+    delete process.env.AUTH_LOCAL_LOGIN_ENABLED;
+    delete process.env.ALLOW_LEGACY_ROLE_HEADER;
+    delete process.env.SSO_PROXY_SECRET;
+    delete process.env.SSO_PROXY_SECRET_HEADER;
+    await removeUserByName("SSO Auto 1");
+  });
+
+  it("keeps SSO endpoint disabled by default", async () => {
+    const res = await request(app)
+      .post("/api/auth/sso/login")
+      .send({ principal: "J. Morris" });
+    expect(res.status).toBe(404);
+    expect(res.body).toMatchObject({ error: "sso_disabled" });
+  });
+
+  it("supports SSO login when enabled and does not break local auth mode", async () => {
+    process.env.AUTH_SSO_ENABLED = "true";
+
+    const ssoAgent = request.agent(app);
+    const ssoLogin = await ssoAgent
+      .post("/api/auth/sso/login")
+      .send({ principal: "J. Morris" });
+    expect(ssoLogin.status).toBe(200);
+    expect(ssoLogin.body).toMatchObject({
+      ok: true,
+      authSource: "sso",
+      user: { name: "J. Morris", role: "Operator" }
+    });
+
+    const me = await ssoAgent.get("/api/auth/me");
+    expect(me.status).toBe(200);
+    expect(me.body.user).toMatchObject({ name: "J. Morris", role: "Operator" });
+
+    const localAgent = request.agent(app);
+    const localLogin = await login(localAgent, "R. Tatum");
+    expect(localLogin.status).toBe(200);
+    expect(localLogin.body.user).toMatchObject({ name: "R. Tatum", role: "Operator" });
+  });
+
+  it("can auto-provision users when explicitly enabled", async () => {
+    process.env.AUTH_SSO_ENABLED = "true";
+    process.env.AUTH_SSO_AUTO_PROVISION = "true";
+
+    const agent = request.agent(app);
+    const ssoLogin = await agent
+      .post("/api/auth/sso/login")
+      .send({ principal: "SSO Auto 1", role: "Quality" });
+    expect(ssoLogin.status).toBe(200);
+    expect(ssoLogin.body.user).toMatchObject({ name: "SSO Auto 1", role: "Quality" });
+
+    const lookup = await query("SELECT role, active FROM users WHERE name=$1 LIMIT 1", ["SSO Auto 1"]);
+    expect(lookup.rows[0]).toMatchObject({ role: "Quality", active: true });
+  });
+
+  it("exposes explicit OIDC config and migration controls without leaking secrets", async () => {
+    process.env.AUTH_SSO_ENABLED = "true";
+    process.env.AUTH_OIDC_ISSUER_URL = "https://oidc.example.com/issuer";
+    process.env.AUTH_OIDC_CLIENT_ID = "inspectflow-web";
+    process.env.AUTH_SSO_PROXY_SECRET = "modern-migration-secret";
+    process.env.AUTH_SSO_PROXY_SECRET_HEADER = "x-sso-proxy-secret";
+    process.env.AUTH_SSO_PRINCIPAL_HEADER = "x-oidc-user";
+    process.env.AUTH_SSO_ROLE_HEADER = "x-oidc-role";
+    process.env.AUTH_ALLOW_LEGACY_SSO_ENV = "true";
+    process.env.AUTH_LOCAL_LOGIN_ENABLED = "false";
+    process.env.ALLOW_LEGACY_ROLE_HEADER = "true";
+    process.env.SSO_PROXY_SECRET = "legacy-secret";
+    process.env.SSO_PROXY_SECRET_HEADER = "x-legacy-sso-secret";
+
+    const agent = request.agent(app);
+    const ssoLogin = await agent
+      .post("/api/auth/sso/login")
+      .send({ principal: "J. Morris", role: "Operator" });
+    expect(ssoLogin.status).toBe(200);
+
+    const configRes = await agent.get("/api/auth/sso/config");
+    expect(configRes.status).toBe(200);
+    expect(configRes.body).toMatchObject({
+      contractId: "PLAT-AUTH-v1",
+      mode: "oidc_sso",
+      enabled: true,
+      localLoginEnabled: false,
+      oidc: {
+        issuerConfigured: true,
+        clientIdConfigured: true,
+        issuerRequiredOutsideTest: false,
+        clientIdRequiredOutsideTest: false
+      },
+      headers: {
+        principal: "x-oidc-user",
+        role: "x-oidc-role",
+        proxySecretHeader: "x-sso-proxy-secret"
+      },
+      migrationControls: {
+        legacyTrustedHeaderModeAllowed: true,
+        legacySsoEnvAliasesAllowed: true,
+        legacySsoEnvAliasesConfigured: true,
+        migrationChecker: "npm run auth:oidc:migration:check"
+      }
+    });
+    expect(JSON.stringify(configRes.body)).not.toContain("modern-migration-secret");
+    expect(JSON.stringify(configRes.body)).not.toContain("legacy-secret");
+  });
+});

@@ -1,5 +1,9 @@
 -- Seed placeholder data for local development
 
+-- BL-120: system actor for IoT collector auto-submissions
+INSERT INTO users (name, role, active) VALUES ('_iot_system', 'Operator', false)
+ON CONFLICT (name) DO NOTHING;
+
 INSERT INTO users (name, role, active) VALUES
   ('J. Morris','Operator',true),
   ('R. Tatum','Operator',true),
@@ -17,6 +21,7 @@ INSERT INTO role_capabilities (role, capability) VALUES
   ('Operator','view_operator'),
   ('Operator','submit_records'),
   ('Operator','view_records'),
+  ('Operator','acknowledge_instructions'),
   ('Quality','view_admin'),
   ('Quality','view_jobs'),
   ('Quality','view_records'),
@@ -24,11 +29,13 @@ INSERT INTO role_capabilities (role, capability) VALUES
   ('Supervisor','view_admin'),
   ('Supervisor','view_jobs'),
   ('Supervisor','manage_jobs'),
+  ('Supervisor','manage_instructions'),
   ('Supervisor','view_records'),
   ('Supervisor','edit_records'),
   ('Admin','view_admin'),
   ('Admin','view_jobs'),
   ('Admin','manage_jobs'),
+  ('Admin','manage_instructions'),
   ('Admin','view_records'),
   ('Admin','edit_records'),
   ('Admin','manage_parts'),
@@ -38,7 +45,7 @@ INSERT INTO role_capabilities (role, capability) VALUES
 ON CONFLICT DO NOTHING;
 
 INSERT INTO platform_entitlements
-  (id, contract_id, license_tier, seat_pack, seat_soft_limit, diagnostics_opt_in, module_flags)
+  (id, contract_id, license_tier, seat_pack, seat_soft_limit, seat_policy, diagnostics_opt_in, module_flags, module_policy_profile)
 VALUES
   (
     1,
@@ -46,16 +53,20 @@ VALUES
     'core',
     25,
     25,
+    '{"mode":"soft","enforced":false,"hardLimit":0,"namedUsers":[],"allowedDevices":[]}'::JSONB,
     false,
-    '{"CORE": true, "QUALITY_PRO": false, "INTEGRATION_SUITE": false, "ANALYTICS_SUITE": false, "MULTISITE": false, "EDGE": false}'::JSONB
+    '{"CORE": true, "QUALITY_PRO": false, "INTEGRATION_SUITE": false, "ANALYTICS_SUITE": false, "MULTISITE": false, "EDGE": false}'::JSONB,
+    'core_starter'
   )
 ON CONFLICT (id) DO UPDATE
 SET contract_id = EXCLUDED.contract_id,
     license_tier = EXCLUDED.license_tier,
     seat_pack = EXCLUDED.seat_pack,
     seat_soft_limit = EXCLUDED.seat_soft_limit,
+    seat_policy = EXCLUDED.seat_policy,
     diagnostics_opt_in = EXCLUDED.diagnostics_opt_in,
     module_flags = EXCLUDED.module_flags,
+    module_policy_profile = EXCLUDED.module_policy_profile,
     updated_at = NOW();
 
 INSERT INTO tools (name, type, it_num, size) VALUES

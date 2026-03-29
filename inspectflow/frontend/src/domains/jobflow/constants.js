@@ -16,5 +16,15 @@ export const DEFAULT_ROLE_CAPS = {
   Operator: ["view_operator", "submit_records", "view_records"],
   Quality: ["view_admin", "view_jobs", "view_records", "edit_records"],
   Supervisor: ["view_admin", "view_jobs", "manage_jobs", "view_records", "edit_records"],
-  Admin: ["view_admin", "view_jobs", "manage_jobs", "view_records", "edit_records", "manage_parts", "manage_tools", "manage_users", "manage_roles"]
+  Admin: [
+    "view_admin",
+    "view_jobs",
+    "manage_jobs",
+    "view_records",
+    "edit_records",
+    "manage_parts",
+    "manage_tools",
+    "manage_users",
+    "manage_roles"
+  ]
 };

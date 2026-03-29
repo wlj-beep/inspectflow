@@ -3,6 +3,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import request from "supertest";
 import app from "../src/index.js";
 import { query } from "../src/db.js";
+import { getDefaultSeedPassword } from "../src/auth.js";
+
+const DEFAULT_PASSWORD = getDefaultSeedPassword();
 
 function nextPartId(prefix = "P-ROUTE") {
   return `${prefix}-${crypto.randomUUID().slice(0, 6).toUpperCase()}`;
@@ -128,7 +131,7 @@ describe("OPS routing workflows", () => {
     const agent = request.agent(app);
     const login = await agent
       .post("/api/auth/login")
-      .send({ username: "S. Admin", password: "inspectflow" });
+      .send({ username: "S. Admin", password: DEFAULT_PASSWORD });
     expect(login.status).toBe(200);
 
     const partId = nextPartId("P-AUTH");

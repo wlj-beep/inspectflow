@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, it, expect } from "vitest";
 import {
   MART_TABLES,
@@ -19,6 +22,9 @@ import {
   ANA_KPI_METRIC_KEYS,
   ANA_MART_CONTRACT_ID
 } from "../src/services/analytics/anaV3Vocabulary.js";
+
+const TEST_DIR = path.dirname(fileURLToPath(import.meta.url));
+const ANA_CONTRACT_DOC_PATH = path.resolve(TEST_DIR, "..", "..", "docs", "stream-contracts-ana.md");
 
 describe("analytics mart and KPI contract scaffolding", () => {
   it("provides a valid mart schema definition and parity with ANA-MART-v3 vocabulary", () => {
@@ -92,5 +98,14 @@ describe("analytics mart and KPI contract scaffolding", () => {
 
   it("returns null for unknown KPI definitions", () => {
     expect(getKpiDefinition("unknown_kpi")).toBeNull();
+  });
+
+  it("documents the ANA contract IDs and versioning strategy", () => {
+    const doc = readFileSync(ANA_CONTRACT_DOC_PATH, "utf8");
+    expect(doc).toContain("ANA-MART-v3");
+    expect(doc).toContain("ANA-KPI-v3");
+    expect(doc).toContain("ANA-RISK-v3");
+    expect(doc).toContain("breaking mart schema changes require a new contract ID");
+    expect(doc).toContain("KPI definitions are versioned to preserve report comparability across releases");
   });
 });

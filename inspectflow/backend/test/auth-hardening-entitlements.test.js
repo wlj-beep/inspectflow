@@ -2,6 +2,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import request from "supertest";
 import app from "../src/index.js";
 import { query } from "../src/db.js";
+import { getDefaultSeedPassword } from "../src/auth.js";
+
+const DEFAULT_PASSWORD = getDefaultSeedPassword();
+const ROTATED_PASSWORD = "Inspectflow2!";
 
 async function findUserIdByName(name) {
   const { rows } = await query("SELECT id FROM users WHERE name=$1 LIMIT 1", [name]);
@@ -20,13 +24,28 @@ async function unlockUser(name) {
   );
 }
 
+async function clearMustRotate(name) {
+  const userId = await findUserIdByName(name);
+  if (!userId) return;
+  await query(
+    `UPDATE auth_local_credentials
+     SET must_rotate_password=false
+     WHERE user_id=$1`,
+    [userId]
+  );
+}
+
+async function removeUserByName(name) {
+  await query("DELETE FROM users WHERE name=$1", [name]);
+}
+
 async function login(agent, username, password) {
   return agent
     .post("/api/auth/login")
     .send({ username, password });
 }
 
-async function loginAdminAgent(password = "inspectflow") {
+async function loginAdminAgent(password = DEFAULT_PASSWORD) {
   const admin = request.agent(app);
   const loginRes = await login(admin, "S. Admin", password);
   expect(loginRes.status).toBe(200);
@@ -37,6 +56,13 @@ const DEFAULT_ENTITLEMENTS = {
   licenseTier: "core",
   seatPack: 25,
   seatSoftLimit: 25,
+  seatPolicy: {
+    mode: "soft",
+    enforced: false,
+    hardLimit: 0,
+    namedUsers: [],
+    allowedDevices: []
+  },
   diagnosticsOptIn: false,
   moduleFlags: {
     CORE: true,
@@ -52,6 +78,23 @@ describe("Auth hardening + entitlement contract", () => {
   afterEach(async () => {
     delete process.env.ALLOW_LEGACY_ROLE_HEADER;
     await unlockUser("A. Vasquez");
+    await clearMustRotate("S. Admin");
+    await clearMustRotate("J. Morris");
+    await clearMustRotate("R. Tatum");
+    await clearMustRotate("A. Vasquez");
+    await removeUserByName("C. HardSeat");
+    await removeUserByName("C. DupUser A");
+    await removeUserByName("C. DupUser B");
+    await query(
+      `UPDATE platform_entitlements
+       SET seat_pack=25,
+           seat_soft_limit=25,
+           seat_policy='{"mode":"soft","enforced":false,"hardLimit":0,"namedUsers":[],"allowedDevices":[]}'::jsonb,
+           module_flags='{"CORE":true,"QUALITY_PRO":false,"INTEGRATION_SUITE":false,"ANALYTICS_SUITE":false,"MULTISITE":false,"EDGE":false}'::jsonb,
+           module_policy_profile='core_starter',
+           updated_at=NOW()
+       WHERE id=1`
+    );
   });
 
   it("records login failure and lockout events", async () => {
@@ -63,8 +106,8 @@ describe("Auth hardening + entitlement contract", () => {
       lastResponse = await login(operator, "A. Vasquez", "wrong-password");
     }
 
-    expect(lastResponse.status).toBe(423);
-    expect(lastResponse.body).toMatchObject({ error: "account_locked" });
+    expect(lastResponse.status).toBe(401);
+    expect(lastResponse.body).toMatchObject({ error: "invalid_credentials" });
 
     const userId = await findUserIdByName("A. Vasquez");
     expect(userId).toBeTruthy();
@@ -135,32 +178,192 @@ describe("Auth hardening + entitlement contract", () => {
 
   it("records password change and reset events", async () => {
     const admin = await loginAdminAgent();
+    const adminUserId = await findUserIdByName("S. Admin");
+    expect(adminUserId).toBeTruthy();
 
     const setPassword = await admin
       .post("/api/auth/set-password")
-      .send({ currentPassword: "inspectflow", nextPassword: "inspectflow-v2" });
+      .send({ currentPassword: DEFAULT_PASSWORD, nextPassword: ROTATED_PASSWORD });
     expect(setPassword.status).toBe(200);
 
     await admin.post("/api/auth/logout");
 
-    const relogin = await login(admin, "S. Admin", "inspectflow-v2");
+    const relogin = await login(admin, "S. Admin", ROTATED_PASSWORD);
     expect(relogin.status).toBe(200);
 
-    const reset = await admin.post("/api/auth/reset-default-passwords").send({});
+    const reset = await admin.post("/api/auth/reset-default-passwords").send({
+      userIds: [adminUserId]
+    });
     expect(reset.status).toBe(200);
     expect(reset.body.userCount).toBeGreaterThan(0);
 
     await admin.post("/api/auth/logout");
 
-    const loginDefaultAgain = await login(admin, "S. Admin", "inspectflow");
-    expect(loginDefaultAgain.status).toBe(200);
+    const loginDefaultAgain = await login(admin, "S. Admin", DEFAULT_PASSWORD);
+    expect(loginDefaultAgain.status).toBe(202);
+    expect(loginDefaultAgain.body).toMatchObject({ action: "password_rotation_required" });
+
+    const rotatedDefault = await admin.post("/api/auth/rotate-password").send({
+      rotationToken: loginDefaultAgain.body.rotationToken,
+      nextPassword: DEFAULT_PASSWORD
+    });
+    expect(rotatedDefault.status).toBe(200);
 
     const events = await admin
       .get("/api/auth/events")
-      .query({ limit: 50 });
+      .query({ limit: 50, eventType: "password_reset_default", userId: adminUserId });
     expect(events.status).toBe(200);
-    const eventTypes = events.body.events.map((event) => event.event_type);
-    expect(eventTypes).toContain("password_changed");
-    expect(eventTypes).toContain("password_reset_default");
+    expect(events.body.count).toBeGreaterThan(0);
+    expect(events.body.events.every((event) => event.event_type === "password_reset_default")).toBe(true);
+  });
+
+  it("rejects default password resets that exceed the 50-user limit", async () => {
+    const admin = await loginAdminAgent();
+    const adminUserId = await findUserIdByName("S. Admin");
+    expect(adminUserId).toBeTruthy();
+
+    const reset = await admin.post("/api/auth/reset-default-passwords").send({
+      userIds: Array.from({ length: 51 }, () => adminUserId)
+    });
+    expect(reset.status).toBe(422);
+    expect(reset.body).toMatchObject({
+      error: "user_ids_too_many",
+      maxUserIds: 50
+    });
+  });
+
+  it("surfaces soft seat usage warnings and records COMM-SEAT-v1 audit events", async () => {
+    const admin = await loginAdminAgent();
+
+    await admin.put("/api/auth/entitlements").send({
+      ...DEFAULT_ENTITLEMENTS,
+      seatPack: 25,
+      seatSoftLimit: 1
+    });
+
+    const op1 = request.agent(app);
+    const op2 = request.agent(app);
+
+    const op1Login = await login(op1, "J. Morris", DEFAULT_PASSWORD);
+    expect(op1Login.status).toBe(200);
+    expect(op1Login.body.seatUsage?.contractId).toBe("COMM-SEAT-v1");
+    expect(op1Login.body.seatUsage?.softLimitWarning).toBe(true);
+
+    const op2Login = await login(op2, "R. Tatum", DEFAULT_PASSWORD);
+    expect(op2Login.status).toBe(200);
+    expect(op2Login.body.seatUsage?.softLimitWarning).toBe(true);
+    expect(op2Login.body.seatUsage?.softLimitExceeded).toBe(true);
+    expect(Number(op2Login.body.seatUsage?.activeUsers || 0)).toBeGreaterThanOrEqual(2);
+
+    const seats = await admin.get("/api/auth/seats");
+    expect(seats.status).toBe(200);
+    expect(seats.body).toMatchObject({
+      contractId: "COMM-SEAT-v1",
+      entitlementContractId: "PLAT-ENT-v1",
+      seatSoftLimit: 1,
+      softLimitWarning: true
+    });
+
+    const seatEvents = await admin
+      .get("/api/auth/events")
+      .query({ eventType: "seat_soft_limit_warning", limit: 10 });
+    expect(seatEvents.status).toBe(200);
+    expect(seatEvents.body.count).toBeGreaterThan(0);
+    expect(seatEvents.body.events[0]?.metadata?.contractId).toBe("COMM-SEAT-v1");
+
+    await admin.put("/api/auth/entitlements").send(DEFAULT_ENTITLEMENTS);
+  });
+
+  it("enforces COMM-SEAT-v2 named/device/concurrent hard-seat modes behind entitlement flags", async () => {
+    const admin = await loginAdminAgent();
+    const hardSeatModuleFlags = {
+      ...DEFAULT_ENTITLEMENTS.moduleFlags,
+      QUALITY_PRO: true
+    };
+
+    await admin.put("/api/auth/entitlements").send({
+      ...DEFAULT_ENTITLEMENTS,
+      moduleFlags: hardSeatModuleFlags,
+      seatPolicy: {
+        mode: "named",
+        enforced: true,
+        hardLimit: 0,
+        namedUsers: ["J. Morris"],
+        allowedDevices: []
+      }
+    });
+
+    const namedAllowed = await login(request.agent(app), "J. Morris", DEFAULT_PASSWORD);
+    expect(namedAllowed.status).toBe(200);
+    const namedBlocked = await login(request.agent(app), "R. Tatum", DEFAULT_PASSWORD);
+    expect(namedBlocked.status).toBe(403);
+    expect(namedBlocked.body).toMatchObject({ error: "seat_user_not_entitled" });
+
+    await admin.put("/api/auth/entitlements").send({
+      ...DEFAULT_ENTITLEMENTS,
+      moduleFlags: hardSeatModuleFlags,
+      seatPolicy: {
+        mode: "device",
+        enforced: true,
+        hardLimit: 0,
+        namedUsers: [],
+        allowedDevices: ["bench-1"]
+      }
+    });
+
+    const deviceAllowed = await request(app)
+      .post("/api/auth/login")
+      .send({ username: "J. Morris", password: DEFAULT_PASSWORD, deviceId: "bench-1" });
+    expect(deviceAllowed.status).toBe(200);
+    const deviceBlocked = await request(app)
+      .post("/api/auth/login")
+      .send({ username: "J. Morris", password: DEFAULT_PASSWORD, deviceId: "bench-9" });
+    expect(deviceBlocked.status).toBe(403);
+    expect(deviceBlocked.body).toMatchObject({ error: "seat_device_not_entitled" });
+
+    const created = await admin
+      .post("/api/users")
+      .send({ name: "C. HardSeat", role: "Operator", password: DEFAULT_PASSWORD });
+    expect(created.status).toBe(201);
+
+    await admin.put("/api/auth/entitlements").send({
+      ...DEFAULT_ENTITLEMENTS,
+      moduleFlags: hardSeatModuleFlags,
+      seatPolicy: {
+        mode: "concurrent",
+        enforced: true,
+        hardLimit: 1,
+        namedUsers: [],
+        allowedDevices: []
+      }
+    });
+
+    const concurrentBlocked = await login(request.agent(app), "C. HardSeat", DEFAULT_PASSWORD);
+    expect(concurrentBlocked.status).toBe(403);
+    expect(concurrentBlocked.body).toMatchObject({ error: "seat_concurrent_limit_reached" });
+
+    const events = await admin
+      .get("/api/auth/events")
+      .query({ eventType: "seat_hard_limit_block", limit: 20 });
+    expect(events.status).toBe(200);
+    expect(events.body.count).toBeGreaterThan(0);
+    expect(["named", "device", "concurrent"]).toContain(events.body.events[0]?.metadata?.mode);
+
+    await admin.put("/api/auth/entitlements").send(DEFAULT_ENTITLEMENTS);
+  });
+
+  it("maps duplicate user-name collisions to 409 conflicts", async () => {
+    const admin = await loginAdminAgent();
+
+    const first = await admin
+      .post("/api/users")
+      .send({ name: "C. DupUser A", role: "Operator", password: DEFAULT_PASSWORD });
+    expect(first.status).toBe(201);
+
+    const duplicateCreate = await admin
+      .post("/api/users")
+      .send({ name: "C. DupUser A", role: "Quality", password: DEFAULT_PASSWORD });
+    expect(duplicateCreate.status).toBe(409);
+    expect(duplicateCreate.body).toMatchObject({ error: "duplicate_user" });
   });
 });

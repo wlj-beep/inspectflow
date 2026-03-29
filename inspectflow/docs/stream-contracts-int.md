@@ -7,6 +7,7 @@ Integration and ingestion: ERP/job ingest, connector orchestration, idempotent p
 - `INT-INGEST-v1`: normalized ingest envelope contract.
 - `INT-CONNECTOR-v2`: connector runtime, retry, and run-log contract.
 - `INT-IDEMPOTENCY-v2`: external key and dedupe semantics.
+- `INT-CONNECTOR-v2` partner onboarding path: `/api/partner-connectors` validate/register/list contract for third-party connector kits (requires `platform_extensions` and `sdkPluginId` when runtime is enabled).
 
 ## Consumes
 - `OPS-WORKCENTER-v1` and `OPS-ROUTING-v1` for mapping context.

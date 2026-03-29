@@ -1,6 +1,6 @@
 # Quality Export Runbook
 
-Implements BL-027 (`QUAL-EXPORT-v1`). Provides CSV exports and starter AS9102-oriented outputs.
+Implements BL-027 (`QUAL-EXPORT-v1`) with BL-066 bubbling export extensions. Provides CSV exports and starter AS9102-oriented outputs.
 
 ## Endpoints
 
@@ -12,7 +12,7 @@ GET /api/records/:id/export
 
 - Capability: `view_records`
 - Response: `text/csv`
-- Notes: includes per-piece comment/audit metadata.
+- Notes: includes per-piece comment/audit metadata and bubble-aware characteristic fields (`bubble_number`, `feature_type`, `gdt_class`, `tolerance_zone`, `feature_quantity`, `feature_units`, `feature_modifiers`, `source_characteristic_key`).
 
 ### AS9102 Starter Export (new)
 
@@ -51,7 +51,21 @@ GET /api/records/:id/export/as9102?profile=as9102-basic
     "part": { "id": "1234", "revision": "A", "description": "Hydraulic Cylinder Body" },
     "lot": "Lot A",
     "inspector": { "id": 1, "name": "J. Morris", "role": "Operator" },
-    "stats": { "measured": 24, "failed": 1, "passRate": 0.9583 }
+    "stats": { "measured": 24, "failed": 1, "passRate": 0.9583 },
+    "characteristics": [
+      {
+        "dimensionId": 42,
+        "name": "Bore Diameter",
+        "bubbleNumber": "20",
+        "featureType": "size",
+        "gdtClass": "position",
+        "toleranceZone": "true_position",
+        "quantity": 1,
+        "units": "in",
+        "modifiers": ["MMC"],
+        "sourceCharacteristicKey": "CHAR-1234-020-BORE"
+      }
+    ]
   },
   "output": {
     "profileId": "as9102-basic",

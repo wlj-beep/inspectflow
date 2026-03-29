@@ -33,6 +33,7 @@ function normalizeImportResult(result, { fallbackStatus = "success" } = {}) {
     failed: Number(result?.failed || 0),
     unresolvedCount: Number(result?.unresolvedCount || 0),
     errors: Array.isArray(result?.errors) ? result.errors : [],
+    warnings: Array.isArray(result?.warnings) ? result.warnings : [],
     unresolvedItems: Array.isArray(result?.unresolvedItems) ? result.unresolvedItems : []
   };
 }

@@ -1,0 +1,56 @@
+{{- if .Values.backup.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "inspectflow-cloud.fullname" . }}-backup
+  labels:
+    {{- include "inspectflow-cloud.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.backup.schedule | quote }}
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            {{- include "inspectflow-cloud.selectorLabels" . | nindent 12 }}
+            app.kubernetes.io/component: backup
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: backup
+              image: "{{ .Values.backup.image.repository }}:{{ .Values.backup.image.tag }}"
+              imagePullPolicy: {{ .Values.backup.image.pullPolicy }}
+              command: ["bash", "scripts/backup/run-scheduled-backup.sh"]
+              envFrom:
+                - configMapRef:
+                    name: {{ include "inspectflow-cloud.fullname" . }}-config
+                - secretRef:
+                    name: {{ include "inspectflow-cloud.fullname" . }}-secret
+              env:
+                - name: INSPECTFLOW_ENV_FILE
+                  value: /dev/null
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "inspectflow-cloud.fullname" . }}-secret
+                      key: DATABASE_URL
+                - name: BACKUP_ROOT
+                  value: /app/var/backups
+                - name: BACKUP_LOG_FILE
+                  value: /app/var/log/backup-workflow.log
+                - name: BACKUP_RETENTION_DAYS
+                  value: {{ .Values.backend.env.backupRetentionDays | quote }}
+              volumeMounts:
+                - name: runtime
+                  mountPath: /app/var
+              {{- with .Values.backup.resources }}
+              resources:
+{{ toYaml . | nindent 16 }}
+              {{- end }}
+          volumes:
+            - name: runtime
+              persistentVolumeClaim:
+                claimName: {{ include "inspectflow-cloud.fullname" . }}-runtime
+{{- end }}

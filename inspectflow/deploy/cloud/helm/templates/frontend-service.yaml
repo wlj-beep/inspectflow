@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "inspectflow-cloud.fullname" . }}-frontend
+  labels:
+    {{- include "inspectflow-cloud.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "inspectflow-cloud.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: frontend
+  ports:
+    - name: http
+      port: {{ .Values.frontend.service.port }}
+      targetPort: http

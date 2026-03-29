@@ -1,41 +1,16 @@
-const REVISION_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+import {
+  nextRevisionCode,
+  normalizeRevisionCode,
+  revisionCodeToIndex,
+  revisionIndexToCode
+} from "../../frontend/src/shared/utils/revisions.js";
 
-export function normalizeRevisionCode(value) {
-  return String(value || "")
-    .trim()
-    .toUpperCase()
-    .replace(/[^A-Z]/g, "");
-}
-
-export function revisionCodeToIndex(value) {
-  const code = normalizeRevisionCode(value);
-  if (!code) return null;
-  let index = 0;
-  for (const ch of code) {
-    const n = REVISION_ALPHABET.indexOf(ch);
-    if (n < 0) return null;
-    index = index * 26 + (n + 1);
-  }
-  return index;
-}
-
-export function revisionIndexToCode(value) {
-  let n = Number(value);
-  if (!Number.isInteger(n) || n <= 0) return null;
-  let out = "";
-  while (n > 0) {
-    n -= 1;
-    out = REVISION_ALPHABET[n % 26] + out;
-    n = Math.floor(n / 26);
-  }
-  return out;
-}
-
-export function nextRevisionCode(value) {
-  const idx = revisionCodeToIndex(value);
-  if (!idx) return "A";
-  return revisionIndexToCode(idx + 1);
-}
+export {
+  nextRevisionCode,
+  normalizeRevisionCode,
+  revisionCodeToIndex,
+  revisionIndexToCode
+};
 
 function normalizeChangedFields(fields) {
   if (!Array.isArray(fields)) return [];
@@ -102,7 +77,9 @@ export async function loadCurrentPartSetup(client, partId) {
   let dimsByOp = {};
   if (opIds.length) {
     const dimsRes = await client.query(
-      `SELECT d.id, d.operation_id, d.name, d.nominal, d.tol_plus, d.tol_minus, d.unit, d.sampling, d.sampling_interval, d.input_mode
+      `SELECT d.id, d.operation_id, d.name, d.bubble_number, d.feature_type, d.gdt_class, d.tolerance_zone,
+              d.feature_quantity, d.feature_units, d.feature_modifiers_json, d.source_characteristic_key,
+              d.nominal, d.tol_plus, d.tol_minus, d.unit, d.sampling, d.sampling_interval, d.input_mode
        FROM dimensions d
        WHERE d.operation_id = ANY($1)
        ORDER BY d.id ASC`,
@@ -130,6 +107,14 @@ export async function loadCurrentPartSetup(client, partId) {
       const item = {
         id: row.id,
         name: row.name,
+        bubbleNumber: row.bubble_number || null,
+        featureType: row.feature_type || null,
+        gdtClass: row.gdt_class || null,
+        toleranceZone: row.tolerance_zone || null,
+        featureQuantity: row.feature_quantity == null ? null : Number(row.feature_quantity),
+        featureUnits: row.feature_units || null,
+        featureModifiers: Array.isArray(row.feature_modifiers_json) ? row.feature_modifiers_json : [],
+        sourceCharacteristicKey: row.source_characteristic_key || null,
         nominal: row.nominal,
         tolPlus: row.tol_plus,
         tolMinus: row.tol_minus,
@@ -174,6 +159,14 @@ function toSnapshotValue(partSetup) {
       workCenterName: op.workCenterName || null,
       dimensions: (op.dimensions || []).map((dim) => ({
         name: dim.name,
+        bubbleNumber: dim.bubbleNumber || null,
+        featureType: dim.featureType || null,
+        gdtClass: dim.gdtClass || null,
+        toleranceZone: dim.toleranceZone || null,
+        featureQuantity: dim.featureQuantity == null ? null : Number(dim.featureQuantity),
+        featureUnits: dim.featureUnits || null,
+        featureModifiers: Array.isArray(dim.featureModifiers) ? dim.featureModifiers : [],
+        sourceCharacteristicKey: dim.sourceCharacteristicKey || null,
         nominal: Number(dim.nominal),
         tolPlus: Number(dim.tolPlus),
         tolMinus: Number(dim.tolMinus),
@@ -203,6 +196,7 @@ export async function ensurePartSetupBaselineRevision(client, { partId, changedB
     `INSERT INTO part_setup_revisions
        (part_id, revision_code, revision_index, part_name, snapshot, change_summary, changed_fields, created_by_role)
      VALUES ($1,'A',1,$2,$3,$4,$5,$6)
+     ON CONFLICT (part_id, revision_code) DO NOTHING
      RETURNING id, part_id, revision_code, revision_index, part_name, snapshot, change_summary,
                changed_fields, created_by_role, created_at`,
     [
@@ -214,7 +208,8 @@ export async function ensurePartSetupBaselineRevision(client, { partId, changedB
       changedByRole
     ]
   );
-  return inserted.rows[0] || null;
+  if (inserted.rows[0]) return inserted.rows[0];
+  return getLatestPartRevision(client, partId);
 }
 
 export async function createPartSetupRevision(
@@ -240,6 +235,7 @@ export async function createPartSetupRevision(
       `INSERT INTO part_setup_revisions
          (part_id, revision_code, revision_index, part_name, snapshot, change_summary, changed_fields, created_by_role)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+       ON CONFLICT (part_id, revision_code) DO NOTHING
        RETURNING id, part_id, revision_code, revision_index, part_name, snapshot, change_summary,
                  changed_fields, created_by_role, created_at`,
       [
@@ -253,7 +249,11 @@ export async function createPartSetupRevision(
         changedByRole
       ]
     );
-    return { created: true, revision: insertedInitial.rows[0] };
+    if (insertedInitial.rows[0]) {
+      return { created: true, revision: insertedInitial.rows[0] };
+    }
+    const concurrentLatest = await getLatestPartRevision(client, partId);
+    return { created: false, revision: concurrentLatest };
   }
 
   if (!latest) {

@@ -1,0 +1,10 @@
+project_name              = "inspectflow"
+environment               = "prod"
+aws_region                = "us-gov-west-1"
+vpc_id                    = "vpc-0123456789abcdef0"
+db_subnet_ids             = ["subnet-0123456789abcdef0", "subnet-0123456789abcdef1"]
+allowed_ingress_cidrs     = ["203.0.113.0/24"]
+allowed_security_group_ids = ["sg-0123456789abcdef0"]
+backup_bucket_name        = "inspectflow-prod-backups"
+backup_prefix             = "inspectflow/prod"
+database_password         = "change-me-now"

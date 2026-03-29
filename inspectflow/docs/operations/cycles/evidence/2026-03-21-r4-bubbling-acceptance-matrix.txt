@@ -1,0 +1,42 @@
+== Coordination gate ==
+
+> inspectflow@0.1.0 test:coordination
+> npm run coordination:check
+
+
+> inspectflow@0.1.0 coordination:check
+> node scripts/validate-coordination.mjs
+
+Coordination validation passed.
+== Backend test DB setup ==
+
+> inspectflow-backend@0.1.0 db:test:setup
+> npm run db:migrate:test && npm run db:seed:test
+
+
+> inspectflow-backend@0.1.0 db:migrate:test
+> NODE_ENV=test node src/scripts/migrate.js
+
+Schema applied.
+
+> inspectflow-backend@0.1.0 db:seed:test
+> NODE_ENV=test node src/scripts/seed.js
+
+Seeded local credentials for 10 users.
+Seed applied.
+== Backend bubbling acceptance tests ==
+
+ RUN  v2.1.9 /Users/joshlane/Documents/Playground 2/inspectflow/backend
+
+ ✓ test/quality-export.test.js (1 test) 117ms
+ ✓ test/characteristic-bubbling-import.test.js (1 test) 141ms
+ ✓ test/metrology-parser-ingest.test.js (1 test) 119ms
+ ✓ test/metrology-parser-profile.test.js (4 tests) 35ms
+ ✓ test/characteristic-schema-audit.test.js (1 test) 93ms
+
+ Test Files  5 passed (5)
+      Tests  8 passed (8)
+   Start at  19:19:40
+   Duration  1.97s (transform 182ms, setup 0ms, collect 906ms, tests 505ms, environment 0ms, prepare 150ms)
+
+PASS: R4 bubbling acceptance matrix completed.

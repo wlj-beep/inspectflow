@@ -1,0 +1,23 @@
+{
+  "docs": {
+    "maxBytes": 40960,
+    "exemptPrefixes": ["docs/backlog/", "docs/operations/cycles/evidence/"],
+    "exemptFiles": ["WORKLOG.archive-2026-03-12-to-2026-03-22.md"]
+  },
+  "source": {
+    "maxLines": 2000,
+    "paths": ["frontend/src/domains/jobflow/"],
+    "extensions": [".js", ".jsx", ".ts", ".tsx"]
+  },
+  "tests": {
+    "maxLines": 900,
+    "paths": ["frontend/tests/", "backend/test/"],
+    "extensions": [".js", ".jsx", ".ts", ".tsx"]
+  },
+  "data": {
+    "maxBytes": 131072,
+    "extensions": [".csv", ".json", ".sql", ".ndjson", ".log", ".xml", ".yaml", ".yml", ".tar.gz", ".zip"],
+    "exemptFiles": ["package-lock.json", "frontend/package-lock.json", "backend/package-lock.json"],
+    "approvedRoots": ["var/"]
+  }
+}

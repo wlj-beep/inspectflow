@@ -15,6 +15,19 @@ Implements BL-053, BL-054, BL-055, BL-057, and BL-059.
 - `POST /api/technical-ops/lifecycle/retention`
 - `GET /api/analytics/admin/operational-rollup`
 
+## Extension Runtime Policy (BL-046)
+
+When `EXT_RUNTIME_ENABLED=true`, Admins can inspect extension SDK policy and plugin status:
+- `GET /api/extensions/runtime`: effective hook/capability allowlist and limits.
+- `GET /api/extensions/plugins`: registered plugin manifest summaries with policy findings/status.
+- `POST /api/extensions/plugins`: register/update a plugin manifest and evaluate policy status.
+- `POST /api/extensions/plugins/:pluginId/enable`: enable a plugin only when policy status is `allowed` and required module is enabled.
+
+Interpretation guidance:
+- `*_not_allowed` findings indicate the manifest requested disallowed hooks/capabilities.
+- `module_disabled` indicates module entitlement does not currently allow the plugin runtime surface.
+- `runtime_disabled` indicates the extension runtime is globally switched off.
+
 ## Operational Checks
 
 1. Validate runtime health and DB/storage signals:

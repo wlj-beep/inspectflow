@@ -45,7 +45,7 @@ test.describe("Live UI critical path @live", () => {
     });
     expect(partBaselineRes.ok()).toBe(true);
 
-    await expect(page.locator(".data-chip")).toContainText(/Live Data|Local Demo/);
+    await expect(page.getByTestId("data-status-chip")).toContainText(/Live Data|Local Demo/);
 
     await page.getByRole("button", { name: "Admin" }).click();
 

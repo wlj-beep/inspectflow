@@ -7,6 +7,7 @@ Shop-floor workflows: jobs, operations, work centers, routing changes, operator 
 - `OPS-WORKCENTER-v1`: work center master and assignment contract.
 - `OPS-ROUTING-v1`: operation sequencing and reroute contract.
 - `OPS-JOBFLOW-v1`: draft/incomplete/complete lifecycle control contract.
+- `EDGE-SYNC-v1`: edge/standalone interoperability sync contract (`/api/edge-sync/contracts`, `/api/edge-sync/snapshot`, `/api/edge-sync/validate`) gated by EDGE module enablement.
 
 ## API Surface Notes
 - `POST /api/operations/resequence`: re-sequences one or more operations for a part with revision trace updates.

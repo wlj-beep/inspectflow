@@ -7,8 +7,34 @@ import {
   listAs9102Profiles,
   renderAs9102Export
 } from "../services/quality/as9102Exports.js";
+import { refreshAnalyticsMartsIncremental } from "../services/analytics/martBuilder.js";
+import {
+  acknowledgeInstructionForContext,
+  getActiveInstructionContext
+} from "../services/instructions.js";
 
 const router = Router();
+const JOB_SUBMISSION_COLUMNS = [
+  "id",
+  "part_id",
+  "operation_id",
+  "status",
+  "lock_owner_user_id"
+].join(", ");
+const ACTIVE_RECORD_COLUMNS = [
+  "id",
+  "job_id",
+  "part_id",
+  "operation_id",
+  "lot",
+  "serial_number",
+  "qty",
+  "timestamp",
+  "operator_user_id",
+  "status",
+  "oot",
+  "comment"
+].join(", ");
 
 function requestRole(req) {
   return getActorRole(req);
@@ -29,6 +55,31 @@ function resolveActorUserId(req, suppliedUserId) {
     suppliedUserId: supplied,
     effectiveUserId: effective
   };
+}
+
+function resolveInstructionOperatorUserId(req, value) {
+  const actorUserId = getActorUserId(req);
+  const requestedUserId = parsePositiveInteger(value);
+  if (Number.isInteger(actorUserId) && actorUserId > 0) {
+    if (requestedUserId && requestedUserId !== actorUserId) {
+      return { error: "auth_user_mismatch" };
+    }
+    return { operatorUserId: actorUserId };
+  }
+  return { operatorUserId: requestedUserId };
+}
+
+async function getActiveRecordById(id, db = query) {
+  const runner = typeof db?.query === "function"
+    ? db.query.bind(db)
+    : db;
+  const { rows } = await runner(
+    `SELECT ${ACTIVE_RECORD_COLUMNS}
+     FROM records
+     WHERE id=$1 AND deleted_at IS NULL`,
+    [id]
+  );
+  return rows[0] || null;
 }
 
 function normalizeOptionalText(value) {
@@ -103,6 +154,113 @@ function splitRange(value) {
   return [minRaw.trim(), maxRaw.trim()];
 }
 
+const DEFAULT_ATTACHMENT_RETENTION_DAYS = 365;
+const MAX_ATTACHMENT_RETENTION_DAYS = 3650;
+const MAX_ATTACHMENT_BYTES = Math.max(1, Number(process.env.RECORD_ATTACHMENT_MAX_BYTES || 1_500_000));
+
+function decodeBase64Payload(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  const normalized = raw.includes(",") && raw.startsWith("data:")
+    ? raw.slice(raw.indexOf(",") + 1)
+    : raw;
+  if (!/^[A-Za-z0-9+/=\s]+$/.test(normalized)) return null;
+  try {
+    const bytes = Buffer.from(normalized, "base64");
+    if (!bytes.length) return null;
+    return { normalized: normalized.replace(/\s+/g, ""), bytes };
+  } catch (_err) {
+    return null;
+  }
+}
+
+function normalizeAttachmentPayload(item, qty) {
+  const pieceNumber = item?.pieceNumber == null ? null : Number(item.pieceNumber);
+  if (pieceNumber != null && (!Number.isInteger(pieceNumber) || pieceNumber <= 0)) {
+    return { error: "invalid_piece_number" };
+  }
+  if (qty && pieceNumber && pieceNumber > qty) {
+    return { error: "piece_number_out_of_range" };
+  }
+  const fileName = String(item?.fileName || "").trim();
+  if (!fileName || fileName.length > 255) {
+    return { error: "invalid_attachment_file_name" };
+  }
+  const mediaType = String(item?.mediaType || "").trim().toLowerCase();
+  if (!mediaType || mediaType.length > 120) {
+    return { error: "invalid_attachment_media_type" };
+  }
+  const decoded = decodeBase64Payload(item?.dataBase64);
+  if (!decoded) return { error: "invalid_attachment_data" };
+  if (decoded.bytes.length > MAX_ATTACHMENT_BYTES) {
+    return { error: "attachment_too_large" };
+  }
+  const retentionDaysRaw = item?.retentionDays == null
+    ? DEFAULT_ATTACHMENT_RETENTION_DAYS
+    : Number(item.retentionDays);
+  if (!Number.isInteger(retentionDaysRaw) || retentionDaysRaw <= 0 || retentionDaysRaw > MAX_ATTACHMENT_RETENTION_DAYS) {
+    return { error: "invalid_retention_days" };
+  }
+  return {
+    pieceNumber,
+    fileName,
+    mediaType,
+    dataBase64: decoded.normalized,
+    byteSize: decoded.bytes.length,
+    retentionDays: retentionDaysRaw
+  };
+}
+
+async function refreshAnalyticsForRecordMutation({
+  triggerSource,
+  role,
+  userId,
+  recordId
+}) {
+  const safeRecordId = parsePositiveInteger(recordId);
+  if (!safeRecordId) return;
+  await refreshAnalyticsMartsIncremental({
+    triggerSource,
+    requestedByRole: role || "system",
+    requestedByUserId: parsePositiveInteger(userId),
+    recordIds: [safeRecordId]
+  });
+}
+
+async function deactivateRecordById(id, actorUserId, actorRole) {
+  return transaction(async (client) => {
+    const record = await getActiveRecordById(id, client);
+    if (!record) return { error: "not_found" };
+    if (!Number.isInteger(actorUserId) || actorUserId <= 0) return { error: "user_required" };
+
+    const deletedRes = await client.query(
+      `UPDATE records
+       SET deleted_at = NOW()
+       WHERE id=$1 AND deleted_at IS NULL
+       RETURNING deleted_at`,
+      [id]
+    );
+    const deletedAt = deletedRes.rows[0]?.deleted_at || null;
+    if (!deletedAt) return { error: "not_found" };
+
+    await client.query(
+      `UPDATE record_attachments
+       SET deleted_at = COALESCE(deleted_at, NOW()),
+           updated_at = NOW()
+       WHERE record_id=$1 AND deleted_at IS NULL`,
+      [id]
+    );
+
+    await client.query(
+      `INSERT INTO audit_log (record_id, user_id, field, before_value, after_value, reason)
+       VALUES ($1,$2,$3,$4,$5,$6)`,
+      [id, actorUserId, "deleted_at", null, deletedAt.toISOString(), `soft_delete:${actorRole || "unknown"}`]
+    );
+
+    return { deletedAt: deletedAt.toISOString() };
+  });
+}
+
 async function validateRecordRefs(operationId, values, tools) {
   const dimIds = Array.from(
     new Set([
@@ -148,7 +306,7 @@ async function validateRecordRefs(operationId, values, tools) {
 router.get("/", requireCapability("view_records"), async (req, res, next) => {
   try {
     const { partId, operationId, status, result, serial } = req.query;
-    const filters = [];
+    const filters = ["deleted_at IS NULL"];
     const params = [];
     if (partId) { params.push(partId); filters.push(`part_id=$${params.length}`); }
     if (operationId) { params.push(operationId); filters.push(`operation_id=$${params.length}`); }
@@ -162,10 +320,10 @@ router.get("/", requireCapability("view_records"), async (req, res, next) => {
     } else if (result === "incomplete") {
       filters.push("status='incomplete'");
     }
-    const where = filters.length ? `WHERE ${filters.join(" AND ")}` : "";
+    const where = `WHERE ${filters.join(" AND ")}`;
 
     const { rows } = await query(
-      `SELECT * FROM records ${where} ORDER BY timestamp DESC`,
+      `SELECT id, job_id, part_id, operation_id, lot, serial_number, qty, timestamp, operator_user_id, status, oot, comment FROM records ${where} ORDER BY timestamp DESC`,
       params
     );
     res.json(rows);
@@ -218,7 +376,8 @@ router.get("/trace", requireCapability("view_records"), async (req, res, next) =
       )`);
     }
 
-    const where = filters.length ? `WHERE ${filters.join(" AND ")}` : "";
+    filters.unshift("r.deleted_at IS NULL");
+    const where = `WHERE ${filters.join(" AND ")}`;
     params.push(Math.min(limitNum, 500));
 
     const recordRes = await query(
@@ -255,6 +414,8 @@ router.get("/trace", requireCapability("view_records"), async (req, res, next) =
 
     const valuesRes = await query(
       `SELECT rv.record_id, rv.dimension_id, COALESCE(rds.name, d.name) AS dimension_name,
+              COALESCE(rds.bubble_number, d.bubble_number) AS bubble_number,
+              COALESCE(rds.source_characteristic_key, d.source_characteristic_key) AS source_characteristic_key,
               rv.piece_number, rv.value, rv.is_oot
        FROM record_values rv
        LEFT JOIN record_dimension_snapshots rds
@@ -300,7 +461,16 @@ router.get("/trace", requireCapability("view_records"), async (req, res, next) =
        FROM record_piece_comment_audit pca
        LEFT JOIN users u ON u.id = pca.user_id
        WHERE pca.record_id = ANY($1)
-       ORDER BY pca.record_id ASC, pca.timestamp DESC, pca.id DESC`,
+      ORDER BY pca.record_id ASC, pca.timestamp DESC, pca.id DESC`,
+      [recordIds]
+    );
+
+    const attachmentsRes = await query(
+      `SELECT id, record_id, piece_number, file_name, media_type, byte_size, retention_until,
+              uploaded_by_user_id, uploaded_by_role, created_at
+       FROM record_attachments
+       WHERE record_id = ANY($1) AND deleted_at IS NULL
+       ORDER BY record_id ASC, created_at ASC, id ASC`,
       [recordIds]
     );
 
@@ -348,6 +518,12 @@ router.get("/trace", requireCapability("view_records"), async (req, res, next) =
     for (const row of pieceCommentAuditRes.rows) {
       if (!pieceCommentAuditByRecord[row.record_id]) pieceCommentAuditByRecord[row.record_id] = [];
       pieceCommentAuditByRecord[row.record_id].push(row);
+    }
+
+    const attachmentsByRecord = {};
+    for (const row of attachmentsRes.rows) {
+      if (!attachmentsByRecord[row.record_id]) attachmentsByRecord[row.record_id] = [];
+      attachmentsByRecord[row.record_id].push(row);
     }
 
     const qtyAdjustByJob = {};
@@ -406,6 +582,7 @@ router.get("/trace", requireCapability("view_records"), async (req, res, next) =
         pieceComments: filteredComments,
         corrections: filteredCorrections,
         pieceCommentCorrections: filteredCommentCorrections,
+        attachments: attachmentsByRecord[row.id] || [],
         quantityAdjustments: qtyAdjustByJob[row.job_id] || []
       };
     });
@@ -429,12 +606,13 @@ router.get("/trace", requireCapability("view_records"), async (req, res, next) =
 router.get("/:id", requireCapability("view_records"), async (req, res, next) => {
   try {
     const { id } = req.params;
-    const recRes = await query("SELECT * FROM records WHERE id=$1", [id]);
-    const record = recRes.rows[0];
+    const record = await getActiveRecordById(id);
     if (!record) return res.status(404).json({ error: "not_found" });
 
     const dimsSnapshotRes = await query(
-      `SELECT dimension_id AS id, name, nominal, tol_plus, tol_minus, unit, sampling, sampling_interval, input_mode
+      `SELECT dimension_id AS id, name, bubble_number, feature_type, gdt_class, tolerance_zone,
+              feature_quantity, feature_units, feature_modifiers_json, source_characteristic_key,
+              nominal, tol_plus, tol_minus, unit, sampling, sampling_interval, input_mode
        FROM record_dimension_snapshots
        WHERE record_id=$1
        ORDER BY dimension_id ASC`,
@@ -443,11 +621,11 @@ router.get("/:id", requireCapability("view_records"), async (req, res, next) => 
     const dimsRes = dimsSnapshotRes.rows.length
       ? dimsSnapshotRes
       : await query(
-          "SELECT * FROM dimensions WHERE operation_id=$1 ORDER BY id ASC",
+          "SELECT id, operation_id, name, bubble_number, feature_type, gdt_class, tolerance_zone, feature_quantity, feature_units, feature_modifiers_json, source_characteristic_key, nominal, tol_plus, tol_minus, unit, sampling, sampling_interval, input_mode FROM dimensions WHERE operation_id=$1 ORDER BY id ASC",
           [record.operation_id]
         );
     const valuesRes = await query(
-      "SELECT * FROM record_values WHERE record_id=$1 ORDER BY piece_number ASC",
+      "SELECT record_id, dimension_id, piece_number, value, is_oot FROM record_values WHERE record_id=$1 ORDER BY piece_number ASC",
       [id]
     );
     const toolsRes = await query(
@@ -459,7 +637,7 @@ router.get("/:id", requireCapability("view_records"), async (req, res, next) => 
       [id]
     );
     const missingRes = await query(
-      "SELECT * FROM missing_pieces WHERE record_id=$1 ORDER BY piece_number ASC",
+      "SELECT record_id, piece_number, reason, nc_num, details FROM missing_pieces WHERE record_id=$1 ORDER BY piece_number ASC",
       [id]
     );
     const pieceCommentsRes = await query(
@@ -483,7 +661,15 @@ router.get("/:id", requireCapability("view_records"), async (req, res, next) => 
       [id]
     );
     const auditRes = await query(
-      "SELECT * FROM audit_log WHERE record_id=$1 ORDER BY timestamp DESC",
+      "SELECT id, record_id, user_id, timestamp, field, before_value, after_value, reason FROM audit_log WHERE record_id=$1 ORDER BY timestamp DESC",
+      [id]
+    );
+    const attachmentsRes = await query(
+      `SELECT id, record_id, piece_number, file_name, media_type, byte_size, retention_until,
+              uploaded_by_user_id, uploaded_by_role, created_at, updated_at
+       FROM record_attachments
+       WHERE record_id=$1 AND deleted_at IS NULL
+       ORDER BY created_at ASC, id ASC`,
       [id]
     );
 
@@ -495,8 +681,227 @@ router.get("/:id", requireCapability("view_records"), async (req, res, next) => 
       missingPieces: missingRes.rows,
       pieceComments: pieceCommentsRes.rows,
       pieceCommentAudit: pieceCommentAuditRes.rows,
+      attachments: attachmentsRes.rows,
       auditLog: auditRes.rows
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/:id/instructions/active", requireAnyCapability(["submit_records", "view_records", "edit_records", "view_admin"]), async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    if (!(await getActiveRecordById(id))) return res.status(404).json({ error: "not_found" });
+    const resolvedUser = resolveInstructionOperatorUserId(req, req.query.operatorUserId);
+    if (resolvedUser.error === "auth_user_mismatch") {
+      return res.status(403).json({ error: "auth_user_mismatch" });
+    }
+
+    const active = await getActiveInstructionContext(
+      { query },
+      {
+        contextType: "record",
+        contextId: id,
+        operatorUserId: resolvedUser.operatorUserId
+      }
+    );
+    if (!active) return res.status(404).json({ error: "not_found" });
+    res.json(active);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/:id/instructions/acknowledgments", requireCapability("acknowledge_instructions"), async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    if (!(await getActiveRecordById(id))) return res.status(404).json({ error: "not_found" });
+    if (req.body?.role !== undefined || req.body?.actorRole !== undefined) {
+      return res.status(400).json({ error: "role_field_not_allowed" });
+    }
+    const resolvedUser = resolveInstructionOperatorUserId(req, req.body?.operatorUserId);
+    if (resolvedUser.error === "auth_user_mismatch") {
+      return res.status(403).json({ error: "auth_user_mismatch" });
+    }
+
+    const requestedVersionId = req.body?.instructionVersionId == null
+      ? null
+      : parsePositiveInteger(req.body.instructionVersionId);
+    if (req.body?.instructionVersionId != null && requestedVersionId == null) {
+      return res.status(400).json({ error: "invalid_instruction_version_id" });
+    }
+
+    const acknowledged = await transaction(async (client) => acknowledgeInstructionForContext(client, {
+      contextType: "record",
+      contextId: Number(id),
+      operatorUserId: resolvedUser.operatorUserId,
+      actorRole: requestRole(req),
+      instructionVersionId: requestedVersionId
+    }));
+
+    if (acknowledged?.error === "operator_user_required") {
+      return res.status(400).json({ error: "operator_user_required" });
+    }
+    if (acknowledged?.error === "operator_not_found") {
+      return res.status(400).json({ error: "operator_not_found" });
+    }
+    if (acknowledged?.error === "operator_role_required") {
+      return res.status(400).json({ error: "operator_role_required" });
+    }
+    if (acknowledged?.error === "instruction_not_published") {
+      return res.status(409).json({ error: "instruction_not_published" });
+    }
+    if (acknowledged?.error === "instruction_version_not_active") {
+      return res.status(409).json({ error: "instruction_version_not_active" });
+    }
+    if (acknowledged?.error === "not_found") return res.status(404).json({ error: "not_found" });
+
+    res.status(acknowledged.created ? 201 : 200).json(acknowledged);
+  } catch (err) {
+    if (err?.code === "23505") {
+      return res.status(409).json({ error: "instruction_already_acknowledged" });
+    }
+    next(err);
+  }
+});
+
+router.get("/:id/attachments", requireCapability("view_records"), async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const record = await getActiveRecordById(id);
+    if (!record) return res.status(404).json({ error: "not_found" });
+    const includeData = String(req.query.includeData || "").toLowerCase() === "true";
+    const fields = includeData
+      ? "id, record_id, piece_number, file_name, media_type, byte_size, data_base64, retention_until, uploaded_by_user_id, uploaded_by_role, created_at, updated_at"
+      : "id, record_id, piece_number, file_name, media_type, byte_size, retention_until, uploaded_by_user_id, uploaded_by_role, created_at, updated_at";
+    const { rows } = await query(
+      `SELECT ${fields}
+       FROM record_attachments
+       WHERE record_id=$1 AND deleted_at IS NULL
+       ORDER BY created_at ASC, id ASC`,
+      [id]
+    );
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/:id/attachments/:attachmentId", requireCapability("view_records"), async (req, res, next) => {
+  try {
+    const { id, attachmentId } = req.params;
+    const record = await getActiveRecordById(id);
+    if (!record) return res.status(404).json({ error: "not_found" });
+    const attachmentRes = await query(
+      `SELECT id, record_id, piece_number, file_name, media_type, byte_size, data_base64, retention_until,
+              uploaded_by_user_id, uploaded_by_role, created_at, updated_at
+       FROM record_attachments
+       WHERE id=$1 AND record_id=$2 AND deleted_at IS NULL`,
+      [attachmentId, id]
+    );
+    const attachment = attachmentRes.rows[0];
+    if (!attachment) return res.status(404).json({ error: "not_found" });
+    res.json(attachment);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/:id/attachments", requireAnyCapability(["submit_records", "edit_records"]), async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { userId, pieceNumber, fileName, mediaType, dataBase64, retentionDays } = req.body || {};
+    const { actorUserId, suppliedUserId, effectiveUserId } = resolveActorUserId(req, userId);
+    if (!Number.isInteger(effectiveUserId)) {
+      return res.status(400).json({ error: "required_fields_missing" });
+    }
+    if (Number.isInteger(actorUserId) && Number.isInteger(suppliedUserId) && suppliedUserId !== actorUserId) {
+      return res.status(403).json({ error: "auth_user_mismatch" });
+    }
+
+    const role = requestRole(req);
+    const created = await transaction(async (client) => {
+      const userRes = await client.query("SELECT id FROM users WHERE id=$1", [effectiveUserId]);
+      if (!userRes.rows[0]) return { error: "user_not_found" };
+      const record = await getActiveRecordById(id, client);
+      if (!record) return { error: "record_not_found" };
+      const normalized = normalizeAttachmentPayload({ pieceNumber, fileName, mediaType, dataBase64, retentionDays }, Number(record.qty));
+      if (normalized.error) return { error: normalized.error };
+      const insertRes = await client.query(
+        `INSERT INTO record_attachments
+           (record_id, piece_number, file_name, media_type, byte_size, data_base64, retention_until, uploaded_by_user_id, uploaded_by_role)
+         VALUES ($1,$2,$3,$4,$5,$6,NOW() + ($7 * INTERVAL '1 day'),$8,$9)
+         RETURNING id, record_id, piece_number, file_name, media_type, byte_size, retention_until, uploaded_by_user_id, uploaded_by_role, created_at, updated_at`,
+        [id, normalized.pieceNumber, normalized.fileName, normalized.mediaType, normalized.byteSize, normalized.dataBase64, normalized.retentionDays, effectiveUserId, role]
+      );
+      return insertRes.rows[0];
+    });
+
+    if (created?.error === "user_not_found") return res.status(400).json({ error: "user_not_found" });
+    if (created?.error === "record_not_found") return res.status(404).json({ error: "not_found" });
+    if (created?.error) return res.status(400).json({ error: created.error });
+    res.status(201).json(created);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.put("/:id/attachments/:attachmentId/retention", requireCapability("edit_records"), async (req, res, next) => {
+  try {
+    const { id, attachmentId } = req.params;
+    const { userId, retentionDays } = req.body || {};
+    const { actorUserId, suppliedUserId, effectiveUserId } = resolveActorUserId(req, userId);
+    if (!Number.isInteger(effectiveUserId)) {
+      return res.status(400).json({ error: "required_fields_missing" });
+    }
+    if (Number.isInteger(actorUserId) && Number.isInteger(suppliedUserId) && suppliedUserId !== actorUserId) {
+      return res.status(403).json({ error: "auth_user_mismatch" });
+    }
+    const retention = Number(retentionDays);
+    if (!Number.isInteger(retention) || retention <= 0 || retention > MAX_ATTACHMENT_RETENTION_DAYS) {
+      return res.status(400).json({ error: "invalid_retention_days" });
+    }
+    const updated = await transaction(async (client) => {
+      const userRes = await client.query("SELECT id FROM users WHERE id=$1", [effectiveUserId]);
+      if (!userRes.rows[0]) return { error: "user_not_found" };
+      const record = await getActiveRecordById(id, client);
+      if (!record) return { error: "not_found" };
+      const updateRes = await client.query(
+        `UPDATE record_attachments
+         SET retention_until = NOW() + ($1 * INTERVAL '1 day'),
+             updated_at = NOW()
+         WHERE id=$2 AND record_id=$3 AND deleted_at IS NULL
+         RETURNING id, record_id, piece_number, file_name, media_type, byte_size, retention_until, uploaded_by_user_id, uploaded_by_role, created_at, updated_at`,
+        [retention, attachmentId, id]
+      );
+      return updateRes.rows[0] || { error: "not_found" };
+    });
+    if (updated?.error === "user_not_found") return res.status(400).json({ error: "user_not_found" });
+    if (updated?.error === "not_found") return res.status(404).json({ error: "not_found" });
+    res.json(updated);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/:id/deactivate", requireCapability("edit_records"), async (req, res, next) => {
+  try {
+    const result = await deactivateRecordById(req.params.id, getActorUserId(req), requestRole(req));
+    if (result?.error === "user_required") return res.status(400).json({ error: "user_required" });
+    if (result?.error === "not_found") return res.status(404).json({ error: "not_found" });
+    res.json({ ok: true, deletedAt: result.deletedAt });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.delete("/:id", requireCapability("edit_records"), async (req, res, next) => {
+  try {
+    const result = await deactivateRecordById(req.params.id, getActorUserId(req), requestRole(req));
+    if (result?.error === "user_required") return res.status(400).json({ error: "user_required" });
+    if (result?.error === "not_found") return res.status(404).json({ error: "not_found" });
+    res.json({ ok: true, deletedAt: result.deletedAt });
   } catch (err) {
     next(err);
   }
@@ -505,12 +910,21 @@ router.get("/:id", requireCapability("view_records"), async (req, res, next) => 
 router.get("/:id/export", requireCapability("view_records"), async (req, res, next) => {
   try {
     const { id } = req.params;
-    const recRes = await query("SELECT * FROM records WHERE id=$1", [id]);
-    const record = recRes.rows[0];
+    const recordIds = [Number(id)];
+    const record = await getActiveRecordById(id);
     if (!record) return res.status(404).json({ error: "not_found" });
 
     const { rows } = await query(
-      `SELECT rv.record_id, rv.dimension_id, COALESCE(rds.name, d.name) AS dimension_name, rv.piece_number, rv.value, rv.is_oot,
+      `SELECT rv.record_id, rv.dimension_id, COALESCE(rds.name, d.name) AS dimension_name,
+              COALESCE(rds.bubble_number, d.bubble_number) AS bubble_number,
+              COALESCE(rds.feature_type, d.feature_type) AS feature_type,
+              COALESCE(rds.gdt_class, d.gdt_class) AS gdt_class,
+              COALESCE(rds.tolerance_zone, d.tolerance_zone) AS tolerance_zone,
+              COALESCE(rds.feature_quantity, d.feature_quantity) AS feature_quantity,
+              COALESCE(rds.feature_units, d.feature_units) AS feature_units,
+              COALESCE(rds.feature_modifiers_json, d.feature_modifiers_json, '[]'::jsonb) AS feature_modifiers_json,
+              COALESCE(rds.source_characteristic_key, d.source_characteristic_key) AS source_characteristic_key,
+              rv.piece_number, rv.value, rv.is_oot,
               rpc.comment AS piece_comment, rpc.serial_number AS piece_serial_number
        FROM record_values rv
        LEFT JOIN record_dimension_snapshots rds
@@ -518,18 +932,18 @@ router.get("/:id/export", requireCapability("view_records"), async (req, res, ne
        LEFT JOIN dimensions d ON d.id = rv.dimension_id
        LEFT JOIN record_piece_comments rpc
          ON rpc.record_id = rv.record_id AND rpc.piece_number = rv.piece_number
-       WHERE rv.record_id=$1
+       WHERE rv.record_id = ANY($1)
        ORDER BY rv.piece_number ASC, rv.dimension_id ASC`,
-      [id]
+      [recordIds]
     );
 
     const auditRes = await query(
       `SELECT a.field, a.before_value, a.after_value, a.reason, a.timestamp, a.user_id, u.name AS user_name
        FROM audit_log a
        LEFT JOIN users u ON u.id = a.user_id
-       WHERE a.record_id=$1
+       WHERE a.record_id = ANY($1)
        ORDER BY a.timestamp ASC`,
-      [id]
+      [recordIds]
     );
     const auditByKey = {};
     for (const a of auditRes.rows) {
@@ -543,9 +957,9 @@ router.get("/:id/export", requireCapability("view_records"), async (req, res, ne
     const pieceAuditRes = await query(
       `SELECT piece_number, before_comment, after_comment, reason, timestamp, user_id
        FROM record_piece_comment_audit
-       WHERE record_id=$1
+       WHERE record_id = ANY($1)
        ORDER BY timestamp ASC, id ASC`,
-      [id]
+      [recordIds]
     );
     const pieceAuditByNumber = {};
     for (const row of pieceAuditRes.rows) {
@@ -558,6 +972,14 @@ router.get("/:id/export", requireCapability("view_records"), async (req, res, ne
       "record_id",
       "dimension_id",
       "dimension_name",
+      "bubble_number",
+      "feature_type",
+      "gdt_class",
+      "tolerance_zone",
+      "feature_quantity",
+      "feature_units",
+      "feature_modifiers",
+      "source_characteristic_key",
       "piece_number",
       "value",
       "is_oot",
@@ -589,6 +1011,18 @@ router.get("/:id/export", requireCapability("view_records"), async (req, res, ne
         r.record_id,
         r.dimension_id,
         csvEscape(r.dimension_name),
+        csvEscape(r.bubble_number || ""),
+        csvEscape(r.feature_type || ""),
+        csvEscape(r.gdt_class || ""),
+        csvEscape(r.tolerance_zone || ""),
+        r.feature_quantity ?? "",
+        csvEscape(r.feature_units || ""),
+        csvEscape(
+          Array.isArray(r.feature_modifiers_json)
+            ? r.feature_modifiers_json.join("|")
+            : ""
+        ),
+        csvEscape(r.source_characteristic_key || ""),
         r.piece_number,
         csvEscape(r.value),
         r.is_oot,
@@ -631,7 +1065,7 @@ router.get("/:id/export/as9102", requireCapability("view_records"), async (req, 
        LEFT JOIN jobs j ON j.id = r.job_id
        LEFT JOIN parts p ON p.id = r.part_id
        LEFT JOIN operations o ON o.id = r.operation_id
-       WHERE r.id=$1`,
+       WHERE r.id=$1 AND r.deleted_at IS NULL`,
       [id]
     );
     const record = rows[0];
@@ -639,6 +1073,14 @@ router.get("/:id/export/as9102", requireCapability("view_records"), async (req, 
 
     const valuesRes = await query(
       "SELECT is_oot FROM record_values WHERE record_id=$1",
+      [id]
+    );
+    const characteristicsRes = await query(
+      `SELECT dimension_id, name, bubble_number, feature_type, gdt_class, tolerance_zone,
+              feature_quantity, feature_units, feature_modifiers_json, source_characteristic_key
+       FROM record_dimension_snapshots
+       WHERE record_id=$1
+       ORDER BY dimension_id ASC`,
       [id]
     );
     const measured = valuesRes.rows.length;
@@ -667,7 +1109,19 @@ router.get("/:id/export/as9102", requireCapability("view_records"), async (req, 
         measured,
         failed,
         passRate
-      }
+      },
+      characteristics: characteristicsRes.rows.map((row) => ({
+        dimensionId: Number(row.dimension_id),
+        name: row.name,
+        bubbleNumber: row.bubble_number || null,
+        featureType: row.feature_type || null,
+        gdtClass: row.gdt_class || null,
+        toleranceZone: row.tolerance_zone || null,
+        quantity: row.feature_quantity == null ? null : Number(row.feature_quantity),
+        units: row.feature_units || null,
+        modifiers: Array.isArray(row.feature_modifiers_json) ? row.feature_modifiers_json : [],
+        sourceCharacteristicKey: row.source_characteristic_key || null
+      }))
     };
 
     let exportResult;
@@ -726,7 +1180,8 @@ router.post("/", requireCapability("submit_records"), async (req, res, next) => 
       values = [],
       tools = [],
       missingPieces = [],
-      pieceComments = []
+      pieceComments = [],
+      attachments = []
     } = req.body || {};
 
     const trimmedJob = String(jobId || "").trim();
@@ -747,7 +1202,7 @@ router.post("/", requireCapability("submit_records"), async (req, res, next) => 
     if (oot && !String(comment || "").trim()) {
       return res.status(400).json({ error: "comment_required_for_oot" });
     }
-    if (!Array.isArray(values) || !Array.isArray(tools) || !Array.isArray(missingPieces) || !Array.isArray(pieceComments)) {
+    if (!Array.isArray(values) || !Array.isArray(tools) || !Array.isArray(missingPieces) || !Array.isArray(pieceComments) || !Array.isArray(attachments)) {
       return res.status(400).json({ error: "payload_arrays_required" });
     }
 
@@ -761,13 +1216,24 @@ router.post("/", requireCapability("submit_records"), async (req, res, next) => 
 
     const pieceCommentsErr = validatePieceComments(pieceComments, qtyNum);
     if (pieceCommentsErr) return res.status(400).json({ error: pieceCommentsErr });
+    const normalizedAttachments = [];
+    for (const item of attachments) {
+      const normalized = normalizeAttachmentPayload(item, qtyNum);
+      if (normalized.error) return res.status(400).json({ error: normalized.error });
+      normalizedAttachments.push(normalized);
+    }
 
     const refErr = await validateRecordRefs(operationId, values, tools);
     if (refErr) return res.status(400).json({ error: refErr });
 
     const role = requestRole(req);
     const result = await transaction(async (client) => {
-      const jobRes = await client.query("SELECT * FROM jobs WHERE id=$1 FOR UPDATE", [trimmedJob]);
+      const jobRes = await client.query(
+        `SELECT ${JOB_SUBMISSION_COLUMNS}
+         FROM jobs
+         WHERE id=$1 FOR UPDATE`,
+        [trimmedJob]
+      );
       const job = jobRes.rows[0];
       if (!job) return { error: "job_not_found" };
       const userRes = await client.query("SELECT id FROM users WHERE id=$1", [effectiveUserId]);
@@ -790,7 +1256,9 @@ router.post("/", requireCapability("submit_records"), async (req, res, next) => 
       const record = recRes.rows[0];
 
       const snapshotRes = await client.query(
-        `SELECT id, name, nominal, tol_plus, tol_minus, unit, sampling, sampling_interval, input_mode
+        `SELECT id, name, bubble_number, feature_type, gdt_class, tolerance_zone,
+                feature_quantity, feature_units, feature_modifiers_json, source_characteristic_key,
+                nominal, tol_plus, tol_minus, unit, sampling, sampling_interval, input_mode
          FROM dimensions
          WHERE operation_id=$1
          ORDER BY id ASC`,
@@ -799,12 +1267,22 @@ router.post("/", requireCapability("submit_records"), async (req, res, next) => 
       for (const d of snapshotRes.rows) {
         await client.query(
           `INSERT INTO record_dimension_snapshots
-             (record_id, dimension_id, name, nominal, tol_plus, tol_minus, unit, sampling, sampling_interval, input_mode)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+             (record_id, dimension_id, name, bubble_number, feature_type, gdt_class, tolerance_zone,
+              feature_quantity, feature_units, feature_modifiers_json, source_characteristic_key,
+              nominal, tol_plus, tol_minus, unit, sampling, sampling_interval, input_mode)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11,$12,$13,$14,$15,$16,$17,$18)`,
           [
             record.id,
             Number(d.id),
             d.name,
+            d.bubble_number || null,
+            d.feature_type || null,
+            d.gdt_class || null,
+            d.tolerance_zone || null,
+            d.feature_quantity == null ? null : Number(d.feature_quantity),
+            d.feature_units || null,
+            JSON.stringify(Array.isArray(d.feature_modifiers_json) ? d.feature_modifiers_json : []),
+            d.source_characteristic_key || null,
             d.nominal,
             d.tol_plus,
             d.tol_minus,
@@ -860,6 +1338,25 @@ router.post("/", requireCapability("submit_records"), async (req, res, next) => 
         );
       }
 
+      for (const attachment of normalizedAttachments) {
+        await client.query(
+          `INSERT INTO record_attachments
+             (record_id, piece_number, file_name, media_type, byte_size, data_base64, retention_until, uploaded_by_user_id, uploaded_by_role)
+           VALUES ($1,$2,$3,$4,$5,$6,NOW() + ($7 * INTERVAL '1 day'),$8,$9)`,
+          [
+            record.id,
+            attachment.pieceNumber,
+            attachment.fileName,
+            attachment.mediaType,
+            attachment.byteSize,
+            attachment.dataBase64,
+            attachment.retentionDays,
+            effectiveUserId,
+            role
+          ]
+        );
+      }
+
       await client.query(
         "UPDATE jobs SET status=$1, lock_owner_user_id=NULL, lock_timestamp=NULL WHERE id=$2",
         [status === "complete" ? "closed" : "incomplete", trimmedJob]
@@ -873,6 +1370,18 @@ router.post("/", requireCapability("submit_records"), async (req, res, next) => 
     if (result?.error === "job_locked") return res.status(409).json({ error: "job_locked" });
     if (result?.error === "job_not_open") return res.status(409).json({ error: "job_not_open" });
     if (result?.error === "job_mismatch") return res.status(409).json({ error: "job_mismatch" });
+
+    try {
+      await refreshAnalyticsForRecordMutation({
+        triggerSource: "records.submit",
+        role,
+        userId: actorUserId,
+        recordId: result?.id
+      });
+    } catch (analyticsErr) {
+      // Keep core record submission resilient when analytics refresh has a transient failure.
+      console.warn("[analytics] incremental refresh failed after record submit", analyticsErr?.message || analyticsErr);
+    }
     res.status(201).json(result);
   } catch (err) {
     next(err);
@@ -900,8 +1409,7 @@ router.put("/:id/piece-comment", requireAnyCapability(["submit_records", "edit_r
       const userRes = await client.query("SELECT id FROM users WHERE id=$1", [effectiveUserId]);
       if (!userRes.rows[0]) return { error: "user_not_found" };
 
-      const recordRes = await client.query("SELECT id, qty FROM records WHERE id=$1", [id]);
-      const record = recordRes.rows[0];
+      const record = await getActiveRecordById(id, client);
       if (!record) return { error: "record_not_found" };
       if (pieceNum > Number(record.qty || 0)) return { error: "piece_number_out_of_range" };
 
@@ -982,7 +1490,7 @@ router.put("/:id/value", requireCapability("edit_records"), async (req, res, nex
                 COALESCE(rds.input_mode, d.input_mode) AS input_mode,
                 COALESCE(BOOL_OR(t.type='Go/No-Go'), false) AS has_gng
          FROM dimensions d
-         JOIN records r ON r.id=$1 AND r.operation_id=d.operation_id
+         JOIN records r ON r.id=$1 AND r.deleted_at IS NULL AND r.operation_id=d.operation_id
          LEFT JOIN record_dimension_snapshots rds ON rds.record_id=r.id AND rds.dimension_id=d.id
          LEFT JOIN record_tools rt ON rt.record_id=r.id AND rt.dimension_id=d.id
          LEFT JOIN tools t ON t.id=rt.tool_id
@@ -1040,7 +1548,7 @@ router.put("/:id/value", requireCapability("edit_records"), async (req, res, nex
         "SELECT EXISTS (SELECT 1 FROM record_values WHERE record_id=$1 AND is_oot=true) AS has_oot",
         [id]
       );
-      await client.query("UPDATE records SET oot=$1 WHERE id=$2", [ootRes.rows[0].has_oot, id]);
+      await client.query("UPDATE records SET oot=$1 WHERE id=$2 AND deleted_at IS NULL", [ootRes.rows[0].has_oot, id]);
 
       return { ok: true };
     });
@@ -1049,6 +1557,18 @@ router.put("/:id/value", requireCapability("edit_records"), async (req, res, nex
     if (result?.error === "not_found") return res.status(404).json({ error: "not_found" });
     if (result?.error === "dimension_not_in_record") return res.status(404).json({ error: "not_found" });
     if (result?.error === "invalid_value_for_mode") return res.status(400).json({ error: "invalid_value_for_mode" });
+
+    try {
+      await refreshAnalyticsForRecordMutation({
+        triggerSource: "records.value_edit",
+        role: requestRole(req),
+        userId: actorUserId,
+        recordId: id
+      });
+    } catch (analyticsErr) {
+      // Keep core correction workflow resilient when analytics refresh has a transient failure.
+      console.warn("[analytics] incremental refresh failed after record value update", analyticsErr?.message || analyticsErr);
+    }
     res.json({ ok: true });
   } catch (err) {
     next(err);

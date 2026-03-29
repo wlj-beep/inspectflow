@@ -2,6 +2,7 @@ import { Router } from "express";
 import { query, transaction } from "../db.js";
 import { requireCapability } from "../middleware/requireCapability.js";
 import { getActorRole, getActorUserId } from "../middleware/authSession.js";
+import { isLegacyPartnerIntegrationSurfaceEnabled, legacyPartnerSurfaceDisabledDetail } from "../services/integration/partnerSurfaceFlags.js";
 import {
   createPartSetupRevision,
   ensurePartSetupBaselineRevision,
@@ -9,10 +10,12 @@ import {
 } from "../revisions.js";
 import { executeConnectorRuntime } from "../services/integration/connectorRuntime.js";
 import { mapErpJobBatchToCanonical } from "../services/integration/erpJobAdapter.js";
+import { listMetrologyParserPacks, parseMetrologyPayload } from "../services/integration/metrologyParsers.js";
 import { buildIntegrationSupportBundle } from "../services/observability/integrationSupportBundle.js";
 import {
   createPayloadFingerprint
 } from "../services/idempotency/idempotencyKey.js";
+import { refreshAnalyticsMartsIncremental } from "../services/analytics/martBuilder.js";
 
 const router = Router();
 
@@ -24,6 +27,45 @@ const VALID_JOB_STATUS = ["open", "closed", "draft", "incomplete"];
 const VALID_MEASUREMENT_RECORD_STATUS = ["complete", "incomplete"];
 const VALID_IMPORT_TYPES = ["tools", "part_dimensions", "jobs", "measurements"];
 const VALID_INTEGRATION_SOURCE_TYPES = ["api_pull", "webhook", "excel_sheet"];
+const JOB_IMPORT_COLUMNS = [
+  "id",
+  "part_id",
+  "part_revision_code",
+  "operation_id",
+  "status",
+  "lock_owner_user_id"
+].join(", ");
+const IMPORT_INTEGRATION_COLUMNS = [
+  "id",
+  "name",
+  "source_type",
+  "import_type",
+  "endpoint_url",
+  "auth_header",
+  "poll_interval_minutes",
+  "enabled",
+  "options",
+  "last_run_at",
+  "last_status",
+  "last_message",
+  "created_at",
+  "updated_at"
+].join(", ");
+const IMPORT_UNRESOLVED_COLUMNS = [
+  "id",
+  "run_id",
+  "source_type",
+  "import_type",
+  "line_number",
+  "reason",
+  "confidence",
+  "payload",
+  "status",
+  "resolved_payload",
+  "resolved_by_role",
+  "created_at",
+  "resolved_at"
+].join(", ");
 
 let schedulerHandle = null;
 
@@ -100,18 +142,27 @@ function parseCsvText(csvText) {
     .replace(/^\uFEFF/, "")
     .split(/\r?\n/)
     .filter((l) => l.trim() !== "");
-  if (lines.length < 2) return { headers: [], rows: [] };
+  if (lines.length < 2) return { headers: [], rows: [], warnings: [] };
 
   const headers = parseCsvLine(lines[0]).map(canonicalHeader);
+  const warnings = [];
   const rows = lines.slice(1).map((line, idx) => {
     const vals = parseCsvLine(line);
+    if (vals.length !== headers.length) {
+      warnings.push({
+        line: idx + 2,
+        warning: "column_count_mismatch",
+        expectedColumns: headers.length,
+        receivedColumns: vals.length
+      });
+    }
     const row = { _line: idx + 2, _raw: line };
     headers.forEach((h, i) => {
       row[h] = vals[i] ?? "";
     });
     return row;
   });
-  return { headers, rows };
+  return { headers, rows, warnings };
 }
 
 function normalizeObjectRows(inputRows) {
@@ -124,6 +175,16 @@ function normalizeObjectRows(inputRows) {
   });
 }
 
+function normalizeCsvWarnings(inputWarnings) {
+  if (!Array.isArray(inputWarnings)) return [];
+  return inputWarnings.map((item) => ({
+    line: Number(item?.line || 0) || null,
+    warning: String(item?.warning || "csv_warning"),
+    expectedColumns: Number(item?.expectedColumns || 0) || null,
+    receivedColumns: Number(item?.receivedColumns || 0) || null
+  }));
+}
+
 function rowsFromPayload(payload) {
   if (Array.isArray(payload)) return normalizeObjectRows(payload);
   if (typeof payload === "string") return parseCsvText(payload).rows;
@@ -131,6 +192,19 @@ function rowsFromPayload(payload) {
     if (typeof payload.csvText === "string") return parseCsvText(payload.csvText).rows;
     if (Array.isArray(payload.rows)) return normalizeObjectRows(payload.rows);
     if (Array.isArray(payload.items)) return normalizeObjectRows(payload.items);
+  }
+  return [];
+}
+
+function parserWarningsFromPayload(payload) {
+  if (Array.isArray(payload?.parserWarnings)) {
+    return normalizeCsvWarnings(payload.parserWarnings);
+  }
+  if (typeof payload === "string") {
+    return normalizeCsvWarnings(parseCsvText(payload).warnings);
+  }
+  if (payload && typeof payload === "object" && typeof payload.csvText === "string") {
+    return normalizeCsvWarnings(parseCsvText(payload.csvText).warnings);
   }
   return [];
 }
@@ -170,6 +244,23 @@ function parseOptionalNumber(raw) {
   return Number.isFinite(n) ? n : null;
 }
 
+function parseCharacteristicQuantity(raw) {
+  if (raw === undefined || raw === null || String(raw).trim() === "") return null;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n <= 0) return null;
+  return n;
+}
+
+function parseCharacteristicModifiers(raw) {
+  if (raw === undefined || raw === null) return [];
+  if (Array.isArray(raw)) {
+    return Array.from(new Set(raw.map((v) => String(v || "").trim()).filter(Boolean)));
+  }
+  const text = String(raw || "").trim();
+  if (!text) return [];
+  return Array.from(new Set(text.split(/[;|,]/).map((token) => token.trim()).filter(Boolean)));
+}
+
 function parseImportType(value) {
   const v = canonicalHeader(value);
   if (v === "part_dimensions" || v === "partdimensions" || v === "part_dimension" || v === "part_dimensions_csv" || v === "part-dimensions") {
@@ -190,6 +281,7 @@ function parseSourceType(value) {
 }
 
 function parseAdapterPack(value) {
+  if (!isLegacyPartnerIntegrationSurfaceEnabled()) return null;
   const v = canonicalHeader(value);
   if (!v) return null;
   if (["erp_job_v1", "erp_jobs_v1", "erp_job", "erp_jobs"].includes(v)) {
@@ -198,16 +290,83 @@ function parseAdapterPack(value) {
   return null;
 }
 
+function parseMetrologyParserPack(value) {
+  if (!isLegacyPartnerIntegrationSurfaceEnabled()) return null;
+  const normalized = String(value || "").trim();
+  if (!normalized) return null;
+  const available = new Set(listMetrologyParserPacks().map((pack) => String(pack.id)));
+  return available.has(normalized) ? normalized : null;
+}
+
+function normalizeIntegrationOptions(options, importType) {
+  const normalizedImportType = parseImportType(importType);
+  const raw = options && typeof options === "object" ? options : {};
+  const next = { ...raw };
+  const rawParserPack = raw.parserPack ?? raw.parser_pack ?? raw.metrologyParserPack;
+  const parserPack = parseMetrologyParserPack(rawParserPack);
+  const rawAdapterPack = raw.adapterPack ?? raw.adapter_pack ?? raw.adapter;
+  const adapterPack = parseAdapterPack(rawAdapterPack);
+
+  if (!isLegacyPartnerIntegrationSurfaceEnabled()) {
+    delete next.adapterPack;
+    delete next.adapter_pack;
+    delete next.adapter;
+    delete next.parserPack;
+    delete next.parser_pack;
+    delete next.metrologyParserPack;
+    return next;
+  }
+
+  if (normalizedImportType === "measurements") {
+    if (rawParserPack && !parserPack) {
+      throw new Error("invalid_parser_pack");
+    }
+    if (parserPack) {
+      next.parserPack = parserPack;
+    }
+  }
+
+  if (normalizedImportType === "jobs") {
+    if (rawAdapterPack && !adapterPack) {
+      throw new Error("invalid_adapter_pack");
+    }
+    if (adapterPack) {
+      next.adapterPack = adapterPack;
+    }
+  }
+
+  delete next.parser_pack;
+  delete next.metrologyParserPack;
+  delete next.adapter_pack;
+  delete next.adapter;
+  return next;
+}
+
 function resolveAdapterPack({ importType, payload = null, options = {} }) {
   const normalizedImportType = parseImportType(importType);
-  if (normalizedImportType !== "jobs") return null;
-
-  const fromOptions = parseAdapterPack(options?.adapterPack || options?.adapter_pack || options?.adapter);
-  if (fromOptions) return fromOptions;
-  if (payload && typeof payload === "object") {
-    const fromPayload = parseAdapterPack(payload.adapterPack || payload.adapter_pack || payload.adapter);
-    if (fromPayload) return fromPayload;
+  if (normalizedImportType === "jobs") {
+    const fromOptions = parseAdapterPack(options?.adapterPack || options?.adapter_pack || options?.adapter);
+    if (fromOptions) return fromOptions;
+    if (payload && typeof payload === "object") {
+      const fromPayload = parseAdapterPack(payload.adapterPack || payload.adapter_pack || payload.adapter);
+      if (fromPayload) return fromPayload;
+    }
+    return null;
   }
+
+  if (normalizedImportType === "measurements") {
+    const fromOptions = parseMetrologyParserPack(
+      options?.parserPack || options?.parser_pack || options?.metrologyParserPack
+    );
+    if (fromOptions) return `metrology:${fromOptions}`;
+    if (payload && typeof payload === "object") {
+      const fromPayload = parseMetrologyParserPack(
+        payload.parserPack || payload.parser_pack || payload.metrologyParserPack
+      );
+      if (fromPayload) return `metrology:${fromPayload}`;
+    }
+  }
+
   return null;
 }
 
@@ -256,6 +415,49 @@ function adaptErpJobsPayload({
   };
 }
 
+function toMetrologyMeasurementRow(row) {
+  return {
+    job_id: row.jobId || "",
+    part_id: row.partId || "",
+    part_revision: row.partRevision || "A",
+    operation_id: row.operationId || null,
+    operation_ref: row.operationRef || "",
+    operator_user_id: row.operatorUserId || null,
+    lot: row.lot || "",
+    piece_number: row.pieceNumber || null,
+    dimension_id: row.dimensionId || null,
+    dimension_external_id: row.dimensionExternalId || row.sourceCharacteristicKey || row.characteristicId || null,
+    dimension_name: row.dimensionName || "",
+    value: row.value || "",
+    is_oot: row.isOot === undefined ? "" : Boolean(row.isOot),
+    tool_it_nums: Array.isArray(row.toolItNums) ? row.toolItNums.join("|") : ""
+  };
+}
+
+function adaptMetrologyMeasurementsPayload({
+  payload,
+  parserPack = null
+}) {
+  const parsed = parseMetrologyPayload({
+    parserPack,
+    payload
+  });
+  return {
+    adapterPack: `metrology:${parsed.parserPack}`,
+    total: Number(parsed.totalRows || 0),
+    acceptedCount: Number(parsed.acceptedRows || 0),
+    rejectedCount: Number(parsed.rejectedRows || 0),
+    rejected: Array.isArray(parsed.rejected) ? parsed.rejected : [],
+    payload: {
+      rows: Array.isArray(parsed.rows) ? parsed.rows.map(toMetrologyMeasurementRow) : []
+    },
+    parserMeta: {
+      parserPack: parsed.parserPack,
+      parserFamily: listMetrologyParserPacks().find((pack) => pack.id === parsed.parserPack)?.family || null
+    }
+  };
+}
+
 function applyAdapterResultToImportResult(result, adapterResult) {
   if (!adapterResult) return result;
 
@@ -271,7 +473,9 @@ function applyAdapterResultToImportResult(result, adapterResult) {
       adapterPack: adapterResult.adapterPack,
       total: Number(adapterResult.total || 0),
       accepted: Number(adapterResult.acceptedCount || 0),
-      rejected: Number(adapterResult.rejectedCount || 0)
+      rejected: Number(adapterResult.rejectedCount || 0),
+      parserPack: adapterResult?.parserMeta?.parserPack || null,
+      parserFamily: adapterResult?.parserMeta?.parserFamily || null
     }
   };
   return normalized;
@@ -384,6 +588,7 @@ function normalizeRuntimeImportResult(result) {
     failed: Number(result?.failed || 0),
     unresolvedCount: Number(result?.unresolvedCount || 0),
     errors: Array.isArray(result?.errors) ? result.errors : [],
+    warnings: normalizeCsvWarnings(result?.warnings),
     unresolvedItems: Array.isArray(result?.unresolvedItems) ? result.unresolvedItems : []
   };
 }
@@ -414,6 +619,24 @@ function importResponseStatusCode(result) {
   return failed >= totalProcessed ? 400 : 200;
 }
 
+async function refreshAnalyticsForImportRun({
+  runId,
+  sourceType = "import",
+  importType = "unknown",
+  role = "system",
+  userId = null
+}) {
+  const safeRunId = parsePositiveInteger(runId);
+  if (!safeRunId) return;
+  await refreshAnalyticsMartsIncremental({
+    triggerSource: `imports.${parseSourceType(sourceType) || "manual"}.${parseImportType(importType) || "unknown"}`,
+    requestedByRole: role || "system",
+    requestedByUserId: parsePositiveInteger(userId),
+    discoverMissingRecordIds: true,
+    runIds: [safeRunId]
+  });
+}
+
 function truncateText(value, max = 240) {
   const normalized = nonEmptyString(value);
   return normalized ? normalized.slice(0, max) : null;
@@ -431,11 +654,15 @@ function buildExternalEntityRefs({ importType, payload, sourceType }) {
       const opRef = truncateText(firstValue(row, ["operation_ref", "op_number", "operation", "op"]), 32);
       const pieceNumber = parsePositiveInteger(firstValue(row, ["piece_number", "piece", "sample", "part_piece"]));
       const dimensionName = truncateText(firstValue(row, ["dimension_name", "dimension", "feature", "characteristic", "char"]), 160);
+      const dimensionExternalId = truncateText(
+        firstValue(row, ["dimension_external_id", "characteristic_external_id", "characteristic_id", "feature_id", "bubble_id"]),
+        240
+      );
       const recordKey = truncateText(firstValue(row, ["record_key", "batch_key", "group_key"]), 160);
       const externalId = truncateText(
         firstValue(row, ["external_id", "external_key", "record_key", "batch_key", "group_key"]) || (
-          jobId && opRef && pieceNumber && (dimensionName || firstValue(row, ["dimension_id", "dim_id"]))
-            ? `${jobId}:${opRef}:${dimensionName || firstValue(row, ["dimension_id", "dim_id"])}:${pieceNumber}`
+          jobId && opRef && pieceNumber && (dimensionExternalId || dimensionName || firstValue(row, ["dimension_id", "dim_id"]))
+            ? `${jobId}:${opRef}:${dimensionExternalId || dimensionName || firstValue(row, ["dimension_id", "dim_id"])}:${pieceNumber}`
             : null
         ),
         240
@@ -451,6 +678,7 @@ function buildExternalEntityRefs({ importType, payload, sourceType }) {
           jobId,
           operationRef: opRef,
           pieceNumber: pieceNumber || null,
+          dimensionExternalId,
           dimensionName,
           recordKey
         }
@@ -517,14 +745,29 @@ function buildExternalEntityRefs({ importType, payload, sourceType }) {
       const partId = truncateText(firstValue(row, ["part_id", "part_number"]), 120);
       const opNumber = normalizeOperationNumber(firstValue(row, ["op_number", "operation", "operation_number"])) || null;
       const dimensionName = truncateText(firstValue(row, ["dimension_name", "name"]), 160);
+      const dimensionId = parsePositiveInteger(firstValue(row, ["dimension_id", "dim_id"]));
+      const sourceCharacteristicKey = truncateText(
+        firstValue(row, [
+          "dimension_external_id",
+          "characteristic_external_id",
+          "characteristic_id",
+          "feature_id",
+          "bubble_id",
+          "external_id",
+          "external_key"
+        ]),
+        240
+      );
       const fallbackId = partId && opNumber && dimensionName
         ? `${partId}:${opNumber}:${dimensionName}`
         : null;
       const externalId = truncateText(
-        firstValue(row, ["external_id", "external_key", "dimension_external_id"]) || fallbackId,
+        sourceCharacteristicKey || firstValue(row, ["external_id", "external_key", "dimension_external_id"]) || fallbackId,
         240
       );
-      if (!externalId) continue;
+      // Do not emit connector-level external refs without a resolved internal dimension id.
+      // Part-dimensions import persists authoritative refs once upsert IDs are known.
+      if (!externalId || !dimensionId) continue;
 
       refs.push({
         importType: normalizedImportType,
@@ -532,9 +775,14 @@ function buildExternalEntityRefs({ importType, payload, sourceType }) {
         externalId,
         sourceType: normalizedSourceType,
         internalRef: {
+          dimensionId: dimensionId || null,
           partId,
           opNumber,
-          dimensionName
+          dimensionName,
+          sourceCharacteristicKey: sourceCharacteristicKey || externalId,
+          bubbleNumber: truncateText(firstValue(row, ["bubble_number", "bubble_no", "bubble"]), 80),
+          featureType: truncateText(firstValue(row, ["feature_type", "characteristic_type"]), 80),
+          gdtClass: truncateText(firstValue(row, ["gdt_class", "gd_t_class", "gdt"]), 80)
         }
       });
     }
@@ -761,7 +1009,7 @@ async function importToolsRows(rows) {
   };
 }
 
-async function importPartDimensionsRows(rows, role) {
+async function importPartDimensionsRows(rows, role, sourceType = "manual_csv") {
   let partsUpserted = 0;
   let operationsUpserted = 0;
   let dimensionsUpserted = 0;
@@ -784,6 +1032,26 @@ async function importPartDimensionsRows(rows, role) {
       const samplingIntervalRaw = firstValue(row, ["sampling_interval", "interval_n"]);
       const samplingInterval = parseInterval(samplingIntervalRaw);
       const toolItNumsRaw = firstValue(row, ["tool_it_nums", "tool_it_list", "tool_its"]);
+      const bubbleNumber = truncateText(firstValue(row, ["bubble_number", "bubble_no", "bubble"]), 80);
+      const featureType = truncateText(firstValue(row, ["feature_type", "characteristic_type"]), 80);
+      const gdtClass = truncateText(firstValue(row, ["gdt_class", "gd_t_class", "gdt"]), 80);
+      const toleranceZone = truncateText(firstValue(row, ["tolerance_zone", "zone", "tolerance_class"]), 120);
+      const featureQuantityRaw = firstValue(row, ["feature_quantity", "quantity", "qty"]);
+      const featureQuantity = parseCharacteristicQuantity(featureQuantityRaw);
+      const featureUnits = truncateText(firstValue(row, ["feature_units", "units", "measurement_units", "unit"]), 32);
+      const featureModifiers = parseCharacteristicModifiers(firstValue(row, ["feature_modifiers", "modifiers", "modifier_codes"]));
+      const sourceCharacteristicKey = truncateText(
+        firstValue(row, [
+          "dimension_external_id",
+          "characteristic_external_id",
+          "characteristic_id",
+          "feature_id",
+          "bubble_id",
+          "external_id",
+          "external_key"
+        ]),
+        240
+      );
 
       if (!partId || !opNumber || !dimName || Number.isNaN(nominal) || Number.isNaN(tolPlus) || Number.isNaN(tolMinus) || !unit || !sampling) {
         throw new Error(`line_${row._line}: required_fields_missing`);
@@ -794,6 +1062,7 @@ async function importPartDimensionsRows(rows, role) {
       if (sampling === "custom_interval" && samplingInterval === null) {
         throw new Error(`line_${row._line}: invalid_sampling_interval`);
       }
+      if (featureQuantityRaw && featureQuantity === null) throw new Error(`line_${row._line}: invalid_feature_quantity`);
 
       const existingPart = await client.query("SELECT id FROM parts WHERE id=$1", [partId]);
       const isNewPart = !existingPart.rows[0];
@@ -826,36 +1095,177 @@ async function importPartDimensionsRows(rows, role) {
       if (!existingOp.rows[0]) operationsUpserted += 1;
       const operationId = opRes.rows[0].id;
 
-      const existingDim = await client.query(
-        "SELECT id FROM dimensions WHERE operation_id=$1 AND name=$2",
-        [operationId, dimName]
-      );
-      const dimRes = await client.query(
-        `INSERT INTO dimensions (operation_id, name, nominal, tol_plus, tol_minus, unit, sampling, sampling_interval, input_mode)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-         ON CONFLICT (operation_id, name) DO UPDATE
-           SET nominal=EXCLUDED.nominal,
-               tol_plus=EXCLUDED.tol_plus,
-               tol_minus=EXCLUDED.tol_minus,
-               unit=EXCLUDED.unit,
-               sampling=EXCLUDED.sampling,
-               sampling_interval=EXCLUDED.sampling_interval,
-               input_mode=EXCLUDED.input_mode
-         RETURNING id`,
-        [
-          operationId,
-          dimName,
-          nominal,
-          tolPlus,
-          tolMinus,
-          unit,
-          sampling,
-          sampling === "custom_interval" ? samplingInterval : null,
-          inputMode
-        ]
-      );
-      if (!existingDim.rows[0]) dimensionsUpserted += 1;
-      const dimensionId = dimRes.rows[0].id;
+      let mappedDimensionId = null;
+      if (sourceCharacteristicKey) {
+        const refRes = await client.query(
+          `SELECT latest_internal_ref
+           FROM import_external_entity_refs
+           WHERE import_type='part_dimensions'
+             AND entity_type='dimension'
+             AND external_id=$1
+           LIMIT 1`,
+          [sourceCharacteristicKey]
+        );
+        const ref = refRes.rows[0]?.latest_internal_ref || null;
+        const refDimId = parsePositiveInteger(ref?.dimensionId || ref?.dimension_id);
+        if (refDimId) {
+          const dimScopeRes = await client.query(
+            `SELECT d.id, d.operation_id, o.part_id
+             FROM dimensions d
+             JOIN operations o ON o.id=d.operation_id
+             WHERE d.id=$1
+             LIMIT 1`,
+            [refDimId]
+          );
+          const scoped = dimScopeRes.rows[0];
+          if (scoped) {
+            if (Number(scoped.operation_id) !== Number(operationId) || String(scoped.part_id) !== String(partId)) {
+              throw new Error(`line_${row._line}: characteristic_external_id_conflict`);
+            }
+            mappedDimensionId = Number(scoped.id);
+          }
+        }
+        if (!mappedDimensionId) {
+          const existingKeyScoped = await client.query(
+            `SELECT id
+             FROM dimensions
+             WHERE operation_id=$1
+               AND source_characteristic_key=$2
+             ORDER BY id ASC
+             LIMIT 1`,
+            [operationId, sourceCharacteristicKey]
+          );
+          if (existingKeyScoped.rows[0]) {
+            mappedDimensionId = Number(existingKeyScoped.rows[0].id);
+          }
+        }
+      }
+
+      let dimensionId = null;
+      if (mappedDimensionId) {
+        const updatedDim = await client.query(
+          `UPDATE dimensions
+           SET name=$2,
+               bubble_number=$3,
+               feature_type=$4,
+               gdt_class=$5,
+               tolerance_zone=$6,
+               feature_quantity=$7,
+               feature_units=$8,
+               feature_modifiers_json=$9::jsonb,
+               source_characteristic_key=$10,
+               nominal=$11,
+               tol_plus=$12,
+               tol_minus=$13,
+               unit=$14,
+               sampling=$15,
+               sampling_interval=$16,
+               input_mode=$17
+           WHERE id=$1
+           RETURNING id`,
+          [
+            mappedDimensionId,
+            dimName,
+            bubbleNumber,
+            featureType,
+            gdtClass,
+            toleranceZone,
+            featureQuantity,
+            featureUnits,
+            JSON.stringify(featureModifiers),
+            sourceCharacteristicKey,
+            nominal,
+            tolPlus,
+            tolMinus,
+            unit,
+            sampling,
+            sampling === "custom_interval" ? samplingInterval : null,
+            inputMode
+          ]
+        );
+        dimensionId = Number(updatedDim.rows[0].id);
+      } else {
+        const existingDim = await client.query(
+          "SELECT id FROM dimensions WHERE operation_id=$1 AND name=$2",
+          [operationId, dimName]
+        );
+        const dimRes = await client.query(
+          `INSERT INTO dimensions (
+             operation_id, name, bubble_number, feature_type, gdt_class, tolerance_zone,
+             feature_quantity, feature_units, feature_modifiers_json, source_characteristic_key,
+             nominal, tol_plus, tol_minus, unit, sampling, sampling_interval, input_mode
+           )
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14,$15,$16,$17)
+           ON CONFLICT (operation_id, name) DO UPDATE
+             SET bubble_number=EXCLUDED.bubble_number,
+                 feature_type=EXCLUDED.feature_type,
+                 gdt_class=EXCLUDED.gdt_class,
+                 tolerance_zone=EXCLUDED.tolerance_zone,
+                 feature_quantity=EXCLUDED.feature_quantity,
+                 feature_units=EXCLUDED.feature_units,
+                 feature_modifiers_json=EXCLUDED.feature_modifiers_json,
+                 source_characteristic_key=EXCLUDED.source_characteristic_key,
+                 nominal=EXCLUDED.nominal,
+                 tol_plus=EXCLUDED.tol_plus,
+                 tol_minus=EXCLUDED.tol_minus,
+                 unit=EXCLUDED.unit,
+                 sampling=EXCLUDED.sampling,
+                 sampling_interval=EXCLUDED.sampling_interval,
+                 input_mode=EXCLUDED.input_mode
+           RETURNING id`,
+          [
+            operationId,
+            dimName,
+            bubbleNumber,
+            featureType,
+            gdtClass,
+            toleranceZone,
+            featureQuantity,
+            featureUnits,
+            JSON.stringify(featureModifiers),
+            sourceCharacteristicKey,
+            nominal,
+            tolPlus,
+            tolMinus,
+            unit,
+            sampling,
+            sampling === "custom_interval" ? samplingInterval : null,
+            inputMode
+          ]
+        );
+        if (!existingDim.rows[0]) dimensionsUpserted += 1;
+        dimensionId = Number(dimRes.rows[0].id);
+      }
+
+      row.dimension_id = String(dimensionId);
+      if (sourceCharacteristicKey) {
+        row.dimension_external_id = sourceCharacteristicKey;
+        await client.query(
+          `INSERT INTO import_external_entity_refs
+             (import_type, entity_type, external_id, source_type, latest_internal_ref, first_run_id, last_run_id)
+           VALUES ('part_dimensions','dimension',$1,$2,$3::jsonb,NULL,NULL)
+           ON CONFLICT (import_type, entity_type, external_id) DO UPDATE
+             SET source_type=EXCLUDED.source_type,
+                 latest_internal_ref=EXCLUDED.latest_internal_ref,
+                 hit_count=import_external_entity_refs.hit_count + 1,
+                 last_seen_at=NOW()`,
+          [
+            sourceCharacteristicKey,
+            parseSourceType(sourceType) || "manual_csv",
+            JSON.stringify({
+              dimensionId,
+              partId,
+              opNumber,
+              operationId,
+              dimensionName: dimName,
+              sourceCharacteristicKey,
+              bubbleNumber,
+              featureType,
+              gdtClass
+            })
+          ]
+        );
+      }
 
       const toolItNums = String(toolItNumsRaw || "")
         .split(/[;|]/)
@@ -1005,6 +1415,10 @@ function normalizeMeasurementRows(rows, options = {}) {
     const comment = firstValue(row, ["comment", "notes", "note"]).trim() || defaultComment || null;
 
     const dimensionId = parsePositiveInteger(firstValue(row, ["dimension_id", "dim_id"]));
+    const dimensionExternalId = firstValue(
+      row,
+      ["dimension_external_id", "characteristic_external_id", "characteristic_id", "feature_id", "bubble_id"]
+    ).trim();
     const dimensionName = firstValue(row, ["dimension_name", "dimension", "feature", "characteristic", "char"]).trim();
 
     const pieceNumber = parsePositiveInteger(firstValue(row, ["piece_number", "piece", "sample", "part_piece"]));
@@ -1025,7 +1439,7 @@ function normalizeMeasurementRows(rows, options = {}) {
       .filter(Boolean).length / 5;
 
     const hasOperationContext = !!(operationId || operationRef || forceJobId);
-    if (!jobId || !hasOperationContext || (!dimensionId && !dimensionName) || !pieceNumber || (!value && !missingReason)) {
+    if (!jobId || !hasOperationContext || (!dimensionId && !dimensionName && !dimensionExternalId) || !pieceNumber || (!value && !missingReason)) {
       unresolved.push({
         line: row._line,
         reason: "insufficient_row_context",
@@ -1045,6 +1459,7 @@ function normalizeMeasurementRows(rows, options = {}) {
             status,
             comment,
             dimensionId,
+            dimensionExternalId,
             dimensionName,
             pieceNumber,
             value,
@@ -1073,6 +1488,7 @@ function normalizeMeasurementRows(rows, options = {}) {
       status,
       comment,
       dimensionId,
+      dimensionExternalId,
       dimensionName,
       pieceNumber,
       value,
@@ -1120,6 +1536,7 @@ function rowsFromMeasurementRecords(records) {
         status: record.status,
         comment: record.comment,
         dimension_id: v.dimensionId,
+        dimension_external_id: v.dimensionExternalId,
         dimension_name: v.dimensionName,
         piece_number: v.pieceNumber,
         value: v.value,
@@ -1188,7 +1605,12 @@ async function importMeasurementsRows(rows, options = {}) {
     const firstRow = groupRows[0];
     try {
       await transaction(async (client) => {
-        const jobRes = await client.query("SELECT * FROM jobs WHERE id=$1 FOR UPDATE", [firstRow.jobId]);
+        const jobRes = await client.query(
+          `SELECT ${JOB_IMPORT_COLUMNS}
+           FROM jobs
+           WHERE id=$1 FOR UPDATE`,
+          [firstRow.jobId]
+        );
         const job = jobRes.rows[0];
         if (!job) throw new Error(`line_${firstRow.line}: job_not_found`);
 
@@ -1240,7 +1662,9 @@ async function importMeasurementsRows(rows, options = {}) {
         if (!hasRevision) throw new Error(`line_${firstRow.line}: part_revision_not_found`);
 
         const dimsRes = await client.query(
-          `SELECT id, name, nominal, tol_plus, tol_minus, unit, sampling, sampling_interval, input_mode
+          `SELECT id, name, bubble_number, feature_type, gdt_class, tolerance_zone,
+                  feature_quantity, feature_units, feature_modifiers_json, source_characteristic_key,
+                  nominal, tol_plus, tol_minus, unit, sampling, sampling_interval, input_mode
            FROM dimensions
            WHERE operation_id=$1
            ORDER BY id ASC`,
@@ -1265,6 +1689,40 @@ async function importMeasurementsRows(rows, options = {}) {
           let dim = null;
           if (row.dimensionId && dimById.has(Number(row.dimensionId))) {
             dim = dimById.get(Number(row.dimensionId));
+          } else if (row.dimensionExternalId) {
+            const refRes = await client.query(
+              `SELECT latest_internal_ref
+               FROM import_external_entity_refs
+               WHERE import_type='part_dimensions'
+                 AND entity_type='dimension'
+                 AND external_id=$1
+               LIMIT 1`,
+              [row.dimensionExternalId]
+            );
+            const refDimId = parsePositiveInteger(
+              refRes.rows[0]?.latest_internal_ref?.dimensionId
+              || refRes.rows[0]?.latest_internal_ref?.dimension_id
+            );
+            if (refDimId && dimById.has(refDimId)) {
+              dim = dimById.get(refDimId);
+            } else if (!row.dimensionName) {
+              unresolvedItems.push({
+                line: row.line,
+                reason: "characteristic_mapping_not_found",
+                confidence: 0.3,
+                payload: {
+                  inferred: row,
+                  lookupExternalId: row.dimensionExternalId,
+                  availableDimensions: dims.map((m) => ({
+                    id: m.id,
+                    name: m.name,
+                    bubbleNumber: m.bubble_number || null,
+                    sourceCharacteristicKey: m.source_characteristic_key || null
+                  }))
+                }
+              });
+              continue;
+            }
           } else if (row.dimensionName) {
             const key = canonicalDimensionName(row.dimensionName);
             const matches = dimByCanonName.get(key) || [];
@@ -1276,8 +1734,18 @@ async function importMeasurementsRows(rows, options = {}) {
                 confidence: matches.length > 1 ? 0.45 : 0.2,
                 payload: {
                   inferred: row,
-                  suggestions: matches.map((m) => ({ id: m.id, name: m.name })),
-                  availableDimensions: dims.map((m) => ({ id: m.id, name: m.name }))
+                  suggestions: matches.map((m) => ({
+                    id: m.id,
+                    name: m.name,
+                    bubbleNumber: m.bubble_number || null,
+                    sourceCharacteristicKey: m.source_characteristic_key || null
+                  })),
+                  availableDimensions: dims.map((m) => ({
+                    id: m.id,
+                    name: m.name,
+                    bubbleNumber: m.bubble_number || null,
+                    sourceCharacteristicKey: m.source_characteristic_key || null
+                  }))
                 }
               });
               continue;
@@ -1291,7 +1759,12 @@ async function importMeasurementsRows(rows, options = {}) {
               confidence: 0.2,
               payload: {
                 inferred: row,
-                availableDimensions: dims.map((m) => ({ id: m.id, name: m.name }))
+                availableDimensions: dims.map((m) => ({
+                  id: m.id,
+                  name: m.name,
+                  bubbleNumber: m.bubble_number || null,
+                  sourceCharacteristicKey: m.source_characteristic_key || null
+                }))
               }
             });
             continue;
@@ -1315,7 +1788,13 @@ async function importMeasurementsRows(rows, options = {}) {
               confidence: 0.35,
               payload: {
                 inferred: row,
-                dimension: { id: dim.id, name: dim.name, inputMode: dim.input_mode }
+                dimension: {
+                  id: dim.id,
+                  name: dim.name,
+                  inputMode: dim.input_mode,
+                  bubbleNumber: dim.bubble_number || null,
+                  sourceCharacteristicKey: dim.source_characteristic_key || null
+                }
               }
             });
             continue;
@@ -1365,12 +1844,22 @@ async function importMeasurementsRows(rows, options = {}) {
         for (const d of dims) {
           await client.query(
             `INSERT INTO record_dimension_snapshots
-               (record_id, dimension_id, name, nominal, tol_plus, tol_minus, unit, sampling, sampling_interval, input_mode)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+               (record_id, dimension_id, name, bubble_number, feature_type, gdt_class, tolerance_zone,
+                feature_quantity, feature_units, feature_modifiers_json, source_characteristic_key,
+                nominal, tol_plus, tol_minus, unit, sampling, sampling_interval, input_mode)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11,$12,$13,$14,$15,$16,$17,$18)`,
             [
               record.id,
               Number(d.id),
               d.name,
+              d.bubble_number || null,
+              d.feature_type || null,
+              d.gdt_class || null,
+              d.tolerance_zone || null,
+              d.feature_quantity == null ? null : Number(d.feature_quantity),
+              d.feature_units || null,
+              JSON.stringify(Array.isArray(d.feature_modifiers_json) ? d.feature_modifiers_json : []),
+              d.source_characteristic_key || null,
               d.nominal,
               d.tol_plus,
               d.tol_minus,
@@ -1520,6 +2009,7 @@ function summarizeForRun(result, runtime = null) {
     inserted: Number(result?.inserted || 0),
     updated: Number(result?.updated || 0),
     failed: Number(result?.failed || 0),
+    warningCount: Array.isArray(result?.warnings) ? result.warnings.length : 0,
     unresolvedCount: Number(result?.unresolvedCount || 0),
     externalRefCount: Number(result?.externalRefCount || 0),
     adapter: result?.adapter || null
@@ -1604,6 +2094,7 @@ async function runImportByType({ importType, payload, sourceType = "manual", rol
   if (!VALID_IMPORT_TYPES.includes(importType)) {
     throw new Error("invalid_import_type");
   }
+  const parserWarnings = parserWarningsFromPayload(payload);
 
   if (importType === "measurements") {
     let rows = [];
@@ -1615,7 +2106,7 @@ async function runImportByType({ importType, payload, sourceType = "manual", rol
     if (!rows.length) {
       throw new Error("csv_no_rows");
     }
-    return importMeasurementsRows(rows, {
+    const result = await importMeasurementsRows(rows, {
       sourceType,
       role,
       forceJobId: options.forceJobId,
@@ -1627,6 +2118,7 @@ async function runImportByType({ importType, payload, sourceType = "manual", rol
       requireOpenJob: options.requireOpenJob,
       requireLockOwnerUserId: options.requireLockOwnerUserId
     });
+    return { ...result, warnings: parserWarnings };
   }
 
   const rows = rowsFromPayload(payload);
@@ -1635,13 +2127,16 @@ async function runImportByType({ importType, payload, sourceType = "manual", rol
   }
 
   if (importType === "tools") {
-    return importToolsRows(rows);
+    const result = await importToolsRows(rows);
+    return { ...result, warnings: parserWarnings };
   }
   if (importType === "part_dimensions") {
-    return importPartDimensionsRows(rows, role);
+    const result = await importPartDimensionsRows(rows, role, sourceType);
+    return { ...result, warnings: parserWarnings };
   }
   if (importType === "jobs") {
-    return importJobsRows(rows, role);
+    const result = await importJobsRows(rows, role);
+    return { ...result, warnings: parserWarnings };
   }
 
   throw new Error("unsupported_import_type");
@@ -1681,14 +2176,21 @@ async function executeConnectorManagedImport({
   options = {}
 }) {
   const adapterPack = resolveAdapterPack({ importType, payload, options });
-  const adapterResult = adapterPack === "erp_job_v1"
-    ? adaptErpJobsPayload({
-        payload,
-        sourceType,
-        triggerMode,
-        integrationId
-      })
-    : null;
+  let adapterResult = null;
+  if (adapterPack === "erp_job_v1") {
+    adapterResult = adaptErpJobsPayload({
+      payload,
+      sourceType,
+      triggerMode,
+      integrationId
+    });
+  } else if (adapterPack && adapterPack.startsWith("metrology:")) {
+    const parserPack = adapterPack.replace("metrology:", "").trim() || null;
+    adapterResult = adaptMetrologyMeasurementsPayload({
+      payload,
+      parserPack
+    });
+  }
   const runtimePayload = adapterResult?.payload || payload;
 
   const payloadFingerprint = createPayloadFingerprint(runtimePayload);
@@ -1702,12 +2204,6 @@ async function executeConnectorManagedImport({
     actorRole: role,
     payloadFingerprint
   });
-  const externalRefs = buildExternalEntityRefs({
-    importType: envelopeInput.importType,
-    payload: runtimePayload,
-    sourceType: envelopeInput.sourceType
-  });
-
   const runtime = await executeConnectorRuntime({
     envelopeInput,
     ledger: {
@@ -1739,6 +2235,11 @@ async function executeConnectorManagedImport({
     resultErrors: normalized.errors,
     runtimeErrors: runtime.errors
   });
+  const externalRefs = buildExternalEntityRefs({
+    importType: envelopeInput.importType,
+    payload: runtimePayload,
+    sourceType: envelopeInput.sourceType
+  });
   const adaptedNormalized = applyAdapterResultToImportResult(normalized, adapterResult);
   adaptedNormalized.externalRefCount = externalRefs.length;
 
@@ -1761,6 +2262,7 @@ async function executeDirectImportWithAudit({
   payload,
   sourceType,
   role,
+  userId = null,
   triggerMode = "manual",
   options = {}
 }) {
@@ -1797,6 +2299,18 @@ async function executeDirectImportWithAudit({
     runId: run.runId,
     runStatus: run.status
   });
+  try {
+    await refreshAnalyticsForImportRun({
+      runId: run.runId,
+      sourceType,
+      importType,
+      role,
+      userId
+    });
+  } catch (analyticsErr) {
+    // Keep imports resilient when analytics refresh has a transient failure.
+    console.warn("[analytics] incremental refresh failed after direct import", analyticsErr?.message || analyticsErr);
+  }
 
   return {
     ...result,
@@ -1819,12 +2333,16 @@ function integrationLastMessage(result, runtime, status) {
     `inserted=${Number(result?.inserted || 0)}`,
     `updated=${Number(result?.updated || 0)}`,
     `failed=${Number(result?.failed || 0)}`,
+    `adapter=${result?.adapter?.adapterPack || "none"}`,
     `attempts=${attemptCount}`,
     `duplicate=${Boolean(runtime?.duplicate)}`
   ].join(" ");
 }
 
-async function runConfiguredIntegration(integration, { triggerMode = "manual", payloadOverride = null, role = "Admin" } = {}) {
+async function runConfiguredIntegration(
+  integration,
+  { triggerMode = "manual", payloadOverride = null, role = "Admin", userId = null } = {}
+) {
   const sourceType = String(integration.source_type);
   const importType = String(integration.import_type);
 
@@ -1862,6 +2380,18 @@ async function runConfiguredIntegration(integration, { triggerMode = "manual", p
     runId: run.runId,
     runStatus: run.status
   });
+  try {
+    await refreshAnalyticsForImportRun({
+      runId: run.runId,
+      sourceType,
+      importType,
+      role,
+      userId
+    });
+  } catch (analyticsErr) {
+    // Keep integrations resilient when analytics refresh has a transient failure.
+    console.warn("[analytics] incremental refresh failed after configured integration run", analyticsErr?.message || analyticsErr);
+  }
 
   await query(
     `UPDATE import_integrations
@@ -1886,7 +2416,7 @@ async function runConfiguredIntegration(integration, { triggerMode = "manual", p
 
 async function pollScheduledIntegrations() {
   const { rows } = await query(
-    `SELECT *
+    `SELECT ${IMPORT_INTEGRATION_COLUMNS}
      FROM import_integrations
      WHERE enabled=true
        AND poll_interval_minutes IS NOT NULL
@@ -1920,11 +2450,15 @@ export function startImportScheduler() {
   if (process.env.NODE_ENV === "test") return;
   if (schedulerHandle) return;
   schedulerHandle = setInterval(() => {
-    pollScheduledIntegrations().catch(() => {});
+    pollScheduledIntegrations().catch((err) => {
+      console.error("[import-scheduler] pollScheduledIntegrations failed:", err?.message || err);
+    });
   }, 60 * 1000);
 
   setTimeout(() => {
-    pollScheduledIntegrations().catch(() => {});
+    pollScheduledIntegrations().catch((err) => {
+      console.error("[import-scheduler] pollScheduledIntegrations failed:", err?.message || err);
+    });
   }, 4000);
 }
 
@@ -1932,14 +2466,15 @@ router.post("/tools/csv", requireCapability("manage_tools"), async (req, res, ne
   try {
     const { csvText } = req.body || {};
     if (!String(csvText || "").trim()) return res.status(400).json({ error: "csv_required" });
-    const { rows } = parseCsvText(csvText);
+    const { rows, warnings } = parseCsvText(csvText);
     if (!rows.length) return res.status(400).json({ error: "csv_no_rows" });
 
     const result = await executeDirectImportWithAudit({
       importType: "tools",
-      payload: { csvText },
+      payload: { rows, parserWarnings: warnings },
       sourceType: "manual_csv",
       role: requestRole(req),
+      userId: getActorUserId(req),
       triggerMode: "manual"
     });
 
@@ -1960,14 +2495,15 @@ router.post("/part-dimensions/csv", requireCapability("manage_parts"), async (re
   try {
     const { csvText } = req.body || {};
     if (!String(csvText || "").trim()) return res.status(400).json({ error: "csv_required" });
-    const { rows } = parseCsvText(csvText);
+    const { rows, warnings } = parseCsvText(csvText);
     if (!rows.length) return res.status(400).json({ error: "csv_no_rows" });
 
     const result = await executeDirectImportWithAudit({
       importType: "part_dimensions",
-      payload: { csvText },
+      payload: { rows, parserWarnings: warnings },
       sourceType: "manual_csv",
       role: requestRole(req),
+      userId: getActorUserId(req),
       triggerMode: "manual"
     });
     const statusCode = importResponseStatusCode(result);
@@ -1984,14 +2520,15 @@ router.post("/jobs/csv", requireCapability("manage_jobs"), async (req, res, next
   try {
     const { csvText } = req.body || {};
     if (!String(csvText || "").trim()) return res.status(400).json({ error: "csv_required" });
-    const { rows } = parseCsvText(csvText);
+    const { rows, warnings } = parseCsvText(csvText);
     if (!rows.length) return res.status(400).json({ error: "csv_no_rows" });
 
     const result = await executeDirectImportWithAudit({
       importType: "jobs",
-      payload: { csvText },
+      payload: { rows, parserWarnings: warnings },
       sourceType: "manual_csv",
       role: requestRole(req),
+      userId: getActorUserId(req),
       triggerMode: "manual"
     });
     const statusCode = importResponseStatusCode(result);
@@ -2012,6 +2549,7 @@ router.post("/measurements/bulk", requireCapability("manage_jobs"), async (req, 
       payload,
       sourceType: "api_pull",
       role: requestRole(req),
+      userId: getActorUserId(req),
       triggerMode: "manual",
       options: {
         requireOpenJob: false,
@@ -2047,11 +2585,12 @@ router.post("/jobs/:jobId/measurements/csv", requireCapability("submit_records")
       return res.status(403).json({ error: "auth_user_mismatch" });
     }
 
-    const { rows } = parseCsvText(csvText);
+    const { rows, warnings } = parseCsvText(csvText);
     if (!rows.length) return res.status(400).json({ error: "csv_no_rows" });
 
     const runtimePayload = {
       rows,
+      parserWarnings: warnings,
       jobId,
       operationId: operationId || null,
       partId: partId || null,
@@ -2065,6 +2604,7 @@ router.post("/jobs/:jobId/measurements/csv", requireCapability("submit_records")
       payload: runtimePayload,
       sourceType: "operator_csv",
       role: requestRole(req),
+      userId: getActorUserId(req),
       triggerMode: "manual",
       options: {
         forceJobId: jobId,
@@ -2092,6 +2632,12 @@ router.post("/jobs/:jobId/measurements/csv", requireCapability("submit_records")
 
 router.post("/adapters/erp-jobs/preview", requireCapability("view_admin"), async (req, res, next) => {
   try {
+    if (!isLegacyPartnerIntegrationSurfaceEnabled()) {
+      return res.status(404).json({
+        error: "legacy_integration_surface_disabled",
+        detail: legacyPartnerSurfaceDisabledDetail()
+      });
+    }
     const sourceType = parseSourceType(req.body?.sourceType || "api_pull") || "api_pull";
     const triggerMode = normalizeTriggerMode(req.body?.triggerMode || "manual");
     const integrationId = parsePositiveInteger(req.body?.integrationId);
@@ -2110,6 +2656,59 @@ router.post("/adapters/erp-jobs/preview", requireCapability("view_admin"), async
       rejectedRows: adapter.rejected
     });
   } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/parsers/metrology/packs", requireCapability("view_admin"), async (req, res, next) => {
+  try {
+    if (!isLegacyPartnerIntegrationSurfaceEnabled()) {
+      return res.status(404).json({
+        error: "legacy_integration_surface_disabled",
+        detail: legacyPartnerSurfaceDisabledDetail()
+      });
+    }
+    res.json({
+      contractId: "INT-CONNECTOR-v2",
+      packs: listMetrologyParserPacks()
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/parsers/metrology/preview", requireCapability("view_admin"), async (req, res, next) => {
+  try {
+    if (!isLegacyPartnerIntegrationSurfaceEnabled()) {
+      return res.status(404).json({
+        error: "legacy_integration_surface_disabled",
+        detail: legacyPartnerSurfaceDisabledDetail()
+      });
+    }
+    const payload = req.body?.payload ?? req.body;
+    const parserPack = parseMetrologyParserPack(req.body?.parserPack || req.body?.parser_pack || req.body?.metrologyParserPack);
+    if ((req.body?.parserPack || req.body?.parser_pack || req.body?.metrologyParserPack) && !parserPack) {
+      return res.status(400).json({ error: "invalid_parser_pack" });
+    }
+
+    const parsed = parseMetrologyPayload({
+      parserPack,
+      payload
+    });
+    res.json({
+      contractId: "INT-CONNECTOR-v2",
+      parserPack: parsed.parserPack,
+      totalRows: Number(parsed.totalRows || 0),
+      acceptedRows: Number(parsed.acceptedRows || 0),
+      rejectedRows: Number(parsed.rejectedRows || 0),
+      sampleRows: (parsed.rows || []).slice(0, 25),
+      rejected: parsed.rejected || []
+    });
+  } catch (err) {
+    const code = safeErrorCode(err);
+    if (code === "invalid_parser_pack" || code === "parser_pack_required_or_undetectable") {
+      return res.status(400).json({ error: code });
+    }
     next(err);
   }
 });
@@ -2145,6 +2744,16 @@ router.post("/integrations", requireCapability("view_admin"), async (req, res, n
     if (pollIntervalMinutes !== undefined && poll === null) {
       return res.status(400).json({ error: "invalid_poll_interval" });
     }
+    let normalizedOptions = {};
+    try {
+      normalizedOptions = normalizeIntegrationOptions(options, normalizedImport);
+    } catch (optionsErr) {
+      const code = safeErrorCode(optionsErr);
+      if (code === "invalid_parser_pack" || code === "invalid_adapter_pack") {
+        return res.status(400).json({ error: code });
+      }
+      throw optionsErr;
+    }
 
     const { rows } = await query(
       `INSERT INTO import_integrations
@@ -2159,7 +2768,7 @@ router.post("/integrations", requireCapability("view_admin"), async (req, res, n
         authHeader || null,
         poll,
         enabled !== false,
-        options || {}
+        normalizedOptions
       ]
     );
 
@@ -2186,7 +2795,12 @@ router.put("/integrations/:id", requireCapability("view_admin"), async (req, res
       options
     } = req.body || {};
 
-    const existing = await query("SELECT * FROM import_integrations WHERE id=$1", [id]);
+    const existing = await query(
+      `SELECT ${IMPORT_INTEGRATION_COLUMNS}
+       FROM import_integrations
+       WHERE id=$1`,
+      [id]
+    );
     if (!existing.rows[0]) return res.status(404).json({ error: "not_found" });
     const current = existing.rows[0];
 
@@ -2202,6 +2816,18 @@ router.put("/integrations/:id", requireCapability("view_admin"), async (req, res
     }
     if (pollIntervalMinutes !== undefined && pollIntervalMinutes !== null && pollIntervalMinutes !== "" && nextPoll === null) {
       return res.status(400).json({ error: "invalid_poll_interval" });
+    }
+    let nextOptions = current.options || {};
+    if (options !== undefined) {
+      try {
+        nextOptions = normalizeIntegrationOptions(options || {}, nextImport);
+      } catch (optionsErr) {
+        const code = safeErrorCode(optionsErr);
+        if (code === "invalid_parser_pack" || code === "invalid_adapter_pack") {
+          return res.status(400).json({ error: code });
+        }
+        throw optionsErr;
+      }
     }
 
     const updated = await query(
@@ -2225,7 +2851,7 @@ router.put("/integrations/:id", requireCapability("view_admin"), async (req, res
         authHeader === undefined ? current.auth_header : (authHeader || null),
         nextPoll,
         enabled === undefined ? current.enabled : enabled !== false,
-        options === undefined ? current.options : (options || {}),
+        nextOptions,
         id
       ]
     );
@@ -2242,7 +2868,12 @@ router.put("/integrations/:id", requireCapability("view_admin"), async (req, res
 router.post("/integrations/:id/pull", requireCapability("view_admin"), async (req, res, next) => {
   try {
     const { id } = req.params;
-    const integrationRes = await query("SELECT * FROM import_integrations WHERE id=$1", [id]);
+    const integrationRes = await query(
+      `SELECT ${IMPORT_INTEGRATION_COLUMNS}
+       FROM import_integrations
+       WHERE id=$1`,
+      [id]
+    );
     const integration = integrationRes.rows[0];
     if (!integration) return res.status(404).json({ error: "not_found" });
 
@@ -2250,7 +2881,8 @@ router.post("/integrations/:id/pull", requireCapability("view_admin"), async (re
     const result = await runConfiguredIntegration(integration, {
       triggerMode: "manual",
       payloadOverride,
-      role: requestRole(req) || "Admin"
+      role: requestRole(req) || "Admin",
+      userId: getActorUserId(req)
     });
 
     const statusCode = importResponseStatusCode(result);
@@ -2265,7 +2897,7 @@ router.get("/runs", requireCapability("view_admin"), async (req, res, next) => {
     const { limit = "50" } = req.query;
     const safeLimit = Math.min(200, Math.max(1, Number(limit) || 50));
     const { rows } = await query(
-      `SELECT * FROM import_runs ORDER BY created_at DESC LIMIT $1`,
+      `SELECT id, integration_id, source_type, import_type, trigger_mode, status, total_rows, inserted_count, updated_count, failed_count, summary, errors, created_at FROM import_runs ORDER BY created_at DESC LIMIT $1`,
       [safeLimit]
     );
     res.json(rows);
@@ -2335,7 +2967,7 @@ router.get("/unresolved", requireCapability("view_admin"), async (req, res, next
     params.push(limit);
 
     const { rows } = await query(
-      `SELECT * FROM import_unresolved_items ${where} ORDER BY created_at DESC LIMIT $${params.length}`,
+      `SELECT id, run_id, source_type, import_type, line_number, reason, confidence, payload, status, resolved_payload, resolved_by_role, created_at, resolved_at FROM import_unresolved_items ${where} ORDER BY created_at DESC LIMIT $${params.length}`,
       params
     );
     res.json(rows);
@@ -2348,7 +2980,9 @@ router.post("/unresolved/:id/resolve", requireCapability("view_admin"), async (r
   try {
     const { id } = req.params;
     const unresolvedRes = await query(
-      "SELECT * FROM import_unresolved_items WHERE id=$1",
+      `SELECT ${IMPORT_UNRESOLVED_COLUMNS}
+       FROM import_unresolved_items
+       WHERE id=$1`,
       [id]
     );
     const item = unresolvedRes.rows[0];
@@ -2445,7 +3079,12 @@ router.post("/webhooks/:importType", async (req, res, next) => {
     const integrationId = parsePositiveInteger(req.body?.integrationId || req.query.integrationId || req.header("x-import-integration-id"));
     let integration = null;
     if (integrationId) {
-      const integrationRes = await query("SELECT * FROM import_integrations WHERE id=$1", [integrationId]);
+      const integrationRes = await query(
+        `SELECT ${IMPORT_INTEGRATION_COLUMNS}
+         FROM import_integrations
+         WHERE id=$1`,
+        [integrationId]
+      );
       integration = integrationRes.rows[0] || null;
       if (!integration) return res.status(404).json({ error: "integration_not_found" });
       if (integration.import_type !== importType) {
@@ -2507,6 +3146,18 @@ router.post("/webhooks/:importType", async (req, res, next) => {
         runId: run.runId,
         runStatus: run.status
       });
+      try {
+        await refreshAnalyticsForImportRun({
+          runId: run.runId,
+          sourceType: "webhook",
+          importType,
+          role: "Admin",
+          userId: null
+        });
+      } catch (analyticsErr) {
+        // Keep webhook ingestion resilient when analytics refresh has a transient failure.
+        console.warn("[analytics] incremental refresh failed after webhook run", analyticsErr?.message || analyticsErr);
+      }
       result.runId = run.runId;
       result.runStatus = run.status;
     }
@@ -2532,7 +3183,15 @@ router.get("/templates", requireCapability("view_admin"), (req, res) => {
         "part_name",
         "op_number",
         "op_label",
+        "dimension_external_id",
+        "bubble_number",
         "dimension_name",
+        "feature_type",
+        "gdt_class",
+        "tolerance_zone",
+        "feature_quantity",
+        "feature_units",
+        "feature_modifiers",
         "nominal",
         "tol_plus",
         "tol_minus",
@@ -2563,6 +3222,7 @@ router.get("/templates", requireCapability("view_admin"), (req, res) => {
         "part_revision",
         "operation_ref",
         "piece_number",
+        "dimension_external_id",
         "dimension_name",
         "value",
         "is_oot",
@@ -2586,6 +3246,9 @@ router.get("/templates", requireCapability("view_admin"), (req, res) => {
         "nc_num",
         "details"
       ]
+    },
+    metrologyParserPacks: {
+      packs: listMetrologyParserPacks()
     }
   });
 });
