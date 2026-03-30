@@ -73,6 +73,31 @@ This backlog follows `docs/backlog-framework.md` and is organized for parallel t
 | BL-049 | R4 | COMM | EDGE | Team Ledger | BL-046, BL-051 | COMM-LICENSE-v1 | 74 | Module policy/rules engine supports controlled feature activation by entitlement profile. |
 | BL-050 | R4 | PLAT | EDGE | Team Atlas | BL-046, BL-047, BL-048, BL-049 | PLAT-DEPLOY-v1 | 73 | Ecosystem compatibility suite ensures extension/module upgrades do not regress core workflows. |
 
+## R5 Backlog (UI/UX Modernization)
+
+| ID | Release | Stream | Module | Owner Team | Dependencies | Interface Contract | Priority Score | Acceptance |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| BL-062 | R5 | OPS | CORE | Team Forge | BL-028 | OPS-JOBFLOW-v1 | 96 | URL-driven navigation persists top-level view and admin subsection with shareable deep links and stable refresh behavior. |
+| BL-063 | R5 | OPS | CORE | Team Forge | BL-062 | OPS-JOBFLOW-v1 | 95 | Admin information architecture is flattened with grouped left-sidebar navigation replacing sub-tab sprawl. |
+| BL-064 | R5 | PLAT | CORE | Team Atlas | BL-028 | PLAT-UX-v1 | 94 | Toast/notification stack supports concurrent non-blocking status events with severity-aware persistence and dismissal. |
+| BL-065 | R5 | OPS | CORE | Team Forge | BL-028 | OPS-JOBFLOW-v1 | 93 | Jobs and records tables support consistent page-size controls and pagination for large datasets. |
+| BL-066 | R5 | PLAT | CORE | Team Atlas | BL-028 | PLAT-UX-v1 | 92 | Loading skeletons, actionable empty states, and visible focus rings are standardized across primary UI surfaces. |
+| BL-067 | R5 | OPS | CORE | Team Forge | BL-028 | OPS-JOBFLOW-v1 | 90 | Operator flow shows explicit step progress and pinned specification headers throughout entry workflow. |
+| BL-068 | R5 | OPS | CORE | Team Forge | BL-065 | OPS-JOBFLOW-v1 | 89 | Measurement entry supports compact/expanded density modes plus active row/column context highlighting. |
+| BL-069 | R5 | OPS | CORE | Team Forge | BL-065 | OPS-JOBFLOW-v1 | 88 | Data tables expose unified filter bars with URL-synced state and quick clear controls. |
+| BL-070 | R5 | PLAT | CORE | Team Atlas | BL-066 | PLAT-UX-v1 | 87 | Keyboard and assistive support is hardened (Escape modal close, arrow-cell nav, aria-live announcements). |
+| BL-071 | R5 | PLAT | CORE | Team Atlas | BL-062, BL-064, BL-066 | PLAT-UX-v1 | 86 | Home dashboard becomes default landing view with role-tailored status cards and actionable alerts. |
+| BL-072 | R5 | OPS | CORE | Team Forge | BL-067 | OPS-JOBFLOW-v1 | 89 | Operator lookup supports quick filter chips (part, operation, status) for one-click job narrowing. |
+| BL-073 | R5 | OPS | CORE | Team Forge | BL-065, BL-072 | OPS-JOBFLOW-v1 | 88 | Operator lookup job list adds scalable pagination with persistent page size and total counts. |
+| BL-074 | R5 | OPS | CORE | Team Forge | BL-067 | OPS-JOBFLOW-v1 | 87 | Measurement table keeps dimension/spec header rows sticky during scroll for constant tolerance visibility. |
+| BL-075 | R5 | OPS | CORE | Team Forge | BL-068 | OPS-JOBFLOW-v1 | 87 | Measurement entry exposes live sticky summary footer with pass/fail/NA counts. |
+| BL-076 | R5 | PLAT | CORE | Team Atlas | BL-070 | PLAT-UX-v1 | 86 | Keyboard shortcut reference overlay (`?`) is available globally with discoverable hotkeys. |
+| BL-077 | R5 | PLAT | CORE | Team Atlas | BL-066 | PLAT-UX-v1 | 85 | Destructive actions use explicit confirmation dialog flow instead of immediate single-click execution. |
+| BL-078 | R5 | OPS | CORE | Team Forge | BL-063 | OPS-JOBFLOW-v1 | 84 | Admin forms include section headings and inline help for domain-heavy inputs (sampling interval, IT number, revision). |
+| BL-079 | R5 | PLAT | CORE | Team Atlas | BL-066 | PLAT-UX-v1 | 84 | High-risk entry forms validate on blur with field-level feedback before submit. |
+| BL-080 | R5 | OPS | CORE | Team Forge | BL-068 | OPS-JOBFLOW-v1 | 83 | Measurement table adds preset column width controls (narrow/default/wide) to reduce drag-only dependency. |
+| BL-081 | R5 | PLAT | CORE | Team Atlas | BL-071 | PLAT-UX-v1 | 82 | Header chrome provides role-specific visual context accents to reinforce active working mode. |
+
 ## Delivery Sequence Defaults
 1. Complete R1 `PLAT`, `OPS`, `QUAL`, and `COMM` foundation items.
 2. Freeze R1 contracts and run full acceptance matrix.

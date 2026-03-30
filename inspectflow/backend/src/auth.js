@@ -40,6 +40,9 @@ export function readSessionTokenFromRequest(req) {
 
 function sessionTokenHash(token) {
   const pepper = String(process.env.AUTH_TOKEN_PEPPER || "");
+  if (!pepper && process.env.NODE_ENV !== "test") {
+    throw new Error("AUTH_TOKEN_PEPPER must be set in production");
+  }
   return crypto.createHash("sha256").update(`${pepper}:${token}`).digest("hex");
 }
 

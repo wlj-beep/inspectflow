@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import { api } from "../api/index.js";
 import { createJobflowAdapter } from "../domains/jobflow/adapter.js";
 import { CAPABILITY_DEFS, DEFAULT_ROLE_CAPS } from "../domains/jobflow/constants.js";
@@ -11,6 +11,22 @@ import {
   mapToolLibrary,
   mapToolLocations
 } from "../domains/jobflow/mappers.js";
+import { TableSkeleton, EmptyState, Breadcrumbs } from "../ui/feedback.jsx";
+import { readRecordsFilterFromUrl, writeRecordsFilterToUrl } from "../ui/filterUrlState.js";
+import { HomeDashboard } from "../ui/homeDashboard.jsx";
+import { buildGridOrder, getNeighborKey, moveFocusToKey, ensureVisibleCell } from "../ui/measurementKeyboard.js";
+import { computeMeasurementSummary } from "../ui/measurementSummary.js";
+import { readUiRouteState, writeUiRouteState, buildBreadcrumbs, ADMIN_TAB_GROUPS } from "../ui/navigation.js";
+import { OperatorStageBar, PinnedSpecLegend } from "../ui/operatorProgress.jsx";
+import { TABLE_DENSITY, readTableDensity, writeTableDensity, cellHighlightClasses } from "../ui/operatorTablePrefs.js";
+import { extractOperatorLookupFacets, filterOperatorJobs } from "../ui/operatorLookupFilters.js";
+import { paginateRows, PaginationControls } from "../ui/pagination.js";
+import { getRoleThemeClass, getRoleAccentLabel } from "../ui/roleTheme.js";
+import { ShortcutHelpOverlay } from "../ui/shortcutHelp.jsx";
+import { ConfirmDialog } from "../ui/confirmDialog.jsx";
+import { useToastStack, ToastStack } from "../ui/toast.jsx";
+import { validateJobFormField, validatePartField, validateToolField } from "../ui/fieldValidation.js";
+import { applyColumnWidthPreset } from "../ui/columnWidthPresets.js";
 
 const jobflowAdapter = createJobflowAdapter(api);
 
@@ -290,6 +306,11 @@ const CSS=`
 }
 html,body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:100vh;font-size:15px}
 .app-header{background:var(--surface);border-bottom:2px solid var(--accent);padding:0 1.75rem;display:flex;align-items:center;gap:1.5rem;height:54px;position:sticky;top:0;z-index:200}
+.app-header.role-theme-operator{border-bottom-color:#c97f1a}
+.app-header.role-theme-quality{border-bottom-color:#2e88d4}
+.app-header.role-theme-supervisor{border-bottom-color:#d4a017}
+.app-header.role-theme-admin{border-bottom-color:#9b6fd4}
+.role-accent{font-size:.62rem;color:var(--muted);letter-spacing:.1em;text-transform:uppercase}
 .logo{font-family:var(--cond);font-size:1.1rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--accent2);display:flex;align-items:center;gap:.5rem}
 .logo-icon{width:22px;height:22px;position:relative;flex-shrink:0}
 .logo-icon::before{content:"";position:absolute;inset:2px;border:2px solid var(--accent);border-radius:2px}
@@ -327,6 +348,10 @@ html,body{background:var(--bg);color:var(--text);font-family:var(--sans);min-hei
 .field label{font-size:.68rem;color:var(--muted);letter-spacing:.1em;text-transform:uppercase}
 input,select,textarea{width:100%;background:var(--panel2);border:1px solid var(--border2);color:var(--text);font-family:var(--sans);font-size:.88rem;padding:.5rem .7rem;border-radius:2px;outline:none;transition:border-color .15s}
 input:focus,select:focus,textarea:focus{border-color:var(--accent)}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,[role="button"]:focus-visible{
+  outline:2px solid var(--accent2);
+  outline-offset:2px;
+}
 textarea{resize:vertical;min-height:68px;font-size:.84rem}
 select option{background:var(--panel2)}
 .row2{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
@@ -346,15 +371,34 @@ select option{background:var(--panel2)}
 .btn-sm{padding:.28rem .65rem;font-size:.7rem}
 .btn-xs{padding:.18rem .45rem;font-size:.65rem}
 .job-strip{background:var(--panel);border:1px solid var(--border2);border-left:3px solid var(--accent);border-radius:3px;padding:.85rem 1.25rem;display:flex;flex-wrap:wrap;gap:2rem;align-items:center;margin-bottom:1rem}
+.chip-row{display:flex;flex-wrap:wrap;gap:.35rem;margin:.45rem 0}
+.chip-btn{background:var(--panel2);border:1px solid var(--border2);color:var(--muted);font-size:.72rem;padding:.2rem .5rem;border-radius:99px;cursor:pointer}
+.chip-btn.active{border-color:var(--accent);color:var(--accent2);background:#24180a}
 .strip-field{display:flex;flex-direction:column;gap:.15rem}
 .strip-label{font-size:.62rem;color:var(--muted);letter-spacing:.12em;text-transform:uppercase}
 .strip-val{font-family:var(--mono);font-size:.9rem;color:var(--accent2)}
+.operator-stage-bar{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.45rem;margin-bottom:.85rem}
+.operator-stage-bar__stage{border:1px solid var(--border2);background:var(--panel);border-radius:3px;padding:.4rem .5rem}
+.operator-stage-bar__stage.is-active{border-color:var(--accent);background:#21180a}
+.operator-stage-bar__stage.is-complete{border-color:#1a5c38;background:#0f2118}
+.operator-stage-bar__index{display:inline-flex;align-items:center;justify-content:center;min-width:1.2rem;height:1.2rem;border-radius:99px;background:var(--panel2);color:var(--muted);font-size:.66rem;margin-right:.35rem}
+.operator-stage-bar__label{font-family:var(--cond);font-size:.72rem;letter-spacing:.09em;text-transform:uppercase;color:var(--text)}
+.operator-stage-bar__meta{display:block;font-size:.62rem;color:var(--muted);margin-top:.12rem}
+.operator-spec-legend{display:flex;flex-wrap:wrap;gap:.35rem;margin-bottom:.8rem}
+.operator-spec-legend__pill{display:inline-flex;gap:.3rem;align-items:center;background:var(--panel);border:1px solid var(--border2);border-radius:99px;padding:.16rem .5rem}
+.operator-spec-legend__pill-label{font-size:.62rem;letter-spacing:.08em;color:var(--muted);text-transform:uppercase}
+.operator-spec-legend__pill-value{font-family:var(--mono);font-size:.72rem;color:var(--accent2)}
+.operator-spec-legend__text{font-size:.72rem;color:var(--muted);align-self:center}
 .meas-scroll{overflow-x:auto}
 .meas-table{border-collapse:collapse;font-size:.82rem;table-layout:fixed}
 .meas-table .rl{width:118px;background:var(--panel);border-right:2px solid var(--border2);font-family:var(--cond);font-size:.67rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);padding:.42rem .85rem;white-space:nowrap;text-align:right;vertical-align:middle}
 .meas-table .dc{width:160px;border-right:1px solid var(--border);vertical-align:top;overflow:hidden}
 .meas-table .dc:last-child{border-right:none}
 .meas-table .hrow td{border-bottom:1px solid var(--border);vertical-align:top}
+.meas-table .sticky-row td{position:sticky;background:var(--surface);z-index:30}
+.meas-table .sticky-1 td{top:0}
+.meas-table .sticky-2 td{top:47px}
+.meas-table .sticky-3 td{top:95px}
 .dim-hdr{padding:.55rem .7rem .35rem}
 .dim-hdr-name{font-family:var(--cond);font-size:.8rem;font-weight:700;color:var(--text);letter-spacing:.04em;word-break:break-word}
 .dim-hdr-spec{font-family:var(--mono);font-size:.68rem;color:var(--muted);margin-top:.15rem}
@@ -371,6 +415,16 @@ select option{background:var(--panel2)}
 .meas-table .pr:last-child td{border-bottom:none}
 .meas-table .pr:hover td{background:rgba(255,255,255,.018)}
 .meas-table .pr.mr td{background:#180d0d}
+.meas-table.compact .dim-hdr{padding:.35rem .5rem .25rem}
+.meas-table.compact .dim-hdr-name{font-size:.72rem}
+.meas-table.compact .dim-hdr-spec{font-size:.61rem}
+.meas-table.compact .pr td{padding:.16rem .24rem}
+.meas-table.compact .vi{font-size:.75rem !important}
+.meas-table.compact .hdr-inp{font-size:.72rem}
+.meas-table.compact .sample-tag,.meas-table.compact .gauge-tag,.meas-table.compact .range-tag{font-size:.56rem}
+.meas-table td.is-active-cell{outline:2px solid var(--accent2);outline-offset:-2px}
+.meas-table td.is-active-col{background:rgba(240,168,48,.06)}
+.meas-table tr.is-active-row td{background:rgba(46,136,212,.08)}
 .vi{font-family:var(--mono) !important;font-size:.86rem !important;text-align:center !important;padding:.28rem .3rem !important;background:var(--panel2) !important;width:100%;display:block}
 .vi.ok{border-color:var(--ok) !important;color:var(--ok)}
 .vi.oot{border-color:var(--warn) !important;color:var(--warn)}
@@ -422,6 +476,7 @@ select option{background:var(--panel2)}
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:600;display:flex;align-items:center;justify-content:center;padding:1rem}
 .modal{background:var(--surface);border:1px solid var(--border2);border-top:2px solid var(--accent);border-radius:4px;width:100%;max-width:500px;padding:1.5rem;max-height:90vh;overflow-y:auto}
 .modal-title{font-family:var(--cond);font-size:1rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--accent2);margin-bottom:1.25rem}
+.confirm-dialog-danger{border-top-color:var(--warn)}
 .success-card{background:#0a1e12;border:1px solid #1a5c38;border-left:3px solid var(--ok);border-radius:3px;padding:2rem;text-align:center;display:flex;flex-direction:column;align-items:center;gap:.75rem}
 .success-title{font-family:var(--cond);font-size:1.1rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ok)}
 .draft-card{background:#120e1e;border:1px solid var(--draft);border-left:3px solid var(--draft);border-radius:3px;padding:2rem;text-align:center;display:flex;flex-direction:column;align-items:center;gap:.75rem}
@@ -430,6 +485,54 @@ select option{background:var(--panel2)}
 .sub-tab{background:none;border:none;cursor:pointer;font-family:var(--cond);font-size:.78rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);padding:.55rem 1.2rem;border-bottom:2px solid transparent;margin-bottom:-1px;transition:color .15s,border-color .15s}
 .sub-tab.active{color:var(--accent2);border-bottom-color:var(--accent2)}
 .sub-tab:hover:not(.active){color:var(--text)}
+.admin-layout{display:grid;grid-template-columns:minmax(220px,260px) 1fr;gap:1rem;align-items:start}
+.admin-sidebar{position:sticky;top:72px;background:var(--surface);border:1px solid var(--border);border-radius:3px;padding:.8rem}
+.admin-sidebar-group{margin-bottom:.85rem}
+.admin-sidebar-group:last-child{margin-bottom:0}
+.admin-sidebar-label{font-family:var(--cond);font-size:.64rem;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:.35rem}
+.admin-side-btn{display:block;width:100%;text-align:left;background:none;border:1px solid transparent;border-radius:2px;color:var(--text);font-size:.78rem;padding:.4rem .5rem;cursor:pointer;transition:all .12s}
+.admin-side-btn:hover{border-color:var(--border2);background:var(--panel)}
+.admin-side-btn.active{border-color:var(--accent);background:#21180a;color:var(--accent2)}
+.admin-main{min-width:0}
+.breadcrumbs{margin:0 0 .75rem 0}
+.breadcrumbs__list{display:flex;align-items:center;gap:.35rem;list-style:none;padding:0;margin:0}
+.breadcrumbs__item{display:flex;align-items:center;gap:.35rem;font-size:.72rem;color:var(--muted)}
+.breadcrumbs__label{font-family:var(--mono)}
+.breadcrumbs__separator{color:var(--border2)}
+.toast-stack{position:fixed;top:66px;right:1rem;display:flex;flex-direction:column;gap:.55rem;z-index:750;max-width:min(420px,calc(100vw - 2rem))}
+.toast-item{display:flex;align-items:flex-start;gap:.6rem;padding:.55rem .65rem;border:1px solid var(--border2);border-left:3px solid var(--info);border-radius:3px;background:var(--surface);box-shadow:0 6px 20px rgba(0,0,0,.32)}
+.toast-info{border-left-color:var(--info)}
+.toast-success{border-left-color:var(--ok)}
+.toast-warning{border-left-color:var(--incomplete)}
+.toast-error{border-left-color:var(--warn)}
+.toast-message{font-size:.8rem;line-height:1.35;flex:1}
+.toast-close{border:none;background:none;color:var(--muted);cursor:pointer;padding:0 .2rem;font-size:1rem;line-height:1}
+.toast-close:hover{color:var(--text)}
+.pagination-controls{display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:.65rem .85rem;border-top:1px solid var(--border);background:var(--panel);flex-wrap:wrap}
+.pagination-controls__summary{font-size:.72rem;color:var(--muted)}
+.pagination-controls__actions{display:flex;gap:.35rem}
+.pagination-controls__actions button{background:var(--panel2);border:1px solid var(--border2);color:var(--text);padding:.22rem .5rem;border-radius:2px;cursor:pointer}
+.pagination-controls__actions button:disabled{opacity:.45;cursor:not-allowed}
+.pagination-controls__size{display:flex;align-items:center;gap:.35rem;font-size:.72rem;color:var(--muted)}
+.pagination-controls__size select{min-width:70px}
+.table-skeleton{padding:.65rem .85rem}
+.table-skeleton__table{display:flex;flex-direction:column;gap:.35rem}
+.table-skeleton__row{display:grid;grid-template-columns:repeat(8,minmax(60px,1fr));gap:.35rem}
+.table-skeleton__cell{height:22px;background:var(--panel);border-radius:2px;overflow:hidden}
+.table-skeleton__pulse{display:block;height:100%;width:100%;background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,.06) 45%,transparent 100%);animation:skPulse 1.4s ease-in-out infinite}
+@keyframes skPulse{0%{transform:translateX(-100%)}100%{transform:translateX(120%)}}
+.empty-state__title{font-family:var(--cond);font-size:.84rem;letter-spacing:.1em;text-transform:uppercase;color:var(--text);margin-bottom:.4rem}
+.empty-state__description{font-size:.78rem;color:var(--muted);margin-bottom:.6rem}
+.empty-state__action{border:1px solid var(--border2);background:var(--panel2);color:var(--text);padding:.3rem .65rem;border-radius:2px;cursor:pointer}
+.empty-state__action:hover{border-color:var(--accent);color:var(--accent2)}
+.sr-only{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}
+@media (max-width: 900px){
+  .operator-stage-bar{grid-template-columns:1fr 1fr}
+}
+@media (max-width: 980px){
+  .admin-layout{grid-template-columns:1fr}
+  .admin-sidebar{position:static}
+}
 .data-table{width:100%;border-collapse:collapse;font-size:.8rem}
 .data-table thead th{font-family:var(--cond);font-size:.66rem;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);padding:.5rem .85rem;text-align:left;border-bottom:1px solid var(--border2);background:var(--panel)}
 .data-table tbody tr{border-bottom:1px solid var(--border);transition:background .1s}
@@ -472,6 +575,9 @@ select option{background:var(--panel2)}
 .ux-hint{font-size:.88rem !important;line-height:1.45 !important;color:#9eb7cf !important}
 .col-resize{position:absolute;top:0;right:0;width:5px;height:100%;cursor:col-resize;z-index:10;background:transparent;user-select:none}
 .col-resize:hover,.col-resize.dragging{background:var(--accent)}
+.meas-summary{position:sticky;bottom:0;background:var(--surface);border-top:1px solid var(--border2);padding:.45rem .6rem;display:flex;gap:.55rem;z-index:45}
+.meas-summary .badge{font-size:.66rem}
+.help-inline{font-size:.69rem;color:var(--muted);margin-top:.2rem;line-height:1.3}
 `;
 
 function AutocompleteInput({ value, onChange, options, placeholder, style, renderOption, filterFn }) {
@@ -610,6 +716,9 @@ function MissingPieceModal({ pieces, missingPieces, onSave, onCancel }) {
 function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, currentUserId, currentRole, onLockJob, onUnlockJob, onRefreshData, dataStatus, usersById }) {
   const [step,setStep]=useState("lookup");
   const [jobInput,setJobInput]=useState("");
+  const [lookupFilter,setLookupFilter]=useState({ part:"", operation:"", status:"open", search:"" });
+  const [lookupPage,setLookupPage]=useState(1);
+  const [lookupPageSize,setLookupPageSize]=useState(25);
   const [currentJob,setCurrentJob]=useState(null);
   const [values,setValues]=useState({});
   const [toolSel,setToolSel]=useState({});
@@ -617,6 +726,10 @@ function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, currentUser
   const [missing,setMissing]=useState({});
   const [comment,setComment]=useState("");
   const [showModal,setShowModal]=useState(false);
+  const [density,setDensity]=useState(()=>readTableDensity());
+  const [activeCellKey,setActiveCellKey]=useState("");
+  const [activeDimId,setActiveDimId]=useState("");
+  const [activePiece,setActivePiece]=useState("");
   const [colWidths,setColWidths]=useState({});
   const [jobErr,setJobErr]=useState("");
   const [submitErr,setSubmitErr]=useState("");
@@ -714,6 +827,15 @@ function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, currentUser
 
   const allPieces=dims.length>0
     ?[...new Set(dims.flatMap(d=>getSamplePieces(d.sampling,currentJob.qty,d.samplingInterval)))].sort((a,b)=>a-b):[];
+  const summary = computeMeasurementSummary({ dims, allPieces, values, missing, currentJob, unlocked });
+  const gridOrder = useMemo(()=>{
+    return buildGridOrder({
+      dims,
+      allPieces,
+      missing: Object.keys(missing).map(Number),
+      currentJob: currentJob ? { qty: currentJob.qty, unlocked, values } : null
+    });
+  },[dims,allPieces,missing,currentJob,unlocked,values]);
 
   function isGaugeMode(dimId){
     const rows=getActiveToolRows(dimId);
@@ -793,6 +915,9 @@ function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, currentUser
     });
     setCurrentJob(job);setValues(dd?.values||{});setToolSel(ts);
     setUnlocked(dd?.unlocked||{});setMissing(dd?.missing||{});setComment(dd?.comment||"");
+    setActiveCellKey("");
+    setActiveDimId("");
+    setActivePiece("");
     setImportCsv("");
     setImportErr("");
     setLastSubmitSource("manual");
@@ -914,6 +1039,29 @@ function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, currentUser
   function reset(){
     releaseLock();
     setStep("lookup");setJobInput("");setCurrentJob(null);setValues({});setToolSel({});setUnlocked({});setMissing({});setComment("");
+    setActiveCellKey("");setActiveDimId("");setActivePiece("");
+  }
+  function setActiveCell(cellKey, dimId, pieceNum){
+    setActiveCellKey(String(cellKey||""));
+    setActiveDimId(String(dimId||""));
+    setActivePiece(String(pieceNum||""));
+  }
+  function handleCellNavKey(e, key){
+    const dirMap = {
+      ArrowLeft: "left",
+      ArrowRight: "right",
+      ArrowUp: "up",
+      ArrowDown: "down",
+      Enter: "next"
+    };
+    const direction=dirMap[e.key];
+    if(!direction) return;
+    e.preventDefault();
+    const nextKey=getNeighborKey({ order:gridOrder, currentKey:key, direction });
+    if(nextKey){
+      moveFocusToKey(nextKey);
+      ensureVisibleCell(nextKey);
+    }
   }
 
   useEffect(()=>{
@@ -932,9 +1080,19 @@ function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, currentUser
     return ()=>{ if(idleRef.current) clearTimeout(idleRef.current); };
   },[step,values,toolSel,missing,comment,hasStarted,currentJob]);
 
-  const openJobs=Object.values(jobs).filter(j=>j.status==="open"||j.status==="draft");
+  const lookupJobs = filterOperatorJobs(Object.values(jobs), {
+    search: lookupFilter.search || jobInput,
+    part: lookupFilter.part,
+    operation: lookupFilter.operation,
+    status: lookupFilter.status
+  }).filter(j=>j.status==="open"||j.status==="draft");
+  const facets = extractOperatorLookupFacets(Object.values(jobs).filter(j=>j.status==="open"||j.status==="draft"));
+  const lookupPaging = paginateRows(lookupJobs, lookupPage, lookupPageSize);
+  useEffect(()=>{ setLookupPage(1); },[lookupFilter, lookupPageSize, jobs]);
+  useEffect(()=>{ if(lookupPaging.clampedPage!==lookupPage) setLookupPage(lookupPaging.clampedPage || 1); },[lookupPaging.clampedPage,lookupPage]);
   if(step==="lookup") return (
     <div>
+      <OperatorStageBar step={step} />
       <div className="card">
         <div className="card-head"><div className="card-title">Job Entry</div></div>
         <div className="card-body">
@@ -942,7 +1100,7 @@ function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, currentUser
             <div className="field" style={{gridColumn:"span 2"}}>
               <label>Job Number</label>
               <AutocompleteInput value={jobInput} onChange={setJobInput}
-                options={openJobs.map(j=>({value:j.jobNumber,job:j}))}
+                options={lookupJobs.map(j=>({value:j.jobNumber,job:j}))}
                 filterFn={(o,inp)=>o.value.toLowerCase().includes(inp.toLowerCase())}
                 placeholder="e.g. J-10042" style={{fontFamily:"var(--mono)",fontSize:"1.05rem"}}
                 renderOption={o=>(
@@ -956,6 +1114,20 @@ function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, currentUser
               {jobInput&&jobs[jobInput.toUpperCase()]?.status==="closed"&&<p className="mt1 text-warn" style={{fontSize:".75rem"}}>Job is closed.</p>}
               {(jobs[jobInput.toUpperCase()]?.status==="open"||jobs[jobInput.toUpperCase()]?.status==="draft")&&jobInput&&<p className="mt1 text-ok" style={{fontSize:".75rem"}}>Job found.</p>}
             </div>
+          </div>
+          <div className="chip-row">
+            <button className={`chip-btn ${lookupFilter.part===""?"active":""}`} onClick={()=>setLookupFilter(p=>({...p,part:""}))}>All Parts</button>
+            {facets.parts.slice(0,8).map((partId)=>(
+              <button key={partId} className={`chip-btn ${lookupFilter.part===partId?"active":""}`} onClick={()=>setLookupFilter(p=>({...p,part:partId}))}>{partId}</button>
+            ))}
+          </div>
+          <div className="chip-row">
+            <button className={`chip-btn ${lookupFilter.operation===""?"active":""}`} onClick={()=>setLookupFilter(p=>({...p,operation:""}))}>All Ops</button>
+            {facets.operations.slice(0,8).map((op)=>(
+              <button key={op} className={`chip-btn ${lookupFilter.operation===op?"active":""}`} onClick={()=>setLookupFilter(p=>({...p,operation:op}))}>Op {op}</button>
+            ))}
+            <button className={`chip-btn ${lookupFilter.status==="open"?"active":""}`} onClick={()=>setLookupFilter(p=>({...p,status:"open"}))}>Open</button>
+            <button className={`chip-btn ${lookupFilter.status==="draft"?"active":""}`} onClick={()=>setLookupFilter(p=>({...p,status:"draft"}))}>Draft</button>
           </div>
           <div className="text-muted" style={{fontSize:".75rem",marginTop:".65rem"}}>
             Current User: <span style={{color:"var(--text)",fontWeight:600}}>{currentUserName || "— Select user above —"}</span>
@@ -976,8 +1148,8 @@ function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, currentUser
         <table className="data-table">
           <thead><tr><th>Job #</th><th>Part</th><th>Operation</th><th>Lot</th><th>Qty</th><th>Status</th></tr></thead>
           <tbody>
-            {openJobs.length===0&&<tr><td colSpan={6}><div className="empty-state">No open jobs.</div></td></tr>}
-            {openJobs.map(j=>(
+            {lookupPaging.pageRows.length===0&&<tr><td colSpan={6}><div className="empty-state">No open jobs.</div></td></tr>}
+            {lookupPaging.pageRows.map(j=>(
               <tr key={j.jobNumber} className="tr-click" onClick={()=>setJobInput(j.jobNumber)}>
                 <td className="mono accent-text">{j.jobNumber}</td>
                 <td className="mono">{j.partNumber}</td>
@@ -993,6 +1165,8 @@ function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, currentUser
             ))}
           </tbody>
         </table>
+        <PaginationControls page={lookupPage} totalPages={lookupPaging.totalPages} pageSize={lookupPageSize} onPageChange={setLookupPage} onPageSizeChange={setLookupPageSize} />
+        <div className="text-muted" style={{padding:"0 .85rem .7rem",fontSize:".72rem"}}>{lookupPaging.totalRows} matching job(s)</div>
       </div>
     </div>
   );
@@ -1001,6 +1175,8 @@ function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, currentUser
     <div>
       <input ref={importFileRef} type="file" accept=".csv,text/csv" style={{display:"none"}} onChange={handleImportUpload}/>
       {showModal&&<MissingPieceModal pieces={incompletePieces} missingPieces={missing} onSave={handleMissingSave} onCancel={()=>setShowModal(false)}/>}
+      <OperatorStageBar step={step} />
+      <PinnedSpecLegend currentJob={currentJob} part={part} opData={opData} />
       <div className="job-strip">
         <div className="strip-field"><div className="strip-label">Job #</div><div className="strip-val">{currentJob.jobNumber}</div></div>
         <div className="strip-field"><div className="strip-label">Part</div><div className="strip-val">{currentJob.partNumber} <span style={{fontFamily:"var(--sans)",fontSize:".78rem",color:"var(--muted)"}}>{part?.description}</span></div></div>
@@ -1014,16 +1190,23 @@ function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, currentUser
       <div className="card" style={{padding:0}}>
         <div className="card-head">
           <div className="card-title">Measurement Entry</div>
-          <div className="text-muted ux-hint">+ unlocks N/A cells · × re-locks empty cells · Esc clears a value · auto-save after 20 min idle · drag near any column edge to resize</div>
+          <div className="gap1">
+            <button className={`btn btn-ghost btn-sm ${density===TABLE_DENSITY.compact?"active":""}`} onClick={()=>{ const next=writeTableDensity(TABLE_DENSITY.compact); setDensity(next); }}>Compact</button>
+            <button className={`btn btn-ghost btn-sm ${density===TABLE_DENSITY.expanded?"active":""}`} onClick={()=>{ const next=writeTableDensity(TABLE_DENSITY.expanded); setDensity(next); }}>Expanded</button>
+            <button className="btn btn-ghost btn-sm" onClick={()=>setColWidths(p=>applyColumnWidthPreset(dims.map(d=>d.id),"narrow",p))}>Narrow</button>
+            <button className="btn btn-ghost btn-sm" onClick={()=>setColWidths(p=>applyColumnWidthPreset(dims.map(d=>d.id),"default",p))}>Default</button>
+            <button className="btn btn-ghost btn-sm" onClick={()=>setColWidths(p=>applyColumnWidthPreset(dims.map(d=>d.id),"wide",p))}>Wide</button>
+          </div>
+          <div className="text-muted ux-hint">+ unlocks N/A cells · × re-locks empty cells · Enter/Arrow keys move between cells · Esc clears a value · auto-save after 20 min idle · drag near any column edge to resize</div>
         </div>
         <div className="meas-scroll">
-          <table className="meas-table" onMouseDown={maybeStartResize} style={{width: 118 + dims.reduce((s,d)=>s+getColWidth(d.id),0)}}>
+          <table className={`meas-table ${density===TABLE_DENSITY.compact?"compact":"expanded"}`} onMouseDown={maybeStartResize} style={{width: 118 + dims.reduce((s,d)=>s+getColWidth(d.id),0)}}>
             <colgroup>
               <col style={{width:"118px"}}/>
               {dims.map(d=><col key={d.id} style={{width:getColWidth(d.id)+"px"}}/>)}
             </colgroup>
             <tbody>
-              <tr className="hrow">
+              <tr className="hrow sticky-row sticky-1">
                 <td className="rl">Dimension</td>
                 {dims.map(d=>(
                   <td key={d.id} data-dim-id={d.id} className="dc" style={{padding:0,verticalAlign:"top",position:"relative"}}>
@@ -1032,7 +1215,7 @@ function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, currentUser
                   </td>
                 ))}
               </tr>
-              <tr className="hrow">
+              <tr className="hrow sticky-row sticky-2">
                 <td className="rl">Tools / IT #</td>
                 {dims.map(d=>{
                   const allowedTools=d.tools.map(tid=>toolLibrary[tid]).filter(isToolSelectable);
@@ -1096,7 +1279,7 @@ function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, currentUser
                   );
                 })}
               </tr>
-              <tr className="hrow">
+              <tr className="hrow sticky-row sticky-3">
                 <td className="rl">Sampling</td>
                 {dims.map(d=>(
                   <td key={d.id} data-dim-id={d.id} className="dc tag-cell">
@@ -1112,8 +1295,9 @@ function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, currentUser
               </tr>
               {allPieces.map(pNum=>{
                 const isMissing=!!missing[pNum];
+                const rowClass = `${isMissing?" mr":""}${String(activePiece)===String(pNum)?" is-active-row":""}`;
                 return (
-                  <tr className={`pr${isMissing?" mr":""}`} key={pNum}>
+                  <tr className={`pr${rowClass}`} key={pNum}>
                     <td className="rl" style={{verticalAlign:"top",paddingTop:".45rem"}}>
                       Pc {pNum}
                       {isMissing&&<div className="mp-tag">{missing[pNum].reason}{missing[pNum].ncNum&&` · ${missing[pNum].ncNum}`}</div>}
@@ -1126,33 +1310,39 @@ function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, currentUser
                       const gaugeMode=isGaugeMode(dim.id);
                       const rangeMode=(dim.inputMode||"single")==="range" && !gaugeMode;
                       if(isMissing){
-                        return <td key={dim.id} data-dim-id={dim.id} style={{textAlign:"center",color:"var(--border2)",fontFamily:"var(--mono)",fontSize:".78rem",padding:".26rem .4rem",verticalAlign:"middle"}}>—</td>;
+                        return <td key={dim.id} data-dim-id={dim.id} className={cellHighlightClasses({ activeKey:activeCellKey, cellKey:key, activeDimId, dimId:dim.id, activePiece, pieceNum:pNum })} style={{textAlign:"center",color:"var(--border2)",fontFamily:"var(--mono)",fontSize:".78rem",padding:".26rem .4rem",verticalAlign:"middle"}}>—</td>;
                       }
                       if(!inPlan&&!isUnlocked){
-                        return <td key={dim.id} data-dim-id={dim.id} style={{padding:".26rem .4rem",verticalAlign:"middle"}}><button className="na-btn" onClick={()=>setUnlocked(p=>({...p,[key]:true}))}>+</button></td>;
+                        return <td key={dim.id} data-dim-id={dim.id} className={cellHighlightClasses({ activeKey:activeCellKey, cellKey:key, activeDimId, dimId:dim.id, activePiece, pieceNum:pNum })} style={{padding:".26rem .4rem",verticalAlign:"middle"}}><button className="na-btn" data-cell-key={key} onFocus={()=>setActiveCell(key,dim.id,pNum)} onKeyDown={(e)=>handleCellNavKey(e,key)} onClick={()=>setUnlocked(p=>({...p,[key]:true}))}>+</button></td>;
                       }
                       if(isUnlocked&&!hasVal&&!inPlan){
                         return (
-                          <td key={dim.id} data-dim-id={dim.id} style={{padding:".26rem .4rem",verticalAlign:"middle"}}>
+                          <td key={dim.id} data-dim-id={dim.id} className={cellHighlightClasses({ activeKey:activeCellKey, cellKey:key, activeDimId, dimId:dim.id, activePiece, pieceNum:pNum })} style={{padding:".26rem .4rem",verticalAlign:"middle"}}>
                             <div className="ue-wrap">
                               {gaugeMode?(
                                 <div className="pf-wrap" style={{flex:1}}>
-                                  <button className={`pf-btn${values[key]==="PASS"?" pass-on":""}`} onClick={()=>togglePf(key,"PASS")}>P</button>
+                                  <button className={`pf-btn${values[key]==="PASS"?" pass-on":""}`} data-cell-key={key} onFocus={()=>setActiveCell(key,dim.id,pNum)} onKeyDown={(e)=>handleCellNavKey(e,key)} onClick={()=>togglePf(key,"PASS")}>P</button>
                                   <button className={`pf-btn${values[key]==="FAIL"?" fail-on":""}`} onClick={()=>togglePf(key,"FAIL")}>F</button>
                                 </div>
                               ):(
                                 rangeMode?(
                                   <div style={{display:"flex",gap:".35rem",flex:1}}>
                                     <input className="vi ux" type="number" min="0" step="0.0001" placeholder="Min" value={splitRange(values[key])[0]}
-                                      onKeyDown={e=>{preventNegative(e);handleValueKeyDown(e,key);}}
+                                      data-cell-key={key}
+                                      onFocus={()=>setActiveCell(key,dim.id,pNum)}
+                                      onKeyDown={e=>{preventNegative(e);handleValueKeyDown(e,key);handleCellNavKey(e,key);}}
                                       onChange={e=>setRangeValue(key,"min",e.target.value)} style={{flex:1}}/>
                                     <input className="vi ux" type="number" min="0" step="0.0001" placeholder="Max" value={splitRange(values[key])[1]}
-                                      onKeyDown={e=>{preventNegative(e);handleValueKeyDown(e,key);}}
+                                      data-cell-key={key}
+                                      onFocus={()=>setActiveCell(key,dim.id,pNum)}
+                                      onKeyDown={e=>{preventNegative(e);handleValueKeyDown(e,key);handleCellNavKey(e,key);}}
                                       onChange={e=>setRangeValue(key,"max",e.target.value)} style={{flex:1}}/>
                                   </div>
                                 ):(
                                   <input className="vi ux" type="number" min="0" step="0.0001" placeholder="0.0000" value={values[key]||""}
-                                    onKeyDown={e=>{preventNegative(e);handleValueKeyDown(e,key);}}
+                                    data-cell-key={key}
+                                    onFocus={()=>setActiveCell(key,dim.id,pNum)}
+                                    onKeyDown={e=>{preventNegative(e);handleValueKeyDown(e,key);handleCellNavKey(e,key);}}
                                     onChange={e=>setValues(p=>({...p,[key]:e.target.value}))} style={{flex:1}}/>
                                 )
                               )}
@@ -1164,9 +1354,9 @@ function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, currentUser
                       if(gaugeMode){
                         const v=values[key];
                         return (
-                          <td key={dim.id} data-dim-id={dim.id} style={{padding:".26rem .4rem",verticalAlign:"middle"}}>
+                          <td key={dim.id} data-dim-id={dim.id} className={cellHighlightClasses({ activeKey:activeCellKey, cellKey:key, activeDimId, dimId:dim.id, activePiece, pieceNum:pNum })} style={{padding:".26rem .4rem",verticalAlign:"middle"}}>
                             <div className="pf-wrap">
-                              <button className={`pf-btn${v==="PASS"?" pass-on":""}`} onClick={()=>togglePf(key,"PASS")}>Pass</button>
+                              <button className={`pf-btn${v==="PASS"?" pass-on":""}`} data-cell-key={key} onFocus={()=>setActiveCell(key,dim.id,pNum)} onKeyDown={(e)=>handleCellNavKey(e,key)} onClick={()=>togglePf(key,"PASS")}>Pass</button>
                               <button className={`pf-btn${v==="FAIL"?" fail-on":""}`} onClick={()=>togglePf(key,"FAIL")}>Fail</button>
                             </div>
                           </td>
@@ -1176,17 +1366,23 @@ function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, currentUser
                       const st=isOOT(v,dim.tolPlus,dim.tolMinus,dim.nominal);
                       const cls=v===""?"":st===false?"ok":"oot";
                       return (
-                        <td key={dim.id} data-dim-id={dim.id} style={{padding:".26rem .4rem",verticalAlign:"middle"}}>
+                        <td key={dim.id} data-dim-id={dim.id} className={cellHighlightClasses({ activeKey:activeCellKey, cellKey:key, activeDimId, dimId:dim.id, activePiece, pieceNum:pNum })} style={{padding:".26rem .4rem",verticalAlign:"middle"}}>
                           {rangeMode?(
                             <div style={{display:"flex",gap:".35rem"}}>
                               <input className={`vi ${cls}${isUnlocked?" ux":""}`} type="number" min="0" step="0.0001"
-                                value={splitRange(v)[0]} placeholder="Min" onKeyDown={e=>{preventNegative(e);handleValueKeyDown(e,key);}} onChange={e=>setRangeValue(key,"min",e.target.value)} style={{flex:1}}/>
+                                data-cell-key={key}
+                                onFocus={()=>setActiveCell(key,dim.id,pNum)}
+                                value={splitRange(v)[0]} placeholder="Min" onKeyDown={e=>{preventNegative(e);handleValueKeyDown(e,key);handleCellNavKey(e,key);}} onChange={e=>setRangeValue(key,"min",e.target.value)} style={{flex:1}}/>
                               <input className={`vi ${cls}${isUnlocked?" ux":""}`} type="number" min="0" step="0.0001"
-                                value={splitRange(v)[1]} placeholder="Max" onKeyDown={e=>{preventNegative(e);handleValueKeyDown(e,key);}} onChange={e=>setRangeValue(key,"max",e.target.value)} style={{flex:1}}/>
+                                data-cell-key={key}
+                                onFocus={()=>setActiveCell(key,dim.id,pNum)}
+                                value={splitRange(v)[1]} placeholder="Max" onKeyDown={e=>{preventNegative(e);handleValueKeyDown(e,key);handleCellNavKey(e,key);}} onChange={e=>setRangeValue(key,"max",e.target.value)} style={{flex:1}}/>
                             </div>
                           ):(
                             <input className={`vi ${cls}${isUnlocked?" ux":""}`} type="number" min="0" step="0.0001"
-                              value={v} placeholder="0.0000" onKeyDown={e=>{preventNegative(e);handleValueKeyDown(e,key);}} onChange={e=>setValues(p=>({...p,[key]:e.target.value}))}/>
+                              data-cell-key={key}
+                              onFocus={()=>setActiveCell(key,dim.id,pNum)}
+                              value={v} placeholder="0.0000" onKeyDown={e=>{preventNegative(e);handleValueKeyDown(e,key);handleCellNavKey(e,key);}} onChange={e=>setValues(p=>({...p,[key]:e.target.value}))}/>
                           )}
                         </td>
                       );
@@ -1196,6 +1392,12 @@ function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, currentUser
               })}
             </tbody>
           </table>
+          <div className="meas-summary" aria-live="polite">
+            <span className="badge badge-ok">Pass {summary.passCount}</span>
+            <span className="badge badge-oot">Fail {summary.failCount}</span>
+            <span className="badge badge-pend">N/A {summary.naCount}</span>
+            <span className="badge badge-open">Measured {summary.measuredCount}</span>
+          </div>
         </div>
       </div>
 
@@ -1208,6 +1410,7 @@ function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, currentUser
           </div>
         </div>
       )}
+      <div className="sr-only" aria-live="polite">{hasOOT ? `${ootList.length} out-of-tolerance measurement${ootList.length===1?"":"s"} detected.` : "All current measurements are within tolerance."}</div>
       {hasStarted&&incompletePieces.length>0&&(
         <div className="inc-banner">
           <div className="inc-title">Incomplete Data — {incompletePieces.length} piece{incompletePieces.length!==1?"s":""} missing values</div>
@@ -1272,6 +1475,7 @@ function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, currentUser
 
   if(step==="saved") return (
     <div className="draft-card">
+      <OperatorStageBar step={step} />
       <div style={{fontSize:"2rem"}}>💾</div>
       <div className="draft-title">Draft Saved</div>
       <p className="text-muted">Job <strong style={{color:"var(--draft)"}}>{currentJob.jobNumber}</strong> saved. Resume anytime from the job list.</p>
@@ -1280,6 +1484,7 @@ function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, currentUser
   );
   return (
     <div className="success-card">
+      <OperatorStageBar step={step} />
       <div style={{fontSize:"2rem"}}>✔</div>
       <div className="success-title">{lastSubmitSource==="csv" ? "CSV Imported — Job Closed" : "Record Submitted — Job Closed"}</div>
       <p className="text-muted">Job <strong style={{color:"var(--accent2)"}}>{currentJob?.jobNumber}</strong> · {currentJob?.lot} · Op {currentJob?.operation}</p>
@@ -1300,6 +1505,7 @@ function AdminTools({ toolLibrary, toolLocations, onCreateTool, onUpdateTool, on
   const [savingId,setSavingId]=useState("");
   const [search,setSearch]=useState("");
   const [tf,setTf]=useState("All");
+  const [pendingRemoveLocation,setPendingRemoveLocation]=useState(null);
 
   async function handleAdd(){
     if(!form.name.trim()||!form.itNum.trim()){setErr("Name and IT # required.");return;}
@@ -1368,6 +1574,22 @@ function AdminTools({ toolLibrary, toolLocations, onCreateTool, onUpdateTool, on
   const locationTypes=["machine","user","job","vendor","out_for_calibration"];
   return (
     <div>
+      <ConfirmDialog
+        open={!!pendingRemoveLocation}
+        title="Remove Location"
+        message={`Remove location \"${pendingRemoveLocation?.name || ""}\"? This can impact tool assignments.`}
+        confirmLabel="Remove"
+        cancelLabel="Cancel"
+        danger
+        onCancel={()=>setPendingRemoveLocation(null)}
+        onConfirm={async ()=>{
+          const target=pendingRemoveLocation;
+          setPendingRemoveLocation(null);
+          if(target?.id!=null){
+            await handleRemoveLocation(target.id);
+          }
+        }}
+      />
       <div className="card">
         <div className="card-head"><div className="card-title">Location Master Data</div></div>
         <div className="card-body">
@@ -1390,7 +1612,7 @@ function AdminTools({ toolLibrary, toolLocations, onCreateTool, onUpdateTool, on
                   <span style={{fontWeight:600}}>{loc.name}</span>
                   <span className="text-muted" style={{marginLeft:".5rem",fontSize:".72rem"}}>{loc.locationType}</span>
                 </div>
-                <button className="btn btn-danger btn-sm" onClick={()=>handleRemoveLocation(loc.id)}>Remove</button>
+                <button className="btn btn-danger btn-sm" onClick={()=>setPendingRemoveLocation({ id:loc.id, name:loc.name })}>Remove</button>
               </div>
             ))}
           </div>
@@ -1400,13 +1622,15 @@ function AdminTools({ toolLibrary, toolLocations, onCreateTool, onUpdateTool, on
         <div className="card-head"><div className="card-title">Add New Tool</div></div>
         <div className="card-body">
           <div className="row3">
-            <div className="field"><label>Tool Name</label><input value={form.name} onChange={e=>setForm(p=>({...p,name:e.target.value}))} placeholder="e.g. Outside Micrometer"/></div>
+            <div className="field"><label>Tool Name</label><input value={form.name} onChange={e=>setForm(p=>({...p,name:e.target.value}))} onBlur={e=>setErr(validateToolField("name", e.target.value))} placeholder="e.g. Outside Micrometer"/></div>
             <div className="field"><label>Tool Type</label>
               <select value={form.type} onChange={e=>setForm(p=>({...p,type:e.target.value}))}>
                 {TOOL_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
               </select></div>
             <div className="field"><label>IT # / Cal. Number</label>
-              <input value={form.itNum} onChange={e=>setForm(p=>({...p,itNum:e.target.value.toUpperCase()}))} placeholder="IT-0099" style={{fontFamily:"var(--mono)"}}/></div>
+              <input value={form.itNum} onChange={e=>setForm(p=>({...p,itNum:e.target.value.toUpperCase()}))} onBlur={e=>setErr(validateToolField("itNum", e.target.value))} placeholder="IT-0099" style={{fontFamily:"var(--mono)"}}/>
+              <div className="help-inline">Use format `IT-####` for controlled calibration identifiers.</div>
+            </div>
           </div>
           <div className="row3 mt1">
             <div className="field"><label>Size</label>
@@ -1540,6 +1764,7 @@ function AdminUsers({ users, roleCaps, onCreateUser, onUpdateUser, onRemoveUser,
   const [saving,setSaving]=useState(false);
   const [savingAll,setSavingAll]=useState(false);
   const [edits,setEdits]=useState({});
+  const [pendingRemoveUser,setPendingRemoveUser]=useState(null);
   async function handleAdd(){
     if(!form.name.trim()){setErr("Name required.");return;}
     setErr("");setApiErr("");setSaving(true);
@@ -1614,6 +1839,22 @@ function AdminUsers({ users, roleCaps, onCreateUser, onUpdateUser, onRemoveUser,
   }
   return (
     <div>
+      <ConfirmDialog
+        open={!!pendingRemoveUser}
+        title="Remove User"
+        message={`Remove user \"${pendingRemoveUser?.name || ""}\"? This action cannot be undone.`}
+        confirmLabel="Remove User"
+        cancelLabel="Cancel"
+        danger
+        onCancel={()=>setPendingRemoveUser(null)}
+        onConfirm={async ()=>{
+          const target=pendingRemoveUser;
+          setPendingRemoveUser(null);
+          if(target?.id!=null){
+            await handleRemove(target.id);
+          }
+        }}
+      />
       <div className="card">
         <div className="card-head" style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:"1rem"}}>
           <div className="card-title">Add New User</div>
@@ -1665,7 +1906,7 @@ function AdminUsers({ users, roleCaps, onCreateUser, onUpdateUser, onRemoveUser,
                     <input type="checkbox" checked={v.active} onChange={e=>updateEdit(u.id,{active:e.target.checked})}/>
                   </td>
                   <td>
-                    <button className="btn btn-danger btn-sm" onClick={()=>handleRemove(u.id)}>✕</button>
+                    <button className="btn btn-danger btn-sm" onClick={()=>setPendingRemoveUser({ id:u.id, name:u.name })}>✕</button>
                   </td>
                 </tr>
               );
@@ -1794,6 +2035,7 @@ function AdminJobs({ parts, jobs, usersById, onCreateJob, canManageJobs, onUnloc
   const empty={jobNumber:"",partNumber:"",partRevision:"",operation:"",lot:"",qty:""};
   const [form,setForm]=useState(empty);
   const [err,setErr]=useState("");
+  const [fieldErrs,setFieldErrs]=useState({});
   const [saving,setSaving]=useState(false);
   const [buildErr,setBuildErr]=useState("");
   const [building,setBuilding]=useState(false);
@@ -1864,6 +2106,10 @@ function AdminJobs({ parts, jobs, usersById, onCreateJob, canManageJobs, onUnloc
       setSaving(false);
     }
   }
+  function validateJobField(field, value){
+    const msg=validateJobFormField(field,value);
+    setFieldErrs(prev=>({...prev,[field]:msg}));
+  }
   async function handleBuild(){
     if(!builder.partNumber||!builder.partRevision||!builder.lot||!builder.qty){setBuildErr("Part, revision, lot, and qty required.");return;}
     const opsSelected=Object.keys(builder.ops||{}).filter(k=>builder.ops[k]);
@@ -1905,36 +2151,48 @@ function AdminJobs({ parts, jobs, usersById, onCreateJob, canManageJobs, onUnloc
     if(s==="incomplete")return <span className="badge badge-incomplete">Incomplete</span>;
     return <span className="badge badge-pend">{s}</span>;
   };
+  const sortedJobs = Object.values(jobs).sort((a,b)=>b.jobNumber.localeCompare(a.jobNumber));
+  const [page,setPage]=useState(1);
+  const [pageSize,setPageSize]=useState(25);
+  const { pageRows, totalPages, clampedPage, totalRows } = paginateRows(sortedJobs, page, pageSize);
+  useEffect(()=>{
+    setPage(1);
+  },[jobs, pageSize]);
+  useEffect(()=>{
+    if(clampedPage!==page) setPage(clampedPage || 1);
+  },[clampedPage,page]);
   return (
     <div>
       <div className="card">
         <div className="card-head"><div className="card-title">Create New Job</div></div>
         <div className="card-body">
           <div className="row3">
-            <div className="field"><label>Job Number</label><input value={form.jobNumber} onChange={e=>setForm(p=>({...p,jobNumber:e.target.value.toUpperCase()}))} placeholder="J-10045" style={{fontFamily:"var(--mono)"}}/></div>
+            <div className="field"><label>Job Number</label><input value={form.jobNumber} onChange={e=>setForm(p=>({...p,jobNumber:e.target.value.toUpperCase()}))} onBlur={e=>validateJobField("jobNumber",e.target.value)} placeholder="J-10045" style={{fontFamily:"var(--mono)"}}/>{fieldErrs.jobNumber&&<div className="err-text">{fieldErrs.jobNumber}</div>}</div>
             <div className="field"><label>Part Number</label>
               <select value={form.partNumber} onChange={e=>{
                 const nextPart=e.target.value;
                 const nextRevision=parts[nextPart]?.currentRevision || "";
                 setForm(p=>({...p,partNumber:nextPart,partRevision:nextRevision,operation:""}));
-              }}>
+              }} onBlur={e=>validateJobField("partNumber",e.target.value)}>
                 <option value="">— Select Part —</option>
                 {Object.keys(parts).map(pn=><option key={pn} value={pn}>{pn} — {parts[pn].description}{parts[pn].currentRevision ? ` (Rev ${parts[pn].currentRevision})` : ""}</option>)}
-              </select></div>
+              </select>{fieldErrs.partNumber&&<div className="err-text">{fieldErrs.partNumber}</div>}</div>
             <div className="field"><label>Revision</label>
-              <select value={form.partRevision} onChange={e=>setForm(p=>({...p,partRevision:e.target.value}))} disabled={!form.partNumber}>
+              <select value={form.partRevision} onChange={e=>setForm(p=>({...p,partRevision:e.target.value}))} onBlur={e=>validateJobField("partRevision",e.target.value)} disabled={!form.partNumber}>
                 <option value="">— Select Revision —</option>
                 {(parts[form.partNumber]?.revisions||[]).map(r=><option key={r.revision} value={r.revision}>{r.revision}</option>)}
-              </select></div>
+              </select>
+              <div className="help-inline">Revision must match released part setup revision.</div>
+            </div>
           </div>
           <div className="row3 mt1">
             <div className="field"><label>Operation</label>
-              <select value={form.operation} onChange={e=>setForm(p=>({...p,operation:e.target.value}))} disabled={!form.partNumber}>
+              <select value={form.operation} onChange={e=>setForm(p=>({...p,operation:e.target.value}))} onBlur={e=>validateJobField("operation",e.target.value)} disabled={!form.partNumber}>
                 <option value="">— Select Op —</option>
                 {partOps.map(([k,op])=><option key={k} value={k}>Op {k} — {op.label}</option>)}
               </select></div>
-            <div className="field"><label>Lot</label><input value={form.lot} onChange={e=>setForm(p=>({...p,lot:e.target.value}))} placeholder="e.g. Lot C"/></div>
-            <div className="field"><label>Qty</label><input type="number" min="1" value={form.qty} onChange={e=>setForm(p=>({...p,qty:e.target.value}))} placeholder="12" style={{fontFamily:"var(--mono)"}}/></div>
+            <div className="field"><label>Lot</label><input value={form.lot} onChange={e=>setForm(p=>({...p,lot:e.target.value}))} onBlur={e=>validateJobField("lot",e.target.value)} placeholder="e.g. Lot C"/></div>
+            <div className="field"><label>Qty</label><input type="number" min="1" value={form.qty} onChange={e=>setForm(p=>({...p,qty:e.target.value}))} onBlur={e=>validateJobField("qty",e.target.value)} placeholder="12" style={{fontFamily:"var(--mono)"}}/>{fieldErrs.qty&&<div className="err-text">{fieldErrs.qty}</div>}</div>
           </div>
           {err&&<p className="err-text mt1">{err}</p>}
           <div className="mt2">
@@ -2014,7 +2272,10 @@ function AdminJobs({ parts, jobs, usersById, onCreateJob, canManageJobs, onUnloc
         <table className="data-table">
           <thead><tr><th>Job #</th><th>Part</th><th>Rev</th><th>Operation</th><th>Lot</th><th>Qty</th><th>Status</th></tr></thead>
           <tbody>
-            {Object.values(jobs).sort((a,b)=>b.jobNumber.localeCompare(a.jobNumber)).map(j=>(
+            {pageRows.length===0 && (
+              <tr><td colSpan={7}><EmptyState title="No Jobs Yet" description="Create a job from the form above to populate this table." /></td></tr>
+            )}
+            {pageRows.map(j=>(
               <tr key={j.jobNumber}>
                 <td className="mono accent-text">{j.jobNumber}</td>
                 <td><span className="mono">{j.partNumber}</span> <span className="text-muted">{parts[j.partNumber]?.description}</span></td>
@@ -2033,6 +2294,14 @@ function AdminJobs({ parts, jobs, usersById, onCreateJob, canManageJobs, onUnloc
             ))}
           </tbody>
         </table>
+        <PaginationControls
+          page={page}
+          totalPages={totalPages}
+          pageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+        />
+        <div className="text-muted" style={{padding:"0 .85rem .75rem",fontSize:".72rem"}}>{totalRows} total job{totalRows!==1?"s":""}</div>
       </div>
     </div>
   );
@@ -2048,6 +2317,15 @@ function RecordDetailModal({ record, parts, toolLibrary, usersById, canEdit, onE
   const [exportErr,setExportErr]=useState("");
   const [exporting,setExporting]=useState(false);
   useEffect(()=>{ setLocalRecord(record); },[record]);
+  useEffect(()=>{
+    const onKeyDown=(event)=>{
+      if(event.key==="Escape"){
+        onClose?.();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return ()=>window.removeEventListener("keydown", onKeyDown);
+  },[onClose]);
 
   const part   = parts[localRecord.partNumber];
   const opData = part?.operations[localRecord.operation];
@@ -2343,7 +2621,8 @@ function RecordDetailModal({ record, parts, toolLibrary, usersById, canEdit, onE
 }
 
 function AdminRecords({ records, parts, toolLibrary, usersById, loadRecordDetail, canEdit, onEditValue }) {
-  const [filter,setFilter]=useState({part:"",op:"",lot:"",status:"",search:""});
+  const defaultFilter={part:"",op:"",lot:"",status:"",search:""};
+  const [filter,setFilter]=useState(()=>readRecordsFilterFromUrl(defaultFilter));
   const [selected,setSelected]=useState(null);
   const [detailErr,setDetailErr]=useState("");
   const [loadingId,setLoadingId]=useState(null);
@@ -2351,6 +2630,8 @@ function AdminRecords({ records, parts, toolLibrary, usersById, loadRecordDetail
   const [exportErr,setExportErr]=useState("");
   const [sortKey,setSortKey]=useState("timestamp");
   const [sortDir,setSortDir]=useState("desc");
+  const [page,setPage]=useState(1);
+  const [pageSize,setPageSize]=useState(25);
   const allOps=[...new Set(records.map(r=>r.operation))].sort();
   const filtered=records.filter(r=>{
     const matchesPart=(!filter.part||r.partNumber.includes(filter.part));
@@ -2388,6 +2669,11 @@ function AdminRecords({ records, parts, toolLibrary, usersById, loadRecordDetail
     if(typeof av==="number"&&typeof bv==="number") return (av-bv)*dir;
     return String(av).localeCompare(String(bv))*dir;
   });
+  const { pageRows, totalPages, clampedPage, totalRows } = paginateRows(sorted, page, pageSize);
+  useEffect(()=>{ setPage(1); },[filter, sortKey, sortDir, pageSize]);
+  useEffect(()=>{ if(clampedPage!==page) setPage(clampedPage || 1); },[clampedPage,page]);
+  useEffect(()=>{ writeRecordsFilterToUrl(filter); },[filter]);
+  const hasActiveFilters = !!(filter.part || filter.op || filter.lot || filter.status || filter.search.trim());
   const sb=r=>{
     if(r.status==="incomplete")return <span className="badge badge-incomplete">Incomplete</span>;
     if(r.oot)return <span className="badge badge-oot">OOT</span>;
@@ -2590,8 +2876,19 @@ function AdminRecords({ records, parts, toolLibrary, usersById, loadRecordDetail
             </tr>
           </thead>
           <tbody>
-            {sorted.length===0&&<tr><td colSpan={9}><div className="empty-state">No records match.</div></td></tr>}
-            {sorted.map(r=>(
+            {pageRows.length===0&&(
+              <tr>
+                <td colSpan={9}>
+                  <EmptyState
+                    title={hasActiveFilters ? "No Records Match Filters" : "No Records Yet"}
+                    description={hasActiveFilters ? "Try broadening or clearing filters." : "Records appear here after operator submissions."}
+                    actionLabel={hasActiveFilters ? "Clear Filters" : undefined}
+                    onAction={hasActiveFilters ? ()=>setFilter(defaultFilter) : undefined}
+                  />
+                </td>
+              </tr>
+            )}
+            {pageRows.map(r=>(
               <tr key={r.id} className="tr-click" onClick={()=>handleSelect(r)}>
                 <td className="mono" style={{fontSize:".74rem",whiteSpace:"nowrap"}}>{r.timestamp}</td>
                 <td className="mono accent-text">{r.jobNumber}</td><td className="mono">{r.partNumber}</td>
@@ -2602,8 +2899,15 @@ function AdminRecords({ records, parts, toolLibrary, usersById, loadRecordDetail
             ))}
           </tbody>
         </table>
+        <PaginationControls
+          page={page}
+          totalPages={totalPages}
+          pageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+        />
       </div>
-      <p className="text-muted">{sorted.length} record{sorted.length!==1?"s":""}</p>
+      <p className="text-muted">{totalRows} record{totalRows!==1?"s":""}</p>
     </div>
   );
 }
@@ -3347,9 +3651,9 @@ function AdminParts({ parts, toolLibrary, onCreatePart, onUpdatePart, onBulkUpda
         <div className="card-head"><div className="card-title">Add New Part</div></div>
         <div className="card-body">
           <div className="row3">
-            <div className="field"><label>Part Number</label><input value={newPart.partNumber} onChange={e=>setNewPart(p=>({...p,partNumber:e.target.value.toUpperCase()}))} placeholder="e.g. 5678" style={{fontFamily:"var(--mono)"}}/></div>
+            <div className="field"><label>Part Number</label><input value={newPart.partNumber} onChange={e=>setNewPart(p=>({...p,partNumber:e.target.value.toUpperCase()}))} onBlur={e=>setPartErr(validatePartField("partNumber", e.target.value))} placeholder="e.g. 5678" style={{fontFamily:"var(--mono)"}}/></div>
             <div className="field"><label>Part Name</label><input value={newPart.description} onChange={e=>setNewPart(p=>({...p,description:e.target.value}))} placeholder="Part name"/></div>
-            <div className="field"><label>Initial Revision</label><input value={newPart.revision} onChange={e=>setNewPart(p=>({...p,revision:e.target.value.toUpperCase().replace(/[^A-Z]/g,"")}))} placeholder="A" style={{fontFamily:"var(--mono)"}}/></div>
+            <div className="field"><label>Initial Revision</label><input value={newPart.revision} onChange={e=>setNewPart(p=>({...p,revision:e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,"")}))} onBlur={e=>setPartErr(validatePartField("revision", e.target.value))} placeholder="A" style={{fontFamily:"var(--mono)"}}/><div className="help-inline">Revision code should be 1-4 uppercase alphanumeric characters.</div></div>
           </div>
           {partErr&&<p className="err-text mt1">{partErr}</p>}
           {apiErr&&<p className="err-text mt1">{apiErr}</p>}
@@ -3469,6 +3773,7 @@ function AdminParts({ parts, toolLibrary, onCreatePart, onUpdatePart, onBulkUpda
                                 onChange={e=>updateDim(pn,opKey,d.id,"samplingInterval",Math.max(1, Number(e.target.value)||1),false,d.name)}
                                 onBlur={e=>updateDim(pn,opKey,d.id,"samplingInterval",Math.max(1, Number(e.target.value)||1),true,d.name)}
                                 style={{marginTop:".3rem",fontFamily:"var(--mono)"}}
+                                title="Sampling Interval: inspect every Nth piece when using custom interval."
                                 placeholder="Interval (N)"
                               />
                             )}
@@ -3506,9 +3811,17 @@ function AdminParts({ parts, toolLibrary, onCreatePart, onUpdatePart, onBulkUpda
   );
 }
 
-function AdminView({ parts, jobs, records, toolLibrary, toolLocations, users, usersById, currentCaps, roleCaps, currentRole, currentUserId, loadRecordDetail, onEditValue, onCreateJob, onCreatePart, onUpdatePart, onBulkUpdateParts, onCreateOp, onCreateDim, onUpdateDim, onRemoveDim, onCreateTool, onUpdateTool, onCreateToolLocation, onUpdateToolLocation, onRemoveToolLocation, onCreateUser, onUpdateUser, onRemoveUser, onUpdateRoleCaps, onUnlockJob, onRefreshData }) {
-  const [tab,setTab]=useState("jobs");
+function AdminView({ parts, jobs, records, toolLibrary, toolLocations, users, usersById, currentCaps, roleCaps, currentRole, currentUserId, adminTab, onAdminTabChange, loadRecordDetail, onEditValue, onCreateJob, onCreatePart, onUpdatePart, onBulkUpdateParts, onCreateOp, onCreateDim, onUpdateDim, onRemoveDim, onCreateTool, onUpdateTool, onCreateToolLocation, onUpdateToolLocation, onRemoveToolLocation, onCreateUser, onUpdateUser, onRemoveUser, onUpdateRoleCaps, onUnlockJob, onRefreshData }) {
+  const [tabState,setTabState]=useState(adminTab || "jobs");
   const [dirtyByTab,setDirtyByTab]=useState({});
+  const tab = adminTab || tabState;
+  function commitTab(next){
+    if(onAdminTabChange){
+      onAdminTabChange(next);
+      return;
+    }
+    setTabState(next);
+  }
   const hasCap = cap => (currentCaps || []).includes(cap);
   const canEdit=hasCap("edit_records");
   const canManageParts=hasCap("manage_parts");
@@ -3521,15 +3834,31 @@ function AdminView({ parts, jobs, records, toolLibrary, toolLocations, users, us
   const canViewAdmin=hasCap("view_admin");
   const canViewIssueReports=hasCap("view_admin");
   const canViewImports=canManageParts || canManageTools || canManageJobs;
+  const tabLabels = {
+    jobs: "Job Management",
+    records: "Inspection Records",
+    issues: "Issue Reports",
+    imports: "Data Imports",
+    parts: "Part / Op Setup",
+    tools: "Tool Library",
+    users: "Users",
+    roles: "Roles"
+  };
+  const visibleTabs = new Set();
+  if(canViewJobs) visibleTabs.add("jobs");
+  if(canViewRecords) visibleTabs.add("records");
+  if(canViewIssueReports) visibleTabs.add("issues");
+  if(canViewImports) visibleTabs.add("imports");
+  if(canManageParts) visibleTabs.add("parts");
+  if(canManageTools) visibleTabs.add("tools");
+  if(canManageUsers) visibleTabs.add("users");
+  if(canManageRoles) visibleTabs.add("roles");
+  const defaultTab = [...visibleTabs][0] || "jobs";
   useEffect(()=>{
-    if(!canViewAdmin) setTab("jobs");
-    if(!canManageUsers && tab==="users") setTab("jobs");
-    if(!canManageParts && tab==="parts") setTab("jobs");
-    if(!canManageTools && tab==="tools") setTab("jobs");
-    if(!canManageRoles && tab==="roles") setTab("jobs");
-    if(!canViewIssueReports && tab==="issues") setTab("jobs");
-    if(!canViewImports && tab==="imports") setTab("jobs");
-  },[canViewAdmin,canManageUsers,canManageParts,canManageTools,canManageRoles,canViewIssueReports,canViewImports,tab]);
+    if(!canViewAdmin || !visibleTabs.has(tab)){
+      commitTab(defaultTab);
+    }
+  },[canViewAdmin,defaultTab,tab,canViewJobs,canViewRecords,canViewIssueReports,canViewImports,canManageParts,canManageTools,canManageUsers,canManageRoles]);
   useEffect(()=>{
     const dirty=!!dirtyByTab[tab];
     const handler=e=>{
@@ -3543,28 +3872,45 @@ function AdminView({ parts, jobs, records, toolLibrary, toolLocations, users, us
   function setTabSafe(next){
     if(next===tab) return;
     if(dirtyByTab[tab] && !window.confirm("You have unsaved changes. Leave this page without saving?")) return;
-    setTab(next);
+    commitTab(next);
   }
+  const groupedTabs = ADMIN_TAB_GROUPS
+    .map(group=>({
+      ...group,
+      tabs:group.tabs.filter(tabId=>visibleTabs.has(tabId))
+    }))
+    .filter(group=>group.tabs.length>0);
   return (
-    <div>
-      <div className="sub-tabs">
-        {canViewJobs && <button className={`sub-tab ${tab==="jobs"?"active":""}`} onClick={()=>setTabSafe("jobs")}>Job Management</button>}
-        {canViewRecords && <button className={`sub-tab ${tab==="records"?"active":""}`} onClick={()=>setTabSafe("records")}>Inspection Records</button>}
-        {canViewIssueReports && <button className={`sub-tab ${tab==="issues"?"active":""}`} onClick={()=>setTabSafe("issues")}>Issue Reports</button>}
-        {canViewImports && <button className={`sub-tab ${tab==="imports"?"active":""}`} onClick={()=>setTabSafe("imports")}>Data Imports</button>}
-        {canManageParts && <button className={`sub-tab ${tab==="parts"?"active":""}`} onClick={()=>setTabSafe("parts")}>Part / Op Setup</button>}
-        {canManageTools && <button className={`sub-tab ${tab==="tools"?"active":""}`} onClick={()=>setTabSafe("tools")}>Tool Library</button>}
-        {canManageUsers && <button className={`sub-tab ${tab==="users"?"active":""}`} onClick={()=>setTabSafe("users")}>Users</button>}
-        {canManageRoles && <button className={`sub-tab ${tab==="roles"?"active":""}`} onClick={()=>setTabSafe("roles")}>Roles</button>}
+    <div className="admin-layout">
+      <aside className="admin-sidebar">
+        {groupedTabs.map(group=>(
+          <div key={group.label} className="admin-sidebar-group">
+            <div className="admin-sidebar-label">{group.label}</div>
+            {group.tabs.map(tabId=>(
+              <button
+                key={tabId}
+                className={`admin-side-btn ${tab===tabId?"active":""}`}
+                onClick={()=>setTabSafe(tabId)}
+              >
+                {tabLabels[tabId] || tabId}
+              </button>
+            ))}
+          </div>
+        ))}
+      </aside>
+      <div className="admin-main">
+        <div className="sub-tabs">
+          {visibleTabs.has(tab) && <button className="sub-tab active">{tabLabels[tab] || tab}</button>}
+        </div>
+        {tab==="jobs"&&canViewJobs&&<AdminJobs parts={parts} jobs={jobs} usersById={usersById} onCreateJob={onCreateJob} canManageJobs={canManageJobs} onUnlockJob={onUnlockJob}/>}
+        {tab==="records"&&canViewRecords&&<AdminRecords records={records} parts={parts} toolLibrary={toolLibrary} usersById={usersById} loadRecordDetail={loadRecordDetail} canEdit={canEdit} onEditValue={onEditValue}/>}
+        {tab==="issues"&&canViewIssueReports&&<AdminIssueReports currentRole={currentRole} currentUserId={currentUserId}/>}
+        {tab==="imports"&&canViewImports&&<AdminImports currentRole={currentRole} canManageTools={canManageTools} canManageParts={canManageParts} canManageJobs={canManageJobs} onRefreshData={onRefreshData}/>}
+        {tab==="parts"&&canManageParts&&<AdminParts parts={parts} toolLibrary={toolLibrary} onCreatePart={onCreatePart} onUpdatePart={onUpdatePart} onBulkUpdateParts={onBulkUpdateParts} onCreateOp={onCreateOp} onCreateDim={onCreateDim} onUpdateDim={onUpdateDim} onRemoveDim={onRemoveDim} onDirtyChange={dirty=>setDirtyByTab(p=>({...p,parts:dirty}))}/>}
+        {tab==="tools"&&canManageTools&&<AdminTools toolLibrary={toolLibrary} toolLocations={toolLocations} onCreateTool={onCreateTool} onUpdateTool={onUpdateTool} onCreateToolLocation={onCreateToolLocation} onUpdateToolLocation={onUpdateToolLocation} onRemoveToolLocation={onRemoveToolLocation}/>}
+        {tab==="users"&&canManageUsers&&<AdminUsers users={users} roleCaps={roleCaps} onCreateUser={onCreateUser} onUpdateUser={onUpdateUser} onRemoveUser={onRemoveUser} onDirtyChange={dirty=>setDirtyByTab(p=>({...p,users:dirty}))}/>}
+        {tab==="roles"&&canManageRoles&&<AdminRoles roleCaps={roleCaps} onUpdateRoleCaps={onUpdateRoleCaps} onDirtyChange={dirty=>setDirtyByTab(p=>({...p,roles:dirty}))}/>}
       </div>
-      {tab==="jobs"&&canViewJobs&&<AdminJobs parts={parts} jobs={jobs} usersById={usersById} onCreateJob={onCreateJob} canManageJobs={canManageJobs} onUnlockJob={onUnlockJob}/>}
-      {tab==="records"&&canViewRecords&&<AdminRecords records={records} parts={parts} toolLibrary={toolLibrary} usersById={usersById} loadRecordDetail={loadRecordDetail} canEdit={canEdit} onEditValue={onEditValue}/>}
-      {tab==="issues"&&canViewIssueReports&&<AdminIssueReports currentRole={currentRole} currentUserId={currentUserId}/>}
-      {tab==="imports"&&canViewImports&&<AdminImports currentRole={currentRole} canManageTools={canManageTools} canManageParts={canManageParts} canManageJobs={canManageJobs} onRefreshData={onRefreshData}/>}
-      {tab==="parts"&&canManageParts&&<AdminParts parts={parts} toolLibrary={toolLibrary} onCreatePart={onCreatePart} onUpdatePart={onUpdatePart} onBulkUpdateParts={onBulkUpdateParts} onCreateOp={onCreateOp} onCreateDim={onCreateDim} onUpdateDim={onUpdateDim} onRemoveDim={onRemoveDim} onDirtyChange={dirty=>setDirtyByTab(p=>({...p,parts:dirty}))}/>}
-      {tab==="tools"&&canManageTools&&<AdminTools toolLibrary={toolLibrary} toolLocations={toolLocations} onCreateTool={onCreateTool} onUpdateTool={onUpdateTool} onCreateToolLocation={onCreateToolLocation} onUpdateToolLocation={onUpdateToolLocation} onRemoveToolLocation={onRemoveToolLocation}/>}
-      {tab==="users"&&canManageUsers&&<AdminUsers users={users} roleCaps={roleCaps} onCreateUser={onCreateUser} onUpdateUser={onUpdateUser} onRemoveUser={onRemoveUser} onDirtyChange={dirty=>setDirtyByTab(p=>({...p,users:dirty}))}/>}
-      {tab==="roles"&&canManageRoles&&<AdminRoles roleCaps={roleCaps} onUpdateRoleCaps={onUpdateRoleCaps} onDirtyChange={dirty=>setDirtyByTab(p=>({...p,roles:dirty}))}/>}
     </div>
   );
 }
@@ -3584,7 +3930,9 @@ function TransitionBanner({ state }) {
 }
 
 export default function App({ authUser = null, onLogout = null }) {
-  const [view,setView]=useState("operator");
+  const initialRoute = readUiRouteState();
+  const [view,setView]=useState(initialRoute.view || "home");
+  const [adminTab,setAdminTab]=useState(initialRoute.adminTab || "jobs");
   const [users,setUsers]=useState([]);
   const [usersById,setUsersById]=useState({});
   const [currentUserId,setCurrentUserId]=useState(authUser?.id ? String(authUser.id) : "");
@@ -3602,6 +3950,8 @@ export default function App({ authUser = null, onLogout = null }) {
   const prevUserRef=useRef("");
   const transitionTimeoutRef=useRef(null);
   const [transitionState,setTransitionState]=useState({ status:"idle", message:"" });
+  const [showShortcutHelp,setShowShortcutHelp]=useState(false);
+  const { toasts, pushToast, dismissToast } = useToastStack();
 
   function setTransition(status, message, resetMs){
     if(transitionTimeoutRef.current){
@@ -3622,15 +3972,27 @@ export default function App({ authUser = null, onLogout = null }) {
     try{
       const result=await fn();
       setTransition("success", `${actionLabel} complete.`, 3500);
+      pushToast({ tone:"success", message:`${actionLabel} complete.` });
       return result;
     }catch(err){
       const detail=err?.message ? ` ${err.message}` : "";
       setTransition("error", `${actionLabel} failed.${detail}`, 7000);
+      pushToast({ tone:"error", message:`${actionLabel} failed.${detail}`, sticky:true });
       throw err;
     }
   }
 
   useEffect(()=>()=>{ if(transitionTimeoutRef.current) clearTimeout(transitionTimeoutRef.current); },[]);
+  useEffect(()=>{
+    const onKeyDown=(event)=>{
+      if(event.key==="?"){
+        event.preventDefault();
+        setShowShortcutHelp(true);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return ()=>window.removeEventListener("keydown", onKeyDown);
+  },[]);
 
   useEffect(()=>{
     let active=true;
@@ -3787,11 +4149,23 @@ export default function App({ authUser = null, onLogout = null }) {
   const canManageTools = hasCap("manage_tools");
   const canManageUsers = hasCap("manage_users");
   const canManageRoles = hasCap("manage_roles");
+  const crumbs = buildBreadcrumbs({ view, adminTab });
+  const roleThemeClass=getRoleThemeClass(currentRole);
+  const roleAccentLabel=getRoleAccentLabel(currentRole);
+  function navigateView(nextView){
+    setView(nextView);
+    if(nextView==="admin" && !adminTab){
+      setAdminTab("jobs");
+    }
+  }
+  useEffect(()=>{
+    writeUiRouteState({ view, adminTab });
+  },[view,adminTab]);
 
   useEffect(()=>{
-    if(view==="admin" && !canViewAdmin) setView(canViewOperator?"operator":"records");
-    if(view==="operator" && !canViewOperator) setView(canViewAdmin?"admin":"records");
-    if(view==="records" && !canViewRecords) setView(canViewOperator?"operator":"admin");
+    if(view==="admin" && !canViewAdmin) navigateView(canViewOperator?"operator":"records");
+    if(view==="operator" && !canViewOperator) navigateView(canViewAdmin?"admin":"records");
+    if(view==="records" && !canViewRecords) navigateView(canViewOperator?"operator":"admin");
   },[currentRole,view,canViewAdmin,canViewOperator,canViewRecords]);
   async function handleSubmit(record,jobNumber){
     if(dataStatus!=="live"){
@@ -4306,10 +4680,15 @@ export default function App({ authUser = null, onLogout = null }) {
     <ErrorBoundary>
       <>
         <style>{CSS}</style>
-        <div className="app-header">
+        <ToastStack toasts={toasts} onDismiss={dismissToast} />
+        <ShortcutHelpOverlay open={showShortcutHelp} onClose={()=>setShowShortcutHelp(false)} />
+        <div className={`app-header ${roleThemeClass}`}>
           <div className="logo"><div className="logo-icon"/>InspectFlow</div>
           <div className="header-sep"/>
-          <div className="header-sub">Manufacturing Inspection System</div>
+          <div>
+            <div className="header-sub">Manufacturing Inspection System</div>
+            <div className="role-accent">{roleAccentLabel}</div>
+          </div>
           <div className="header-right">
             <div className="user-ctrl">
               <div className="user-ctrl-label">Current User</div>
@@ -4329,22 +4708,34 @@ export default function App({ authUser = null, onLogout = null }) {
             <span className={`data-chip ${dataChipClass}`}>{dataChipLabel}</span>
             {onLogout ? <button className="nav-btn" onClick={onLogout}>Sign Out</button> : null}
             <nav className="nav">
-              {canViewOperator && <button className={`nav-btn ${view==="operator"?"active":""}`} onClick={()=>setView("operator")}>Operator Entry</button>}
-              {canViewRecords && <button className={`nav-btn ${view==="records"?"active":""}`} onClick={()=>setView("records")}>Records</button>}
-              {canViewAdmin && <button className={`nav-btn ${view==="admin"?"active":""}`} onClick={()=>setView("admin")}>Admin</button>}
+              <button className={`nav-btn ${view==="home"?"active":""}`} onClick={()=>navigateView("home")}>Home</button>
+              {canViewOperator && <button className={`nav-btn ${view==="operator"?"active":""}`} onClick={()=>navigateView("operator")}>Operator Entry</button>}
+              {canViewRecords && <button className={`nav-btn ${view==="records"?"active":""}`} onClick={()=>navigateView("records")}>Records</button>}
+              {canViewAdmin && <button className={`nav-btn ${view==="admin"?"active":""}`} onClick={()=>navigateView("admin")}>Admin</button>}
             </nav>
           </div>
         </div>
         <div className="page">
+          <Breadcrumbs items={crumbs} />
           <TransitionBanner state={transitionState}/>
-          {view==="operator" && (
+          {dataStatus==="loading" && <TableSkeleton rows={8} columns={8} ariaLabel="Loading application data" />}
+          {dataStatus!=="loading" && view==="home" && (
+            <HomeDashboard
+              jobs={Object.values(jobs || {})}
+              records={records}
+              toolLibrary={toolLibrary}
+              currentRole={currentRole}
+              onNavigate={navigateView}
+            />
+          )}
+          {dataStatus!=="loading" && view==="operator" && (
             <OperatorView parts={parts} jobs={jobs} toolLibrary={toolLibrary} onSubmit={handleSubmit} onDraft={handleDraft} currentUserId={currentUserId} currentRole={currentRole} onLockJob={handleLockJob} onUnlockJob={handleUnlockJob} onRefreshData={reloadLiveData} dataStatus={dataStatus} usersById={usersById}/>
           )}
-          {view==="records" && (
+          {dataStatus!=="loading" && view==="records" && (
             <AdminRecords records={records} parts={parts} toolLibrary={toolLibrary} usersById={usersById} loadRecordDetail={loadRecordDetail} canEdit={canEditRecords} onEditValue={handleEditRecordValue}/>
           )}
-          {view==="admin" && (
-            <AdminView parts={parts} jobs={jobs} records={records} toolLibrary={toolLibrary} toolLocations={toolLocations} users={users} usersById={usersById} currentCaps={currentCaps} roleCaps={roleCaps} currentRole={currentRole} currentUserId={currentUserId} loadRecordDetail={loadRecordDetail} onEditValue={handleEditRecordValue} onCreateJob={handleCreateJob} onCreatePart={handleCreatePart} onUpdatePart={handleUpdatePart} onBulkUpdateParts={handleBulkUpdateParts} onCreateOp={handleCreateOp} onCreateDim={handleCreateDim} onUpdateDim={handleUpdateDim} onRemoveDim={handleRemoveDim} onCreateTool={handleCreateTool} onUpdateTool={handleUpdateTool} onCreateToolLocation={handleCreateToolLocation} onUpdateToolLocation={handleUpdateToolLocation} onRemoveToolLocation={handleRemoveToolLocation} onCreateUser={handleCreateUser} onUpdateUser={handleUpdateUser} onRemoveUser={handleRemoveUser} onUpdateRoleCaps={handleUpdateRoleCaps} onUnlockJob={handleUnlockJob} onRefreshData={reloadLiveData}/>
+          {dataStatus!=="loading" && view==="admin" && (
+            <AdminView parts={parts} jobs={jobs} records={records} toolLibrary={toolLibrary} toolLocations={toolLocations} users={users} usersById={usersById} currentCaps={currentCaps} roleCaps={roleCaps} currentRole={currentRole} currentUserId={currentUserId} adminTab={adminTab} onAdminTabChange={setAdminTab} loadRecordDetail={loadRecordDetail} onEditValue={handleEditRecordValue} onCreateJob={handleCreateJob} onCreatePart={handleCreatePart} onUpdatePart={handleUpdatePart} onBulkUpdateParts={handleBulkUpdateParts} onCreateOp={handleCreateOp} onCreateDim={handleCreateDim} onUpdateDim={handleUpdateDim} onRemoveDim={handleRemoveDim} onCreateTool={handleCreateTool} onUpdateTool={handleUpdateTool} onCreateToolLocation={handleCreateToolLocation} onUpdateToolLocation={handleUpdateToolLocation} onRemoveToolLocation={handleRemoveToolLocation} onCreateUser={handleCreateUser} onUpdateUser={handleUpdateUser} onRemoveUser={handleRemoveUser} onUpdateRoleCaps={handleUpdateRoleCaps} onUnlockJob={handleUnlockJob} onRefreshData={reloadLiveData}/>
           )}
         </div>
       </>

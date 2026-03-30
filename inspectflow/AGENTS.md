@@ -117,3 +117,12 @@ Start a new thread when:
 Stay in the same thread when:
 - Iterating on the same feature or file set.
 - The current plan still applies.
+
+## 13) Context Budget Rules
+- Hard limit: no Tier 1 file may exceed 200 lines or 40 KB. If a file approaches this limit, archive older content before the next commit.
+- `STATUS.md` Handoff Notes: rolling 10-row window. Remove oldest entries on each update; they are preserved in `WORKLOG.md`.
+- `WORKLOG.md`: rolling window ≤ 50 lines. Archive trigger: when file exceeds 50 lines, move entries older than 30 days to `WORKLOG.archive-YYYY-MM-DD.md`.
+- Backlog shards (`docs/backlog/rN.md`): completed-item acceptance text must be replaced with a one-line completion reference on the next STATUS.md update.
+- Source files: no single frontend or backend source file may exceed 2,000 lines or 120 KB.
+- Test files: no test file may exceed 900 lines.
+- CI gate: `npm run context:budget` must pass on every PR. If a Read fails with a token-limit error, that file must be split or archived before any other work continues.

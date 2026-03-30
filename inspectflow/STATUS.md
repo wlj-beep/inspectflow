@@ -14,8 +14,13 @@ Canonical global execution queue for active backlog work.
 
 | Rank | Item ID | Priority | Status | Owner | Updated | Work Item |
 | --- | --- | --- | --- | --- | --- | --- |
-
+<<<<<<< ours
+ 
 Active ranked queue is currently clear; re-seed with new prioritized items when the next backlog tranche is activated.
+=======
+| 1 | BL-030 | High | In Progress | @codex | 2026-03-30 | R1 acceptance evidence run: execute multi-agent audit review sweep (security, UI, architecture, verifier) and publish findings. |
+
+>>>>>>> theirs
 
 ## Active Gate Defaults
 - For BL-058 acceptance, duplicate/replay behavior is fixed to idempotent skip plus audit trail updates (no strict hard-reject mode).
@@ -71,3 +76,18 @@ Active ranked queue is currently clear; re-seed with new prioritized items when 
 | 2026-03-15 | BL-059 | @codex | @owner | Completed admin operational analytics/risk rollup endpoint (`/api/analytics/admin/operational-rollup`) and UI integration in the Technical Ops tab with high-level status/severity summaries. |
 | 2026-03-15 | BL-034 | @codex | @owner | Completed `QUAL-FAI-v2` first-article profile runtime path via record-scoped AS9102 export inputs (part + lot + inspector + measured/fail stats) and profile-selection endpoint behavior. |
 | 2026-03-15 | BL-035 | @codex | @owner | Completed `QUAL-EXPORT-v1` profile-pack delivery with selectable starter profiles (`as9102-basic`, `as9102-line-only`) and runtime validation/error handling tests for unknown profile requests. |
+| 2026-03-28 | BL-072 | @codex | @owner | Completed operator lookup quick chips for part/operation/status plus integrated search narrowing. |
+| 2026-03-28 | BL-073 | @codex | @owner | Completed operator lookup pagination with page-size controls and match count feedback. |
+| 2026-03-28 | BL-074 | @codex | @owner | Completed sticky measurement header rows for persistent dimension/spec/sampling context. |
+| 2026-03-28 | BL-075 | @codex | @owner | Completed sticky live measurement summary footer with pass/fail/NA/measured totals. |
+| 2026-03-28 | BL-076 | @codex | @owner | Completed `?` keyboard shortcut overlay with ESC close and default hotkey reference list. |
+| 2026-03-28 | BL-077 | @codex | @owner | Completed confirm-dialog gating on destructive admin actions (user and location removal). |
+| 2026-03-28 | BL-078 | @codex | @owner | Completed inline domain help text for revision/IT/sampling interval-heavy form fields. |
+| 2026-03-28 | BL-079 | @codex | @owner | Completed on-blur validation hooks on core job/tool/part fields with inline error surfacing. |
+| 2026-03-28 | BL-080 | @codex | @owner | Completed preset column width controls (narrow/default/wide) for measurement grid. |
+| 2026-03-28 | BL-081 | @codex | @owner | Completed role-specific header accent theming and contextual mode label display. |
+| 2026-03-29 | ISSUE-01 | @codex | @owner | Completed CORS hardening in backend boot: origin now resolves from explicit `FRONTEND_ORIGIN` allowlist and no longer defaults allow-all. |
+| 2026-03-29 | ISSUE-02 | @codex | @owner | Completed auth pepper safety guard: session-token hashing now throws in non-test mode when `AUTH_TOKEN_PEPPER` is missing. |
+| 2026-03-29 | ISSUE-06 | @codex | @owner | Completed HTTP security headers baseline by adding `helmet()` middleware in backend startup. |
+| 2026-03-29 | ISSUE-07 | @codex | @owner | Completed login brute-force throttle baseline by adding `express-rate-limit` on `/api/auth/login`. |
+| 2026-03-29 | ISSUE-08 | @codex | @owner | Completed non-test startup env validation for `DATABASE_URL`, `AUTH_TOKEN_PEPPER`, and `FRONTEND_ORIGIN` before app boot. |
