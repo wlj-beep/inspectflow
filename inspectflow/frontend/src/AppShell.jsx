@@ -802,6 +802,7 @@ export default function AppShell({ authUser = null, onLogout = null }) {
   }
   const dataChipLabel = dataStatus==="live" ? "Live Data" : dataStatus==="loading" ? "Loading" : "Local Demo";
   const dataChipClass = dataStatus==="live" ? "data-live" : dataStatus==="loading" ? "data-loading" : "data-fallback";
+  const signedInUserName = authUser?.name || usersById?.[String(authUser?.id)] || "Authenticated user";
   return (
     <ErrorBoundary>
       <>
@@ -816,16 +817,22 @@ export default function AppShell({ authUser = null, onLogout = null }) {
           </div>
           <div className="header-right">
             <div className="user-ctrl">
-              <div className="user-ctrl-label">Current User</div>
-              <div className="user-ctrl-row">
-                <select value={currentUserId} onChange={(e)=>setCurrentUserId(e.target.value)} disabled={!!authUser?.id}>
-                  <option value="">Select user…</option>
-                  {users.map(u=>(
-                    <option key={u.id} value={u.id}>{u.name} — {u.role}</option>
-                  ))}
-                </select>
-                <span className={`role-chip role-${(currentRole||"").toLowerCase()}`}>{currentRole||"Unknown"}</span>
-              </div>
+              {authUser?.id ? (
+                <div className="user-ctrl-identity">{signedInUserName}</div>
+              ) : (
+                <>
+                  <div className="user-ctrl-label">Current User</div>
+                  <div className="user-ctrl-row">
+                    <select value={currentUserId} onChange={(e)=>setCurrentUserId(e.target.value)}>
+                      <option value="">Select user…</option>
+                      {users.map(u=>(
+                        <option key={u.id} value={u.id}>{u.name} — {u.role}</option>
+                      ))}
+                    </select>
+                    <span className={`role-chip role-${(currentRole||"").toLowerCase()}`}>{currentRole||"Unknown"}</span>
+                  </div>
+                </>
+              )}
               {authUser?.id?<div className="user-ctrl-hint">Authenticated session user is fixed for protected actions.</div>:null}
               {userLoadErr?<div className="user-ctrl-hint">{userLoadErr}</div>:null}
               {dataErr?<div className="user-ctrl-hint">{dataErr}</div>:null}

@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
-import { TOOL_TYPES, isToolSelectable } from "./adminConstants.js";
+import { TOOL_TYPES } from "./adminConstants.js";
+import { isToolSelectable } from "./appHelpers.js";
 
 export function TypeBadge({ type, small }){
   const s=small?{fontSize:".58rem",padding:".08rem .3rem"}:{};

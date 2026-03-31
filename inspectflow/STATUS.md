@@ -14,13 +14,7 @@ Canonical global execution queue for active backlog work.
 
 | Rank | Item ID | Priority | Status | Owner | Updated | Work Item |
 | --- | --- | --- | --- | --- | --- | --- |
-<<<<<<< ours
- 
-Active ranked queue is currently clear; re-seed with new prioritized items when the next backlog tranche is activated.
-=======
-| 1 | BL-030 | High | In Progress | @codex | 2026-03-30 | R1 acceptance evidence run: execute multi-agent audit review sweep (security, UI, architecture, verifier) and publish findings. |
-
->>>>>>> theirs
+No active items remain in the queue.
 
 ## Active Gate Defaults
 - For BL-058 acceptance, duplicate/replay behavior is fixed to idempotent skip plus audit trail updates (no strict hard-reject mode).
@@ -29,6 +23,12 @@ Active ranked queue is currently clear; re-seed with new prioritized items when 
 
 | Date | Item ID | From | To | Note |
 | --- | --- | --- | --- | --- |
+| 2026-03-30 | BL-082 | @codex | @owner | Completed shell-wrapper retirement: production now routes through `frontend/src/AppShell.jsx` directly and the legacy wrapper file has been removed. |
+| 2026-03-30 | BL-017 | @codex | @owner | Completed capability migration: authenticated sessions now own capability checks, legacy role headers are opt-in for compatibility, and auth/routing regression coverage confirms spoofed headers do not override session identity. |
+| 2026-03-30 | BL-060 | @codex | @owner | Completed authenticated header cleanup: signed-in sessions now render only the identity text and no longer show the post-login selector. |
+| 2026-03-30 | BL-016 | @owner | @codex | Completed auth/session hardening: password-reset setup for tests, expanded logout audit assertions, and lockout/session coverage are merged. |
+| 2026-03-30 | BL-061 | @owner | @codex | Completed export workflow: select-for-export mode, row checkboxes, and checked-record CSV export are merged and verified. |
+| 2026-03-30 | BL-029 | @owner | @codex | Completed backend route decomposition: `registerAppRoutes` extraction and contract coverage are merged. |
 | 2026-03-13 | BL-000 | @owner | @owner | Queue initialized for global ranking and claim coordination. |
 | 2026-03-13 | BL-003 | @owner | @codex | Claimed after completing BL-001 and BL-002. |
 | 2026-03-13 | BL-004 | @owner | @codex | Claimed after completing BL-003. |

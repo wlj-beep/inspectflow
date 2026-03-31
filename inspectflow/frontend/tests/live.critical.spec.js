@@ -47,7 +47,7 @@ test.describe("Live UI critical path @live", () => {
 
     await expect(page.locator(".data-chip")).toContainText(/Live Data|Local Demo/);
 
-    await page.getByRole("button", { name: "Admin" }).click();
+    await page.getByRole("button", { name: "Admin", exact: true }).click();
 
     const createCard = page.locator(".card").filter({ hasText: "Create New Job" });
     await createCard.getByPlaceholder("J-10045").fill(jobId);

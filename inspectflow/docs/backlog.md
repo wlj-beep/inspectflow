@@ -34,6 +34,7 @@ This backlog follows `docs/backlog-framework.md` and is organized for parallel t
 | BL-057 | R1 | PLAT | CORE | Team Atlas | BL-021, BL-053 | PLAT-BACKUP-v1 | 90 | On-prem data lifecycle management is explicit: retention, capacity visibility, backup footprint, and operator runbook controls. |
 | BL-060 | R1 | PLAT | CORE | Team Atlas | BL-015, BL-028 | PLAT-AUTH-v1 | 84 | After successful authentication, UI identity controls show the signed-in user name only and remove post-login dropdown-style user selection. |
 | BL-061 | R1 | PLAT | CORE | Team Atlas | BL-027, BL-028 | QUAL-EXPORT-v1 | 86 | Export-capable pages provide an optional "select records for export" mode that reveals row checkboxes only when enabled, updates actions to "Export selected ... CSV", and exports only the checked records. |
+| BL-083 | R1 | PLAT | CORE | Team Atlas | BL-015, BL-060 | PLAT-AUTH-v1 | 83 | Login no longer exposes the full pre-auth user list; authentication uses username entry or filtered account lookup and only surfaces the chosen account after validation. |
 
 ## R2 Backlog (Enterprise Expansion)
 
@@ -97,6 +98,7 @@ This backlog follows `docs/backlog-framework.md` and is organized for parallel t
 | BL-079 | R5 | PLAT | CORE | Team Atlas | BL-066 | PLAT-UX-v1 | 84 | High-risk entry forms validate on blur with field-level feedback before submit. |
 | BL-080 | R5 | OPS | CORE | Team Forge | BL-068 | OPS-JOBFLOW-v1 | 83 | Measurement table adds preset column width controls (narrow/default/wide) to reduce drag-only dependency. |
 | BL-081 | R5 | PLAT | CORE | Team Atlas | BL-071 | PLAT-UX-v1 | 82 | Header chrome provides role-specific visual context accents to reinforce active working mode. |
+| BL-082 | R5 | OPS | CORE | Team Forge | BL-028, BL-062, BL-063, BL-065, BL-067, BL-072, BL-074 | OPS-JOBFLOW-v1 | 91 | Retire the legacy shell wrapper by routing production exclusively through `frontend/src/AppShell.jsx`, removing `frontend/src/legacy/InspectFlowDemo.jsx`, and keeping the remaining operator, records, and admin surfaces fully mounted from the new UI shell. |
 
 ## Delivery Sequence Defaults
 1. Complete R1 `PLAT`, `OPS`, `QUAL`, and `COMM` foundation items.

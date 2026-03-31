@@ -9,6 +9,26 @@ import { api } from "../api/index.js";
 import { getOperatorName } from "../domains/jobflow/mappers.js";
 import { getSamplePieces } from "./adminConstants.js";
 
+function csvEscape(v){
+  const s=(v??"").toString();
+  if(s.includes(",")||s.includes("\"")||s.includes("\n")) return `"${s.replace(/\"/g,'""')}"`;
+  return s;
+}
+
+function triggerCsvDownload(csv, filename){
+  const blob=new Blob([csv],{type:"text/csv"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url;
+  a.download=filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(()=>{
+    a.remove();
+    URL.revokeObjectURL(url);
+  }, 0);
+}
+
 function RecordDetailModal({ record, parts, toolLibrary, usersById, canEdit, onEditValue, onClose }) {
   const [localRecord,setLocalRecord]=useState(record);
   const [editTarget,setEditTarget]=useState(null);
@@ -106,15 +126,7 @@ function RecordDetailModal({ record, parts, toolLibrary, usersById, canEdit, onE
     setExportErr("");setExporting(true);
     try{
       const csv=await api.records.exportCsv(localRecord.id);
-      const blob=new Blob([csv],{type:"text/csv"});
-      const url=URL.createObjectURL(blob);
-      const a=document.createElement("a");
-      a.href=url;
-      a.download=`record_${localRecord.id}.csv`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      triggerCsvDownload(csv, `record_${localRecord.id}.csv`);
     }catch(e){
       setExportErr(e?.message||"Export failed.");
     }finally{
@@ -330,6 +342,8 @@ export function AdminRecords({ records, parts, toolLibrary, usersById, loadRecor
   const [loadingId,setLoadingId]=useState(null);
   const [exporting,setExporting]=useState(false);
   const [exportErr,setExportErr]=useState("");
+  const [exportSelectionMode,setExportSelectionMode]=useState(false);
+  const [selectedExportIds,setSelectedExportIds]=useState([]);
   const [sortKey,setSortKey]=useState("timestamp");
   const [sortDir,setSortDir]=useState("desc");
   const [page,setPage]=useState(1);
@@ -372,6 +386,9 @@ export function AdminRecords({ records, parts, toolLibrary, usersById, loadRecor
     return String(av).localeCompare(String(bv))*dir;
   });
   const { pageRows, totalPages, clampedPage, totalRows } = paginateRows(sorted, page, pageSize);
+  const exportRows = exportSelectionMode
+    ? sorted.filter((record)=>selectedExportIds.includes(String(record.id)))
+    : sorted;
   useEffect(()=>{ setPage(1); },[filter, sortKey, sortDir, pageSize]);
   useEffect(()=>{ if(clampedPage!==page) setPage(clampedPage || 1); },[clampedPage,page]);
   useEffect(()=>{ writeRecordsFilterToUrl(filter); },[filter]);
@@ -389,7 +406,25 @@ export function AdminRecords({ records, parts, toolLibrary, usersById, loadRecor
     if(sortKey!==key) return "";
     return sortDir==="asc"?"↑":"↓";
   }
+  function toggleExportSelectionMode(){
+    setExportErr("");
+    setExportSelectionMode((current)=>{
+      if(current){
+        setSelectedExportIds([]);
+      }
+      return !current;
+    });
+  }
+  function toggleExportRow(recordId){
+    const key=String(recordId);
+    setSelectedExportIds((current)=>(
+      current.includes(key)
+        ? current.filter((id)=>id!==key)
+        : [...current, key]
+    ));
+  }
   async function handleSelect(r){
+    if(exportSelectionMode) return;
     setDetailErr("");
     if(!loadRecordDetail || (r.values && Object.keys(r.values).length>0)){
       setSelected(r);
@@ -412,19 +447,18 @@ export function AdminRecords({ records, parts, toolLibrary, usersById, loadRecor
     if(updated) setSelected(updated);
     return updated;
   }
-  function csvEscape(v){
-    const s=(v??"").toString();
-    if(s.includes(",")||s.includes("\"")||s.includes("\n")) return `"${s.replace(/\"/g,'""')}"`;
-    return s;
-  }
   async function handleExportFiltered(){
     if(!loadRecordDetail) return;
+    if(exportSelectionMode && selectedExportIds.length===0){
+      setExportErr("Select at least one record before exporting.");
+      return;
+    }
     setExportErr("");setExporting(true);
     try{
       const lines=[];
       const header=["Job #","Part","Operation","Lot","Qty","Piece","Dimension","Sampling Plan","Value","Is OOT","Tool","IT #","Operator","Timestamp","Status","Comment","Override Count","Last Override By","Last Override Timestamp","Override Reason","Prior Value","Corrected Value","Missing Reason","Missing Details"];
       lines.push(header.join(","));
-      for(const r of sorted){
+      for(const r of exportRows){
         const detail = (r.values && Object.keys(r.values).length>0) ? r : await loadRecordDetail(r.id);
         const part = parts[detail.partNumber];
         const opData = part?.operations?.[detail.operation];
@@ -507,15 +541,10 @@ export function AdminRecords({ records, parts, toolLibrary, usersById, loadRecor
         }
       }
       const csv=lines.join("\n");
-      const blob=new Blob([csv],{type:"text/csv"});
-      const url=URL.createObjectURL(blob);
-      const a=document.createElement("a");
-      a.href=url;
-      a.download=`records_export_${Date.now()}.csv`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      triggerCsvDownload(csv, `records_export_${Date.now()}.csv`);
+      if(exportSelectionMode){
+        setSelectedExportIds([]);
+      }
     }catch(e){
       setExportErr(e?.message||"Export failed.");
     }finally{
@@ -556,9 +585,20 @@ export function AdminRecords({ records, parts, toolLibrary, usersById, loadRecor
         <div className="card-head">
           <div className="card-title">Records</div>
           <div style={{display:"flex",alignItems:"center",gap:".75rem"}}>
-            <div className="text-muted" style={{fontSize:".7rem"}}>Click any row to view full detail</div>
-            <button className="btn btn-ghost btn-sm" onClick={handleExportFiltered} disabled={exporting||sorted.length===0}>
-              {exporting?"Exporting…":"Export Filtered CSV"}
+            <div className="text-muted" style={{fontSize:".7rem"}}>
+              {exportSelectionMode
+                ? "Use the checkboxes to choose records for export."
+                : "Click any row to view full detail"}
+            </div>
+            <button className="btn btn-ghost btn-sm" onClick={toggleExportSelectionMode}>
+              {exportSelectionMode?"Cancel Selection":"Select for Export"}
+            </button>
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={handleExportFiltered}
+              disabled={exporting||exportRows.length===0}
+            >
+              {exporting ? "Exporting…" : exportSelectionMode ? "Export Selected CSV" : "Export Filtered CSV"}
             </button>
           </div>
         </div>
@@ -566,6 +606,7 @@ export function AdminRecords({ records, parts, toolLibrary, usersById, loadRecor
         <table className="data-table">
           <thead>
             <tr>
+              {exportSelectionMode && <th style={{width:"44px"}} aria-label="Select records">Select</th>}
               <th onClick={()=>toggleSort("timestamp")} style={{cursor:"pointer"}}>Timestamp {sortIcon("timestamp")}</th>
               <th onClick={()=>toggleSort("jobNumber")} style={{cursor:"pointer"}}>Job # {sortIcon("jobNumber")}</th>
               <th onClick={()=>toggleSort("partNumber")} style={{cursor:"pointer"}}>Part {sortIcon("partNumber")}</th>
@@ -580,7 +621,7 @@ export function AdminRecords({ records, parts, toolLibrary, usersById, loadRecor
           <tbody>
             {pageRows.length===0&&(
               <tr>
-                <td colSpan={9}>
+                <td colSpan={exportSelectionMode ? 10 : 9}>
                   <EmptyState
                     title={hasActiveFilters ? "No Records Match Filters" : "No Records Yet"}
                     description={hasActiveFilters ? "Try broadening or clearing filters." : "Records appear here after operator submissions."}
@@ -591,7 +632,17 @@ export function AdminRecords({ records, parts, toolLibrary, usersById, loadRecor
               </tr>
             )}
             {pageRows.map(r=>(
-              <tr key={r.id} className="tr-click" onClick={()=>handleSelect(r)}>
+              <tr key={r.id} className={exportSelectionMode ? "" : "tr-click"} onClick={()=>handleSelect(r)}>
+                {exportSelectionMode && (
+                  <td onClick={(event)=>event.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      aria-label={`Select record ${r.jobNumber}`}
+                      checked={selectedExportIds.includes(String(r.id))}
+                      onChange={()=>toggleExportRow(r.id)}
+                    />
+                  </td>
+                )}
                 <td className="mono" style={{fontSize:".74rem",whiteSpace:"nowrap"}}>{r.timestamp}</td>
                 <td className="mono accent-text">{r.jobNumber}</td><td className="mono">{r.partNumber}</td>
                 <td>Op {r.operation}</td><td>{r.lot}</td><td className="mono">{r.qty}</td>

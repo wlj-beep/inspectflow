@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import request from "supertest";
 import app from "../src/index.js";
 import { query } from "../src/db.js";
+import { makePasswordHash } from "../src/auth.js";
 
 async function findUserIdByName(name) {
   const { rows } = await query("SELECT id FROM users WHERE name=$1 LIMIT 1", [name]);
@@ -20,6 +21,25 @@ async function unlockUser(name) {
   );
 }
 
+async function resetUserPassword(name, password) {
+  const userId = await findUserIdByName(name);
+  if (!userId) return;
+  const hashed = makePasswordHash(password);
+  await query(
+    `INSERT INTO auth_local_credentials
+       (user_id, password_salt, password_hash, failed_attempts, locked_until, must_rotate_password)
+     VALUES ($1,$2,$3,0,NULL,false)
+     ON CONFLICT (user_id) DO UPDATE
+       SET password_salt=EXCLUDED.password_salt,
+           password_hash=EXCLUDED.password_hash,
+           failed_attempts=0,
+           locked_until=NULL,
+           must_rotate_password=false,
+           password_updated_at=NOW()`,
+    [userId, hashed.salt, hashed.hash]
+  );
+}
+
 async function login(agent, username, password) {
   return agent
     .post("/api/auth/login")
@@ -27,6 +47,8 @@ async function login(agent, username, password) {
 }
 
 async function loginAdminAgent(password = "inspectflow") {
+  await resetUserPassword("S. Admin", password);
+  await unlockUser("S. Admin");
   const admin = request.agent(app);
   const loginRes = await login(admin, "S. Admin", password);
   expect(loginRes.status).toBe(200);
@@ -52,6 +74,7 @@ describe("Auth hardening + entitlement contract", () => {
   afterEach(async () => {
     delete process.env.ALLOW_LEGACY_ROLE_HEADER;
     await unlockUser("A. Vasquez");
+    await unlockUser("S. Admin");
   });
 
   it("records login failure and lockout events", async () => {
@@ -81,6 +104,33 @@ describe("Auth hardening + entitlement contract", () => {
       .query({ eventType: "login_failure", userId, limit: 10 });
     expect(failures.status).toBe(200);
     expect(failures.body.count).toBeGreaterThan(0);
+  });
+
+  it("records logout events for authenticated sessions", async () => {
+    const actor = await loginAdminAgent();
+    const me = await actor.get("/api/auth/me");
+    expect(me.status).toBe(200);
+    const userId = me.body.user.id;
+
+    const observer = await loginAdminAgent();
+    const before = await observer
+      .get("/api/auth/events")
+      .query({ eventType: "logout", userId, limit: 200 });
+    expect(before.status).toBe(200);
+
+    const logout = await actor.post("/api/auth/logout");
+    expect(logout.status).toBe(200);
+
+    const after = await observer
+      .get("/api/auth/events")
+      .query({ eventType: "logout", userId, limit: 200 });
+    expect(after.status).toBe(200);
+    expect(after.body.count).toBe(before.body.count + 1);
+    expect(after.body.events[0]).toMatchObject({
+      event_type: "logout",
+      user_id: userId,
+      metadata: { reason: "logout" }
+    });
   });
 
   it("exposes and updates PLAT-ENT-v1 contract", async () => {

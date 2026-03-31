@@ -29,8 +29,10 @@ Hard requirement:
   - `backend/db/seed.sql`
 - Frontend/UI behavior:
   - `frontend/src/App.jsx`
+  - `frontend/src/AppShell.jsx`
   - `frontend/src/api/client.js`
-  - `frontend/src/legacy/InspectFlowDemo.jsx` (only the region you edit)
+  - `frontend/src/ui/*.jsx`
+  - `frontend/src/domains/jobflow/*`
 - Data model reference:
   - `docs/data-model.md`
 - UI direction/workstream:
@@ -87,7 +89,7 @@ Protected APIs use local authenticated session identity as the security boundary
 - Compatibility header mode is opt-in via `ALLOW_LEGACY_ROLE_HEADER=true`.
 
 ## 8) Caution
-- Avoid editing `frontend/src/legacy/InspectFlowDemo.jsx` unless explicitly requested.
+- The legacy wrapper `frontend/src/legacy/InspectFlowDemo.jsx` has been retired; prefer `frontend/src/AppShell.jsx` and the focused UI modules.
 - Change DB schema only with explicit request and a migration plan.
 
 ## 9) Global Queue Rules

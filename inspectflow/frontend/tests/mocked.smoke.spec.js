@@ -172,10 +172,12 @@ async function mockApi(page, { createPartMode = "success", createPartDelayMs = 0
 }
 
 async function loginAsAdmin(page) {
-  await page.getByLabel("User").selectOption("1");
+  await page.locator("select").first().selectOption("1");
   await page.getByLabel("Password").fill("inspectflow");
   await page.getByRole("button", { name: "Sign In" }).click();
   await expect(page.getByText("Manufacturing Inspection System")).toBeVisible();
+  await expect(page.getByText("Admin User")).toBeVisible();
+  await expect(page.locator(".user-ctrl select")).toHaveCount(0);
 }
 
 test.describe("Mocked UI smoke @mock", () => {
@@ -191,7 +193,7 @@ test.describe("Mocked UI smoke @mock", () => {
     await page.goto("/");
     await loginAsAdmin(page);
 
-    await page.getByRole("button", { name: "Admin" }).click();
+    await page.getByRole("button", { name: "Admin", exact: true }).click();
     await page.getByRole("button", { name: "Part / Op Setup" }).click();
 
     const addPartCard = page.locator(".card").filter({ hasText: "Add New Part" });
@@ -210,7 +212,7 @@ test.describe("Mocked UI smoke @mock", () => {
     await page.goto("/");
     await loginAsAdmin(page);
 
-    await page.getByRole("button", { name: "Admin" }).click();
+    await page.getByRole("button", { name: "Admin", exact: true }).click();
     await page.getByRole("button", { name: "Part / Op Setup" }).click();
 
     const addPartCard = page.locator(".card").filter({ hasText: "Add New Part" });
@@ -247,8 +249,8 @@ test.describe("Mocked UI smoke @mock", () => {
     await page.goto("/");
     await loginAsAdmin(page);
 
-    await page.getByRole("button", { name: "Admin" }).click();
-    await page.getByRole("button", { name: "Job Management" }).click();
+    await page.getByRole("button", { name: "Admin", exact: true }).click();
+    await page.locator("aside.admin-sidebar").getByRole("button", { name: "Job Management" }).click();
     const builderCard = page.locator(".card").filter({ hasText: "Job Builder (Part + Lot)" });
     await builderCard.locator("select").first().selectOption("1234");
     await builderCard.getByPlaceholder("e.g. Lot B").fill("Lot B");
@@ -265,15 +267,21 @@ test.describe("Mocked UI smoke @mock", () => {
     await page.goto("/");
     await loginAsAdmin(page);
 
-    await page.getByRole("button", { name: "Admin" }).click();
+    await page.getByRole("button", { name: "Admin", exact: true }).click();
     await page.getByRole("button", { name: "Data Imports" }).click();
 
     const toolsTextarea = page.getByPlaceholder("Paste tools CSV here…");
     const toolsSection = toolsTextarea.locator("xpath=ancestor::div[contains(@class,'card-body')][1]");
     await toolsSection.getByRole("button", { name: "Load Sample" }).click();
+    const importResponse = page.waitForResponse((response) =>
+      response.url().includes("/api/imports/tools/csv")
+      && response.request().method() === "POST"
+    );
     await toolsSection.getByRole("button", { name: "Run Tool Import" }).click();
-
-    await expect(page.getByText('"ok": true')).toBeVisible();
-    await expect(page.getByText('"inserted": 1')).toBeVisible();
+    const response = await importResponse;
+    expect(response.ok()).toBe(true);
+    const body = await response.json();
+    expect(body).toMatchObject({ ok: true, inserted: 1 });
   });
+
 });

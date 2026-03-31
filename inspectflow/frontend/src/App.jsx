@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "./api/index.js";
-import InspectFlowDemo from "./legacy/InspectFlowDemo.jsx";
+import AppShell from "./AppShell.jsx";
 
 function LoginView({
   users,
@@ -178,5 +178,5 @@ export default function App() {
     );
   }
 
-  return <InspectFlowDemo authUser={authUser} onLogout={handleLogout} />;
+  return <AppShell authUser={authUser} onLogout={handleLogout} />;
 }
