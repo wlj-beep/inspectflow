@@ -31,6 +31,32 @@ export function normalizeOperationNumber(value) {
   return String(n).padStart(3, "0");
 }
 
+function operationNumberCandidates(value) {
+  const normalized = normalizeOperationNumber(value);
+  if (!normalized) return [];
+  const raw = String(Number(normalized));
+  return Array.from(new Set([
+    raw,
+    normalized,
+    String(raw).padStart(3, "0"),
+    String(raw).replace(/^0+/, "") || "0"
+  ]));
+}
+
+async function resolveOperationIdByCandidates(client, partId, candidates) {
+  if (!Array.isArray(candidates) || !candidates.length) return null;
+  const opRes = await client.query(
+    `SELECT id
+     FROM operations
+     WHERE part_id=$1
+       AND op_number = ANY($2::text[])
+     ORDER BY COALESCE(array_position($2::text[], op_number), 999), id ASC
+     LIMIT 1`,
+    [partId, candidates]
+  );
+  return opRes.rows[0] ? Number(opRes.rows[0].id) : null;
+}
+
 export function normalizePartRevision(value) {
   const normalized = String(value || "")
     .trim()
@@ -679,25 +705,15 @@ async function resolveOperationId(client, partId, row) {
   }
 
   const opNumberRaw = firstValue(row, ["op_number", "operation", "operation_number"]).trim();
-  const opNumber = normalizeOperationNumber(opNumberRaw);
-  if (!opNumber) {
+  const opCandidates = operationNumberCandidates(opNumberRaw);
+  if (!opCandidates.length) {
     throw new Error(`line_${row._line}: invalid_operation_reference`);
   }
-  const rawOp = String(Number(opNumber));
-  const opCandidates = Array.from(new Set([
-    opNumber,
-    rawOp,
-    String(rawOp).padStart(3, "0"),
-    String(rawOp).replace(/^0+/, "") || "0"
-  ]));
-  const opRes = await client.query(
-    "SELECT id FROM operations WHERE part_id=$1 AND op_number = ANY($2) LIMIT 1",
-    [partId, opCandidates]
-  );
-  if (!opRes.rows[0]) {
+  const opId = await resolveOperationIdByCandidates(client, partId, opCandidates);
+  if (!opId) {
     throw new Error(`line_${row._line}: operation_not_found`);
   }
-  return Number(opRes.rows[0].id);
+  return opId;
 }
 
 async function importToolsRows(rows) {
@@ -1210,20 +1226,9 @@ async function importMeasurementsRows(rows, options = {}) {
 
         let operationId = parsePositiveInteger(options.forceOperationId || firstRow.operationId);
         if (!operationId) {
-          const opNumber = normalizeOperationNumber(firstRow.operationRef);
-          if (opNumber) {
-            const rawOp = String(Number(opNumber));
-            const opCandidates = Array.from(new Set([
-              opNumber,
-              rawOp,
-              String(rawOp).padStart(3, "0"),
-              String(rawOp).replace(/^0+/, "") || "0"
-            ]));
-            const opRes = await client.query(
-              "SELECT id FROM operations WHERE part_id=$1 AND op_number = ANY($2) LIMIT 1",
-              [partId, opCandidates]
-            );
-            if (opRes.rows[0]) operationId = Number(opRes.rows[0].id);
+          const opCandidates = operationNumberCandidates(firstRow.operationRef);
+          if (opCandidates.length) {
+            operationId = await resolveOperationIdByCandidates(client, partId, opCandidates);
           }
         }
         if (!operationId) operationId = Number(job.operation_id);
@@ -1752,7 +1757,7 @@ async function executeConnectorManagedImport({
   };
 }
 
-async function executeDirectImportWithAudit({
+export async function executeDirectImportWithAudit({
   importType,
   payload,
   sourceType,
@@ -1820,7 +1825,7 @@ export function integrationLastMessage(result, runtime, status) {
   ].join(" ");
 }
 
-async function runConfiguredIntegration(integration, { triggerMode = "manual", payloadOverride = null, role = "Admin" } = {}) {
+export async function runConfiguredIntegration(integration, { triggerMode = "manual", payloadOverride = null, role = "Admin" } = {}) {
   const sourceType = String(integration.source_type);
   const importType = String(integration.import_type);
 
