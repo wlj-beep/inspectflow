@@ -125,4 +125,59 @@ describe("quality export endpoints", () => {
     expect(unknownProfile.status).toBe(400);
     expect(unknownProfile.body).toMatchObject({ error: "unknown_profile" });
   });
+
+  it("reports non-perfect pass rate when no measurements were captured", async () => {
+    const opId = await getOperationId("1234", "20");
+    expect(opId).toBeTruthy();
+
+    const operatorId = await getUserIdByName("J. Morris");
+    expect(operatorId).toBeTruthy();
+
+    const jobId = nextJobId("J-EXP-ZERO");
+    const createJob = await request(app)
+      .post("/api/jobs")
+      .set("x-user-role", "Supervisor")
+      .send({
+        id: jobId,
+        partId: "1234",
+        partRevision: "A",
+        operationId: opId,
+        lot: "Lot EXP Zero",
+        qty: 2,
+        status: "open"
+      });
+    expect(createJob.status).toBe(201);
+
+    const submit = await request(app)
+      .post("/api/records")
+      .set("x-user-role", "Operator")
+      .send({
+        jobId,
+        partId: "1234",
+        operationId: opId,
+        lot: "Lot EXP Zero",
+        qty: 2,
+        operatorUserId: operatorId,
+        status: "incomplete",
+        oot: false,
+        comment: "",
+        values: [],
+        tools: [],
+        missingPieces: [{ pieceNumber: 1, reason: "Unable to Measure" }],
+        pieceComments: []
+      });
+    expect(submit.status).toBe(201);
+    const recordId = submit.body.id;
+    expect(recordId).toBeTruthy();
+
+    const as9102 = await request(app)
+      .get(`/api/records/${recordId}/export/as9102?profile=as9102-basic`)
+      .set("x-user-role", "Supervisor");
+    expect(as9102.status).toBe(200);
+    expect(as9102.body.input?.stats).toMatchObject({
+      measured: 0,
+      failed: 0,
+      passRate: 0
+    });
+  });
 });

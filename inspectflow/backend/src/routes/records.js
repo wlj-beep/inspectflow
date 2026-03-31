@@ -643,7 +643,7 @@ router.get("/:id/export/as9102", requireCapability("view_records"), async (req, 
     );
     const measured = valuesRes.rows.length;
     const failed = valuesRes.rows.filter((row) => row.is_oot).length;
-    const passRate = measured ? (measured - failed) / measured : 1;
+    const passRate = measured > 0 ? (measured - failed) / measured : 0;
 
     const inspectorRes = await query(
       "SELECT id, name, role FROM users WHERE id=$1",
