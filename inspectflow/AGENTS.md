@@ -4,19 +4,18 @@ InspectFlow is an on-prem manufacturing inspection system that replaces paper-ba
 
 These instructions are optimized for context usage and forward progress.
 
-## 1) Always Read First (Small, High Signal)
+## 1) Always Read First (Core Only)
 - `README.md`
-- `STATUS.md`
-- `docs/backlog.md`
-- `docs/backlog-intake-protocol.md` (required when evaluating new ideas for backlog insertion)
-- `WORKLOG.md`
-- `docs/architecture.md`
-- `docs/mvp-scope.md`
+- `STATUS.md` (active queue only; do not load historical handoffs unless needed)
+- `docs/backlog.md` (index) plus only the one relevant shard under `docs/backlog/*.md`
 - `docs/test-plan.md`
 
 Criteria:
 - Small bug fix or doc tweak: Section 1 is usually sufficient.
 - Feature work or behavior changes: read Section 1 plus relevant files from Section 2.
+- New backlog insertion/reprioritization: add `docs/backlog-intake-protocol.md`.
+- Architecture-sensitive changes: add `docs/architecture.md` and `docs/mvp-scope.md`.
+- Historical verification only: read `WORKLOG.md` on demand.
 
 Hard requirement:
 - No coding without a prior claim in `STATUS.md`.
@@ -29,12 +28,17 @@ Hard requirement:
   - `backend/db/seed.sql`
 - Frontend/UI behavior:
   - `frontend/src/App.jsx`
+  - `frontend/src/AppShell.jsx`
   - `frontend/src/api/client.js`
-  - `frontend/src/legacy/InspectFlowDemo.jsx` (only the region you edit)
+  - `frontend/src/ui/*.jsx`
+  - `frontend/src/domains/jobflow/*`
 - Data model reference:
   - `docs/data-model.md`
 - UI direction/workstream:
   - `docs/frontend-notes.md`
+- Prompt/runtime operations:
+  - `docs/operations/controller-prompts.md`
+  - `docs/operations/compact-prompt-packets.md`
 
 ## 3) Multi-Agent Execution Protocol (Default and Exclusive)
 Use Codex multi-agent mode for all non-trivial work.
@@ -48,7 +52,7 @@ Use Codex multi-agent mode for all non-trivial work.
    - evidence (`file:line`, command/test output)
    - blockers and next action
 5. Controller merges results, resolves conflicts, and drives completion.
-6. Before handoff, update `STATUS.md`, `docs/backlog.md` (if state changed), and `WORKLOG.md` (on completion).
+6. Before handoff, update `STATUS.md`, backlog shard files under `docs/backlog/*.md` (if state changed), and `WORKLOG.md` (on completion).
 
 Canonical operations docs:
 - `docs/operations/multi-agent-playbook.md`
@@ -87,12 +91,12 @@ Protected APIs use local authenticated session identity as the security boundary
 - Compatibility header mode is opt-in via `ALLOW_LEGACY_ROLE_HEADER=true`.
 
 ## 8) Caution
-- Avoid editing `frontend/src/legacy/InspectFlowDemo.jsx` unless explicitly requested.
+- The legacy wrapper `frontend/src/legacy/InspectFlowDemo.jsx` has been retired; prefer `frontend/src/AppShell.jsx` and the focused UI modules.
 - Change DB schema only with explicit request and a migration plan.
 
 ## 9) Global Queue Rules
 - `STATUS.md` is the canonical execution queue.
-- `docs/backlog.md` is the detailed backlog keyed by `BL-###` IDs.
+- `docs/backlog.md` is the backlog index; detailed BL rows live in `docs/backlog/*.md`.
 - `WORKLOG.md` is the immutable completion log.
 - Start from the highest-ranked eligible item in `STATUS.md`.
 - Only the coordinator may change global `Rank` or `Priority`.
@@ -117,3 +121,12 @@ Start a new thread when:
 Stay in the same thread when:
 - Iterating on the same feature or file set.
 - The current plan still applies.
+
+## 13) Context Budget Rules
+- Hard limit: no Tier 1 file may exceed 200 lines or 40 KB. If a file approaches this limit, archive older content before the next commit.
+- `STATUS.md` Handoff Notes: rolling 10-row window. Remove oldest entries on each update; they are preserved in `WORKLOG.md`.
+- `WORKLOG.md`: rolling window ≤ 50 lines. Archive trigger: when file exceeds 50 lines, move entries older than 30 days to `WORKLOG.archive-YYYY-MM-DD.md`.
+- Backlog shards (`docs/backlog/*.md`): keep release/recovery/customer tracks split; do not re-inline all tables into `docs/backlog.md`.
+- Source files: no single frontend or backend source file may exceed 2,000 lines or 120 KB.
+- Test files: no test file may exceed 900 lines.
+- CI gate: `npm run context:budget` must pass on every PR. If a Read fails with a token-limit error, that file must be split or archived before any other work continues.

@@ -73,5 +73,5 @@ GET /api/records/:id/export/as9102?profile=as9102-basic
 ## Operational Notes
 
 - Output is deterministic for the same record because the `generatedAt` timestamp is anchored to `records.created_at`.
-- `stats` are derived from the record values (`record_values`), with pass rate computed as `(measured - failed) / measured`.
+- `stats` are derived from the record values (`record_values`), with pass rate computed against the larger of the expected measurement count and the measured count so zero-measurement and partial-measurement exports do not report a perfect pass rate.
 - Additional starter profiles can be added in `backend/src/services/quality/as9102Exports.js`.

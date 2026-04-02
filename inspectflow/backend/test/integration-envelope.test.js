@@ -11,6 +11,10 @@ import {
   mapErpJobRecordToEnvelope,
   mapErpJobBatchToCanonical
 } from "../src/services/integration/erpJobAdapter.js";
+import {
+  adaptMetrologyPayload,
+  mapMetrologyPayloadToMeasurementRows
+} from "../src/services/integration/metrologyAdapter.js";
 
 describe("Integration envelope and idempotency scaffolding", () => {
   it("normalizes aliases into canonical envelope fields", () => {
@@ -134,5 +138,75 @@ describe("Integration envelope and idempotency scaffolding", () => {
     expect(mapped.accepted).toHaveLength(1);
     expect(mapped.rejected).toHaveLength(1);
     expect(mapped.rejected[0].errors).toContain("invalid_op_number");
+  });
+
+  it("maps CMM-style payloads into measurement rows with deterministic rejects", () => {
+    const mapped = mapMetrologyPayloadToMeasurementRows({
+      job_id: "J-10042",
+      part_id: "1234",
+      op_number: "20",
+      results: [
+        { dimension_name: "Bore Diameter", piece_number: 1, actual: 0.625, tool_it_num: "IT-0031" },
+        { dimension_name: "", piece_number: 1, actual: 0.623 }
+      ]
+    });
+
+    expect(mapped.total).toBe(2);
+    expect(mapped.accepted).toHaveLength(1);
+    expect(mapped.rejected).toHaveLength(1);
+    expect(mapped.rejected[0].errors).toContain("missing_dimension_name");
+    expect(mapped.rejected[0]).toMatchObject({
+      recordKey: null,
+      jobId: "J-10042",
+      operationRef: "20",
+      pieceNumber: 1
+    });
+    expect(mapped.rejected[0].sourceRef).toContain("job:J-10042");
+  });
+
+  it("preserves stable batch identity when adapting nested metrology records", () => {
+    const adapted = adaptMetrologyPayload({
+      sourceType: "api_pull",
+      triggerMode: "scheduled",
+      integrationId: 19,
+      payload: {
+        records: [
+          {
+            record_key: "CMM-BATCH-77",
+            job_number: "J-7700",
+            part_number: "1234",
+            op_number: "020",
+            measurements: [
+              {
+                characteristic: "Bore Diameter",
+                sample_number: 1,
+                measured_value: 0.6251,
+                gauge: "IT-0031"
+              }
+            ]
+          }
+        ]
+      }
+    });
+
+    expect(adapted).toMatchObject({
+      adapterPack: "metrology_cmm_v1",
+      total: 1,
+      acceptedCount: 1,
+      rejectedCount: 0,
+      payload: {
+        batch_key: "CMM-BATCH-77",
+        rows: [
+          {
+            record_key: "CMM-BATCH-77",
+            job_id: "J-7700",
+            operation_ref: "020",
+            dimension_name: "Bore Diameter",
+            piece_number: 1,
+            tool_it_nums: "IT-0031"
+          }
+        ]
+      }
+    });
   });
 });

@@ -11,8 +11,7 @@ Implements BL-015.
 - Transitional compatibility header mode can be enabled explicitly with `ALLOW_LEGACY_ROLE_HEADER=true`.
 
 ## Endpoints
-- `GET /api/auth/users`: list active users available for local login selection.
-- `POST /api/auth/login`: start session (`userId` or `username` + `password`).
+- `POST /api/auth/login`: start session (`username` + `password`).
 - `POST /api/auth/logout`: revoke current session and clear cookie.
 - `GET /api/auth/me`: current authenticated user.
 - `GET /api/auth/session`: session validity check.
@@ -64,3 +63,4 @@ Audit fields include actor/user/session linkage, request context (IP/user-agent)
 - Compatibility role-header mode is intended only for tightly controlled transition/test contexts.
 - Production deployment recommendation: keep `ALLOW_LEGACY_ROLE_HEADER=false`.
 - Even when role headers are present, authenticated session role is authoritative when a session exists.
+- Login no longer exposes a pre-auth user directory. Username entry remains the only login identifier accepted by the session start flow.

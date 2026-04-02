@@ -1,0 +1,173 @@
+Commercialization RC gate started at 2026-03-31T102336Z
+Repository: /Users/joshlane/Documents/Playground 2/inspectflow
+Running standardized gate checks...
+
+> inspectflow@0.1.0 test:coordination
+> npm run coordination:check && npm run context:budget
+
+
+> inspectflow@0.1.0 coordination:check
+> node scripts/validate-coordination.mjs
+
+Coordination validation passed.
+
+> inspectflow@0.1.0 context:budget
+> node scripts/context/enforce-context-budget.mjs
+
+PASS: context budget within policy.
+
+> inspectflow@0.1.0 test:api
+> npm run test --prefix backend
+
+
+> inspectflow-backend@0.1.0 test
+> NODE_ENV=test npm run db:test:setup && NODE_ENV=test vitest run
+
+
+> inspectflow-backend@0.1.0 db:test:setup
+> npm run db:migrate:test && npm run db:seed:test
+
+
+> inspectflow-backend@0.1.0 db:migrate:test
+> NODE_ENV=test node src/scripts/migrate.js
+
+Schema applied.
+
+> inspectflow-backend@0.1.0 db:seed:test
+> NODE_ENV=test node src/scripts/seed.js
+
+Seeded local credentials for 111 users.
+Seed applied.
+
+ RUN  v2.1.9 /Users/joshlane/Documents/Playground 2/inspectflow/backend
+
+ ✓ test/backlog-validation.test.js (15 tests) 236ms
+ ✓ test/backlog-validation-imports.test.js (13 tests) 221ms
+ ✓ test/quality-export.test.js (3 tests) 120ms
+ ✓ test/analytics-kpi-dashboard-risk-workflow.test.js (2 tests) 222ms
+ ✓ test/auth-hardening-entitlements.test.js (4 tests) 1524ms
+   ✓ Auth hardening + entitlement contract > records password change and reset events 1059ms
+ ✓ test/analytics-multisite-kpi.test.js (2 tests) 72ms
+ ✓ test/analytics-calibration-impact.test.js (2 tests) 186ms
+ ✓ test/technical-ops-api.test.js (5 tests) 111ms
+ ✓ test/analytics-mart-runtime.test.js (2 tests) 223ms
+ ✓ test/ops-routing-workflows.test.js (3 tests) 160ms
+ ✓ test/integration-adapter-support-bundle.test.js (3 tests) 91ms
+ ✓ test/idempotency-entrypoints.test.js (3 tests) 109ms
+ ✓ test/integration-envelope.test.js (7 tests) 4ms
+ ✓ test/operational-regression.test.js (3 tests) 79ms
+ ✓ test/integration-connector-runtime.test.js (4 tests) 4ms
+ ✓ test/capa-workflow.test.js (1 test) 63ms
+ ✓ test/auth.test.js (3 tests) 194ms
+ ✓ test/future-analytics-anomaly.test.js (6 tests) 3ms
+ ✓ test/future-analytics-kpi.test.js (5 tests) 4ms
+ ✓ test/analytics-contracts.test.js (5 tests) 3ms
+ ✓ test/future-quality-export-engine.test.js (4 tests) 4ms
+ ✓ test/analytics-spc.test.js (1 test) 142ms
+ ✓ test/integration-runtime-policy.test.js (4 tests) 3ms
+ ✓ test/future-quality-risk-escalation.test.js (4 tests) 3ms
+ ✓ test/future-idempotency-envelope.test.js (4 tests) 3ms
+ ✓ test/future-integration-policy.test.js (4 tests) 2ms
+ ✓ test/permissions.test.js (4 tests) 32ms
+ ✓ test/stream-routes-contract.test.js (1 test) 56ms
+ ✓ test/revisions.test.js (2 tests) 1ms
+ ✓ test/smoke.test.js (2 tests) 26ms
+
+ Test Files  30 passed (30)
+      Tests  121 passed (121)
+   Start at  06:23:40
+   Duration  8.84s (transform 165ms, setup 18ms, collect 2.20s, tests 3.90s, environment 3ms, prepare 750ms)
+
+
+> inspectflow@0.1.0 test:ui:mock
+> npm run test:ui --prefix frontend -- --grep @mock
+
+
+> inspectflow-frontend@0.1.0 test:ui
+> playwright test --grep @mock
+
+[2m[WebServer] [22m(node:65549) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[2m[WebServer] [22m(Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 11 tests using 1 worker
+
+  ✓   1 tests/mocked.smoke.spec.js:242:3 › Mocked UI smoke @mock › loads the InspectFlow shell (690ms)
+  ✓   2 tests/mocked.smoke.spec.js:251:3 › Mocked UI smoke @mock › shows loading and success transitions during part creation (1.5s)
+  ✓   3 tests/mocked.smoke.spec.js:270:3 › Mocked UI smoke @mock › shows failure transition when part creation fails (676ms)
+  ✓   4 tests/mocked.smoke.spec.js:288:3 › Mocked UI smoke @mock › reuses original base prefix and increments family run index for duplicate lot jobs (463ms)
+  ✓   5 tests/mocked.smoke.spec.js:325:3 › Mocked UI smoke @mock › allows admins to import tools via CSV from the Data Imports tab (526ms)
+  ✓   6 tests/mocked.smoke.spec.js:347:3 › Mocked UI smoke @mock › restores route state on reload and browser back/forward (703ms)
+  ✓   7 tests/mocked.smoke.spec.js:369:3 › Mocked UI smoke @mock › scopes '?' shortcut and restores focus when help closes (485ms)
+  ✓   8 tests/mocked.smoke.spec.js:391:3 › Mocked UI smoke @mock › shows role-aware dashboard primary actions (433ms)
+  ✓   9 tests/mocked.smoke.spec.js:405:3 › Mocked UI smoke @mock › guides first-run onboarding and can reset the walkthrough (489ms)
+  ✓  10 tests/mocked.smoke.spec.js:425:3 › Mocked UI smoke @mock › shows operator-specific dashboard primary action (418ms)
+  ✓  11 tests/mocked.smoke.spec.js:435:3 › Mocked UI smoke @mock › uses one coherent admin navigation surface (460ms)
+
+  11 passed (8.5s)
+DATABASE_URL_TEST not set; defaulting to postgres://postgres@localhost:5432/inspectflow_test for live UI gate.
+
+> inspectflow@0.1.0 test:ui:live
+> bash scripts/run-ui-live-tests.sh
+
+[ui-live] Preparing test database...
+
+> inspectflow@0.1.0 db:test:setup
+> npm run db:test:setup --prefix backend
+
+
+> inspectflow-backend@0.1.0 db:test:setup
+> npm run db:migrate:test && npm run db:seed:test
+
+
+> inspectflow-backend@0.1.0 db:migrate:test
+> NODE_ENV=test node src/scripts/migrate.js
+
+Schema applied.
+
+> inspectflow-backend@0.1.0 db:seed:test
+> NODE_ENV=test node src/scripts/seed.js
+
+Seeded local credentials for 113 users.
+Seed applied.
+[ui-live] Starting backend API...
+[ui-live] Running live Playwright suite...
+
+> inspectflow-frontend@0.1.0 test:ui
+> playwright test --grep @live
+
+[2m[WebServer] [22m(node:65886) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[2m[WebServer] [22m(Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 1 test using 1 worker
+
+  ✘  1 tests/live.critical.spec.js:36:3 › Live UI critical path @live › admin creates job, operator submits measurements, record persists (5.4s)
+
+
+  1) tests/live.critical.spec.js:36:3 › Live UI critical path @live › admin creates job, operator submits measurements, record persists 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: getByText('Manufacturing Inspection System')
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 5000ms[22m
+    [2m  - waiting for getByText('Manufacturing Inspection System')[22m
+
+
+      31 |     await page.getByLabel("Password").fill(DEFAULT_PASSWORD);
+      32 |     await page.getByRole("button", { name: "Sign In" }).click();
+    > 33 |     await expect(page.getByText("Manufacturing Inspection System")).toBeVisible();
+         |                                                                     ^
+      34 |   }
+      35 |
+      36 |   test("admin creates job, operator submits measurements, record persists", async ({ page }) => {
+        at login (/Users/joshlane/Documents/Playground 2/inspectflow/frontend/tests/live.critical.spec.js:33:69)
+        at /Users/joshlane/Documents/Playground 2/inspectflow/frontend/tests/live.critical.spec.js:42:5
+
+    Error Context: test-results/live.critical-Live-UI-crit-301f1-easurements-record-persists/error-context.md
+
+  1 failed
+    tests/live.critical.spec.js:36:3 › Live UI critical path @live › admin creates job, operator submits measurements, record persists 

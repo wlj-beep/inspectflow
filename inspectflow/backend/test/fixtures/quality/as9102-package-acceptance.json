@@ -1,0 +1,78 @@
+{
+  "package": {
+    "contractId": "QUAL-AS9102-PKG-v1",
+    "forms": {
+      "form2": {
+        "toolingCount": 2
+      },
+      "form3": {
+        "characteristicCount": 2,
+        "measuredCount": 3,
+        "failedCount": 1,
+        "expectedMeasurements": 4
+      }
+    },
+    "summary": {
+      "measured": 3,
+      "failed": 1,
+      "expectedMeasurements": 4,
+      "passRate": 0.5
+    },
+    "balloonReferences": {
+      "total": 2,
+      "items": [
+        {
+          "characteristicIndex": 1,
+          "characteristicName": "Bore Diameter",
+          "label": "B1"
+        },
+        {
+          "characteristicIndex": 2,
+          "characteristicName": "Surface Finish",
+          "label": "B2"
+        }
+      ]
+    },
+    "characteristics": {
+      "total": 2,
+      "rows": [
+        {
+          "characteristicIndex": 1,
+          "name": "Bore Diameter",
+          "measurementSummary": {
+            "measuredCount": 2,
+            "failedCount": 1,
+            "expectedPieceCount": 2,
+            "status": "failed"
+          }
+        },
+        {
+          "characteristicIndex": 2,
+          "name": "Surface Finish",
+          "measurementSummary": {
+            "measuredCount": 1,
+            "failedCount": 0,
+            "expectedPieceCount": 2,
+            "status": "partial"
+          }
+        }
+      ]
+    },
+    "pieceComments": [
+      {
+        "pieceNumber": 1,
+        "comment": "First piece balloon set",
+        "serialNumber": "SER-1"
+      }
+    ]
+  },
+  "packageArtifact": {
+    "templateId": "fai-package-json-v1",
+    "mediaType": "application/json"
+  },
+  "outputTemplateIds": [
+    "fai-summary-v1",
+    "fai-fixture-v1",
+    "fai-package-json-v1"
+  ]
+}

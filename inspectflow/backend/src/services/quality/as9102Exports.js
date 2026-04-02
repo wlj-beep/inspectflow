@@ -3,11 +3,15 @@ import { createExportProfileEngine, renderFirstArticleExport } from "../../futur
 const STARTER_TEMPLATES = {
   "fai-summary-v1": {
     description: "Human-readable first article summary",
-    content: "Part: {{part.id}}\nRevision: {{part.revision | upper}}\nLot: {{lot}}\nInspector: {{inspector.name}}\nMeasured: {{stats.measured}}\nPass Rate: {{stats.passRate | percent}}"
+    content: "Part: {{part.id}}\nRevision: {{part.revision | upper}}\nLot: {{lot}}\nInspector: {{inspector.name}}\nMeasured: {{stats.measured}}\nPass Rate: {{stats.passRate | percent}}\nBalloon Summary: {{balloonSummary}}\nFixture Summary: {{fixtureSummary}}"
   },
   "fai-line-v1": {
     description: "Flat CSV-like row output",
-    content: "{{part.id}},{{part.revision | upper}},{{lot}},{{stats.measured}},{{stats.failed}}"
+    content: "{{part.id}},{{part.revision | upper}},{{lot}},{{stats.measured}},{{stats.failed}},{{balloonSummary}},{{fixtureSummary}}"
+  },
+  "fai-fixture-v1": {
+    description: "Acceptance fixture details",
+    content: "Fixtures: {{fixtureSummary}}"
   }
 };
 
@@ -26,10 +30,37 @@ const STARTER_PROFILES = [
     name: "AS9102 Line Only",
     version: "0.1.0",
     templateIds: ["fai-line-v1"]
+  },
+  {
+    id: "as9102-fixture-pack",
+    name: "AS9102 Fixture Pack",
+    version: "0.1.0",
+    templateIds: ["fai-summary-v1", "fai-fixture-v1"],
+    defaults: {
+      lot: "UNSPECIFIED"
+    }
   }
 ];
 
 let engineCache = null;
+
+function buildPackageArtifact({ input, profile, generatedAt }) {
+  if (!input?.package) return null;
+
+  return {
+    templateId: "fai-package-json-v1",
+    description: "Structured AS9102 package payload",
+    mediaType: "application/json",
+    fileName: `as9102-${String(input.part?.id || "record").replace(/[^a-z0-9._-]+/gi, "-").toLowerCase()}-${profile.id}.json`,
+    generatedAt,
+    content: JSON.stringify({
+      contractId: input.package.contractId,
+      profileId: profile.id,
+      profileVersion: profile.version,
+      package: input.package
+    }, null, 2)
+  };
+}
 
 function getAs9102Engine() {
   if (!engineCache) {
@@ -78,7 +109,17 @@ export function renderAs9102Export({ profileId = "as9102-basic", input, generate
       profileName: rendered.profileName,
       profileVersion: rendered.profileVersion,
       generatedAt: rendered.generatedAt,
-      artifacts: rendered.artifacts
+      artifacts: [
+        ...rendered.artifacts,
+        ...(() => {
+          const packageArtifact = buildPackageArtifact({
+            input,
+            profile,
+            generatedAt: rendered.generatedAt
+          });
+          return packageArtifact ? [packageArtifact] : [];
+        })()
+      ]
     }
   };
 }

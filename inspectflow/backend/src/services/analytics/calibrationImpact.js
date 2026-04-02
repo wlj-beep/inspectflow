@@ -9,6 +9,9 @@ import {
 } from "../../future/quality/riskEscalation.js";
 
 const DEFAULT_LIMIT = 200;
+const CALIBRATION_IMPACT_FOUNDATION_CONTRACT_ID = "ANA-KPI-v3";
+const MEASUREMENT_SYSTEM_CONTRACT_ID = "ANA-MSA-v1";
+const OPERATOR_REMEDIATION_VIEW_ID = "operator_safe_remediation_v1";
 const DEFAULT_RISK_RULE = Object.freeze({
   id: "tool-calibration-impact-correlation",
   name: "Tool calibration impact correlation",
@@ -44,6 +47,10 @@ function rate(numerator, denominator) {
   const d = Number(denominator || 0);
   if (d <= 0) return null;
   return Math.round((n / d) * 10000) / 10000;
+}
+
+function roundPercent(value) {
+  return Math.max(0, Math.min(100, Math.round(Number(value || 0))));
 }
 
 function normalizeStatus(value) {
@@ -145,7 +152,7 @@ async function loadToolPerformance({ dateFrom, dateTo, limit }) {
        t.name AS tool_name,
        t.it_num AS tool_it_num,
        t.calibration_due_date,
-       COALESCE(amif.work_center_id, 'unassigned') AS work_center_id,
+       COALESCE((ARRAY_AGG(COALESCE(amif.work_center_id, 'unassigned') ORDER BY amif.event_at DESC))[1], 'unassigned') AS work_center_id,
        COUNT(*)::INT AS measurement_count,
        SUM(amif.oot_count)::INT AS oot_count,
        SUM(amif.pass_count)::INT AS pass_count,
@@ -166,7 +173,7 @@ async function loadToolPerformance({ dateFrom, dateTo, limit }) {
       AND rt.dimension_id=amif.dimension_id
      JOIN tools t ON t.id=rt.tool_id
      ${where}
-     GROUP BY t.id, t.name, t.it_num, t.calibration_due_date, COALESCE(amif.work_center_id, 'unassigned')
+     GROUP BY t.id, t.name, t.it_num, t.calibration_due_date
      ORDER BY measurement_count DESC, tool_id ASC
      LIMIT $${params.length}`,
     params
@@ -376,7 +383,210 @@ function summarizeMachinePerformance(machinePerformance, toolPerformance) {
   };
 }
 
-export async function getCalibrationImpactAnalytics({
+function buildToolHealth(toolItem) {
+  const overdueMeasurements = Number(toolItem.overdueMeasurementCount || 0);
+  const measurementCount = Number(toolItem.measurementCount || 0);
+  const overdueOotRate = Number(toolItem.overdueOotRate || 0);
+  const ootRateDelta = Number(toolItem.ootRateDelta || 0);
+  const reworkRate = Number(toolItem.reworkRate || 0);
+
+  const calibrationState = !toolItem.calibrationDueDate
+    ? "untracked"
+    : overdueMeasurements > 0
+      ? "overdue"
+      : "in_calibration";
+
+  let impactScore = 0;
+  if (calibrationState === "overdue") impactScore += 35;
+  else if (calibrationState === "untracked") impactScore += 20;
+  if (overdueMeasurements > 0) impactScore += 10;
+  if (overdueOotRate >= 0.25) impactScore += 25;
+  else if (overdueOotRate >= 0.1) impactScore += 15;
+  if (ootRateDelta > 0.2) impactScore += 20;
+  else if (ootRateDelta > 0.05) impactScore += 10;
+  if (reworkRate > 0.1) impactScore += 10;
+  if (measurementCount >= 5) impactScore += 5;
+  impactScore = roundPercent(impactScore);
+
+  const defectRiskBand = impactScore >= 60 ? "high" : impactScore >= 30 ? "medium" : "low";
+  const correlationStatus = overdueMeasurements > 0 && ootRateDelta > 0
+    ? "degrades_quality"
+    : overdueMeasurements > 0
+      ? "under_observation"
+      : "stable";
+
+  return {
+    calibrationState,
+    defectRiskBand,
+    impactScore,
+    correlationStatus
+  };
+}
+
+function withToolHealth(toolPerformance) {
+  return toolPerformance.map((toolItem) => ({
+    ...toolItem,
+    toolHealth: buildToolHealth(toolItem)
+  }));
+}
+
+function buildMeasurementSystemSummary(toolPerformance, riskPreview) {
+  const totals = toolPerformance.reduce((acc, item) => {
+    acc.measurementCount += Number(item.measurementCount || 0);
+    acc.overdueMeasurementCount += Number(item.overdueMeasurementCount || 0);
+    acc.ontimeMeasurementCount += Number(item.ontimeMeasurementCount || 0);
+    acc.overdueOotCount += Number(item.overdueOotCount || 0);
+    acc.ontimeOotCount += Number(item.ontimeOotCount || 0);
+    if (item.toolHealth.calibrationState === "overdue") acc.overdueToolCount += 1;
+    if (item.toolHealth.calibrationState === "untracked") acc.untrackedToolCount += 1;
+    if (item.overdueOotRate !== null && item.ontimeOotRate !== null) acc.correlatedToolCount += 1;
+    acc.riskBandCounts[item.toolHealth.defectRiskBand] += 1;
+    return acc;
+  }, {
+    measurementCount: 0,
+    overdueMeasurementCount: 0,
+    ontimeMeasurementCount: 0,
+    overdueOotCount: 0,
+    ontimeOotCount: 0,
+    overdueToolCount: 0,
+    untrackedToolCount: 0,
+    correlatedToolCount: 0,
+    riskBandCounts: { low: 0, medium: 0, high: 0 }
+  });
+
+  const overdueOotRate = rate(totals.overdueOotCount, totals.overdueMeasurementCount);
+  const ontimeOotRate = rate(totals.ontimeOotCount, totals.ontimeMeasurementCount);
+  const ootRateDelta = overdueOotRate === null || ontimeOotRate === null
+    ? null
+    : Math.round((overdueOotRate - ontimeOotRate) * 10000) / 10000;
+
+  return {
+    contractId: MEASUREMENT_SYSTEM_CONTRACT_ID,
+    correlatedToolCount: totals.correlatedToolCount,
+    triggeredToolCount: Number(riskPreview?.triggeredCount || 0),
+    overdueToolCount: totals.overdueToolCount,
+    untrackedToolCount: totals.untrackedToolCount,
+    overdueMeasurementShare: rate(totals.overdueMeasurementCount, totals.measurementCount),
+    overdueOotRate,
+    ontimeOotRate,
+    ootRateDelta,
+    toolHealthCounts: {
+      inCalibration: Math.max(0, toolPerformance.length - totals.overdueToolCount - totals.untrackedToolCount),
+      overdue: totals.overdueToolCount,
+      untracked: totals.untrackedToolCount
+    },
+    defectRiskCounts: totals.riskBandCounts
+  };
+}
+
+function buildOperatorSafeActions(toolItem) {
+  const actionMap = new Map();
+  const addAction = (code, label) => {
+    if (!actionMap.has(code)) {
+      actionMap.set(code, {
+        code,
+        label,
+        actorRole: "Operator",
+        safe: true
+      });
+    }
+  };
+
+  if (toolItem.toolHealth.calibrationState === "overdue") {
+    addAction("hold_tool_use", "Stop using this tool for new measurements until calibration is reviewed.");
+    addAction("tag_tool_for_review", "Tag the tool and notify supervision or quality for calibration follow-up.");
+  }
+  if (toolItem.toolHealth.defectRiskBand !== "low") {
+    addAction("verify_with_alternate_tool", "Recheck the next measurement with an in-calibration alternate tool.");
+    addAction("notify_supervisor", "Notify supervision before continuing if results remain unstable.");
+  }
+  if (toolItem.sample?.recordId) {
+    addAction("review_last_record", "Review the latest affected record before continuing work.");
+  }
+
+  return Array.from(actionMap.values()).slice(0, 4);
+}
+
+function buildRemediationReasonSummary(toolItem) {
+  const reasons = [];
+  if (Number(toolItem.overdueMeasurementCount || 0) > 0) {
+    reasons.push(`${toolItem.overdueMeasurementCount} measurements were captured after the calibration due date`);
+  }
+  if (toolItem.ootRateDelta !== null && Number(toolItem.ootRateDelta) > 0) {
+    reasons.push(`OOT rate increased by ${Math.round(Number(toolItem.ootRateDelta) * 100)} points after the due date`);
+  }
+  if (Number(toolItem.reworkCount || 0) > 0) {
+    reasons.push(`${toolItem.reworkCount} rework events were linked to this tool`);
+  }
+  if (reasons.length === 0) {
+    reasons.push("Tool health needs confirmation before additional measurements are taken");
+  }
+  return reasons.join("; ");
+}
+
+function buildCalibrationRemediationView(toolPerformance, riskPreview) {
+  const eventByToolId = new Map(
+    (Array.isArray(riskPreview?.events) ? riskPreview.events : [])
+      .map((event) => [String(event?.subject?.toolId || ""), event])
+      .filter(([toolId]) => toolId)
+  );
+
+  const items = toolPerformance
+    .filter((item) => item.toolHealth.calibrationState !== "in_calibration" || item.toolHealth.defectRiskBand !== "low")
+    .map((item) => {
+      const linkedRiskEvent = eventByToolId.get(String(item.toolId));
+      return {
+        toolId: item.toolId,
+        toolName: item.toolName,
+        toolItNum: item.toolItNum,
+        workCenterId: item.workCenterId,
+        calibrationState: item.toolHealth.calibrationState,
+        defectRiskBand: item.toolHealth.defectRiskBand,
+        impactScore: item.toolHealth.impactScore,
+        actionPriority: item.toolHealth.defectRiskBand === "high" ? "urgent" : "review",
+        reasonSummary: buildRemediationReasonSummary(item),
+        recommendedActions: buildOperatorSafeActions(item),
+        reference: {
+          jobId: item.sample?.jobId || null,
+          partId: item.sample?.partId || null,
+          lot: item.sample?.lot || null,
+          recordId: item.sample?.recordId || null,
+          pieceId: item.sample?.pieceId || null
+        },
+        linkedRiskEvent: linkedRiskEvent
+          ? {
+              dedupeKey: linkedRiskEvent.dedupeKey,
+              severity: linkedRiskEvent?.rule?.severity || "medium"
+            }
+          : null
+      };
+    })
+    .sort((left, right) => {
+      const priorityScore = { urgent: 2, review: 1 };
+      return (
+        (priorityScore[right.actionPriority] || 0) - (priorityScore[left.actionPriority] || 0)
+        || right.impactScore - left.impactScore
+        || right.toolId - left.toolId
+      );
+    });
+
+  return {
+    contractId: MEASUREMENT_SYSTEM_CONTRACT_ID,
+    viewId: OPERATOR_REMEDIATION_VIEW_ID,
+    summary: {
+      itemCount: items.length,
+      urgentCount: items.filter((item) => item.actionPriority === "urgent").length,
+      overdueToolCount: items.filter((item) => item.calibrationState === "overdue").length
+    },
+    restrictions: [
+      "This view does not recalibrate tools or close risk events.",
+      "Operators can pause tool use, verify with an alternate tool, and notify supervision or quality."
+    ],
+    items
+  };
+}
+
+async function buildCalibrationImpactAnalytics({
   dateFrom = null,
   dateTo = null,
   limit = DEFAULT_LIMIT
@@ -392,18 +602,24 @@ export async function getCalibrationImpactAnalytics({
     dateTo: normalizedDateTo,
     limit
   });
-  const riskPreview = buildCalibrationRiskPreview(toolPerformance);
+  const toolPerformanceWithHealth = withToolHealth(toolPerformance);
+  const riskPreview = buildCalibrationRiskPreview(toolPerformanceWithHealth);
+  const measurementSystemSummary = buildMeasurementSystemSummary(toolPerformanceWithHealth, riskPreview);
+  const remediationView = buildCalibrationRemediationView(toolPerformanceWithHealth, riskPreview);
 
   return {
-    contractId: "ANA-KPI-v3",
-    capabilityId: "BL-041-calibration-impact-v1",
+    contractId: MEASUREMENT_SYSTEM_CONTRACT_ID,
+    foundationContractId: CALIBRATION_IMPACT_FOUNDATION_CONTRACT_ID,
+    capabilityId: "BL-100-measurement-system-calibration-impact-v1",
     window: {
       dateFrom: normalizedDateFrom,
       dateTo: normalizedDateTo
     },
     summary: summarizeMachinePerformance(machinePerformance, toolPerformance),
+    measurementSystemSummary,
     machinePerformance,
-    toolPerformance,
+    toolPerformance: toolPerformanceWithHealth,
+    remediationView,
     riskIntegration: {
       contractId: "ANA-RISK-v3",
       ...riskPreview,
@@ -412,8 +628,12 @@ export async function getCalibrationImpactAnalytics({
   };
 }
 
+export async function getCalibrationImpactAnalytics(options = {}) {
+  return buildCalibrationImpactAnalytics(options);
+}
+
 export async function refreshCalibrationImpactAnalytics(options = {}) {
-  const result = await getCalibrationImpactAnalytics(options);
+  const result = await buildCalibrationImpactAnalytics(options);
   const persistence = await persistRiskPreview(result.riskIntegration);
   return {
     ...result,
@@ -421,6 +641,15 @@ export async function refreshCalibrationImpactAnalytics(options = {}) {
       ...result.riskIntegration,
       persistence
     }
+  };
+}
+
+export async function getCalibrationImpactRemediationView(options = {}) {
+  const result = await buildCalibrationImpactAnalytics(options);
+  return {
+    contractId: MEASUREMENT_SYSTEM_CONTRACT_ID,
+    window: result.window,
+    remediationView: result.remediationView
   };
 }
 

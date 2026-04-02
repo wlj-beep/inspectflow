@@ -4,12 +4,14 @@
 Define release controls for safe delivery from R1 through R4.
 
 ## Baseline Required Checks
-1. `npm run test:coordination`
-2. `npm run test:api`
-3. `npm run test:ui:mock`
-4. `npm run test:ui:live`
-5. Release-specific manual checks from `docs/test-plan.md`
-6. Latest multi-agent run report shows no unresolved Red rows for in-scope BL IDs
+1. `npm run release:path`
+   - Runs `test:coordination`, `test:api`, `test:ui:mock`, `test:ui:live`, `gate:commercialization:load`, `gate:commercialization:rc`, and `ops:cycle:report:auto` in order.
+   - Publishes a consolidated evidence bundle at `docs/operations/cycles/evidence/<timestamp>-release-path/`.
+   - Writes a bundle manifest to `docs/operations/cycles/evidence/<timestamp>-release-path/manifest.md`.
+2. Release-specific manual checks from `docs/test-plan.md`
+3. Latest multi-agent run report shows no unresolved Red rows for in-scope BL IDs
+4. Commercialization RC prerequisites remain mandatory when the release path runs:
+   - `BL-084`, `BL-085`, and `BL-091` must already be marked completed before the RC gate closes.
 
 ## Delivery Modes
 - `PR Mode` (default): merge through pull requests on protected `main`.
@@ -57,6 +59,15 @@ If Direct Push Mode is enabled, keep baseline required checks mandatory before e
 - Capture risk waivers with owner and expiration date.
 - Keep release notes aligned with enabled modules and contract versions.
 - Attach latest multi-agent run report and closure evidence for release sign-off.
+- For the automated release path, attach the bundle directory produced by `npm run release:path`, including:
+  - `manifest.md`
+  - `release-path.log`
+  - per-step `*.log` files
+  - `commercialization-load-gate.txt`
+  - `commercialization-load-summary.json`
+  - `commercialization-rc-gate.txt`
+  - `cycle-report.md`
+  - `release-path-usage.json`
 - For BL-020 offline updates, include evidence for:
   - `deploy:onprem:update:bundle:verify`
   - `deploy:onprem:update:preflight`

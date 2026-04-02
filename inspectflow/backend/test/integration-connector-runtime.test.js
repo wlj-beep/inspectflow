@@ -148,7 +148,19 @@ describe("Connector runtime orchestration", () => {
       schemaVersion: "int-connector-replay-v1",
       runId: 1005
     });
+    expect(result.deadLetter).toMatchObject({
+      schemaVersion: "int-dead-letter-v1",
+      runId: 1005,
+      reason: "terminal_failure",
+      sourceType: "api_pull",
+      importType: "jobs",
+      replayControl: {
+        replayable: true,
+        strategy: "resubmit_with_new_token",
+        requiresNewIdempotencyToken: true
+      }
+    });
     expect(JSON.stringify(result.supportBundle)).not.toContain("LOT-500");
+    expect(JSON.stringify(result.deadLetter)).not.toContain("LOT-500");
   });
 });
-

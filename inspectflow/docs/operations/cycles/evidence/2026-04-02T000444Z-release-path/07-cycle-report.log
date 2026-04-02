@@ -1,0 +1,13 @@
+Step: 07-cycle-report
+Started: 2026-04-02T00:06:24Z
+Command: npm run ops:cycle:report:auto -- --cycle 2026-04-02T000444Z-release-path --window release\ path --controller release-path --bl BL-114\,BL-115\,BL-116\,BL-117\,BL-118 --tracks release-path\,bundle --usage /Users/joshlane/Documents/Playground\ 2/inspectflow/docs/operations/cycles/evidence/2026-04-02T000444Z-release-path/release-path-usage.json --requireArtifact /Users/joshlane/Documents/Playground\ 2/inspectflow/docs/operations/cycles/evidence/2026-04-02T000444Z-release-path/commercialization-load-gate.txt --requireArtifact /Users/joshlane/Documents/Playground\ 2/inspectflow/docs/operations/cycles/evidence/2026-04-02T000444Z-release-path/commercialization-rc-gate.txt --out /Users/joshlane/Documents/Playground\ 2/inspectflow/docs/operations/cycles/evidence/2026-04-02T000444Z-release-path/cycle-report.md --controllerPromptTokens 1 --acceptedChanges 5 --inputRatePerMillion 0 --outputRatePerMillion 0
+
+
+> inspectflow@0.1.0 ops:cycle:report:auto
+> node scripts/operations/generate-cycle-report.mjs --usageDir docs/operations/cycles/evidence --cycle 2026-04-02T000444Z-release-path --window release path --controller release-path --bl BL-114,BL-115,BL-116,BL-117,BL-118 --tracks release-path,bundle --usage /Users/joshlane/Documents/Playground 2/inspectflow/docs/operations/cycles/evidence/2026-04-02T000444Z-release-path/release-path-usage.json --requireArtifact /Users/joshlane/Documents/Playground 2/inspectflow/docs/operations/cycles/evidence/2026-04-02T000444Z-release-path/commercialization-load-gate.txt --requireArtifact /Users/joshlane/Documents/Playground 2/inspectflow/docs/operations/cycles/evidence/2026-04-02T000444Z-release-path/commercialization-rc-gate.txt --out /Users/joshlane/Documents/Playground 2/inspectflow/docs/operations/cycles/evidence/2026-04-02T000444Z-release-path/cycle-report.md --controllerPromptTokens 1 --acceptedChanges 5 --inputRatePerMillion 0 --outputRatePerMillion 0
+
+Cycle report generated: /Users/joshlane/Documents/Playground 2/inspectflow/docs/operations/cycles/evidence/2026-04-02T000444Z-release-path/cycle-report.md
+Usage files scanned: 113
+Usage sources with records: 4
+Total tokens: 4
+Estimated cost: $0.0000

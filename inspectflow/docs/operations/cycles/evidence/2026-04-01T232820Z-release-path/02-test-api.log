@@ -1,0 +1,57 @@
+Step: 02-test-api
+Started: 2026-04-01T23:28:20Z
+Command: npm run test:api
+
+
+> inspectflow@0.1.0 test:api
+> npm run test --prefix backend
+
+
+> inspectflow-backend@0.1.0 test
+> NODE_ENV=test npm run db:test:setup && NODE_ENV=test vitest run
+
+
+> inspectflow-backend@0.1.0 db:test:setup
+> npm run db:migrate:test && npm run db:seed:test
+
+
+> inspectflow-backend@0.1.0 db:migrate:test
+> NODE_ENV=test node src/scripts/migrate.js
+
+/Users/joshlane/Documents/Playground 2/inspectflow/backend/node_modules/pg-pool/index.js:45
+    Error.captureStackTrace(err)
+          ^
+
+AggregateError [EPERM]: 
+    at /Users/joshlane/Documents/Playground 2/inspectflow/backend/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async file:///Users/joshlane/Documents/Playground%202/inspectflow/backend/src/scripts/migrate.js:13:3 {
+  code: 'EPERM',
+  [errors]: [
+    Error: connect EPERM ::1:5432 - Local (:::0)
+        at internalConnectMultiple (node:net:1186:16)
+        at defaultTriggerAsyncIdScope (node:internal/async_hooks:464:18)
+        at GetAddrInfoReqWrap.emitLookup [as callback] (node:net:1526:7)
+        at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:134:8) {
+      errno: -1,
+      code: 'EPERM',
+      syscall: 'connect',
+      address: '::1',
+      port: 5432
+    },
+    Error: connect EPERM 127.0.0.1:5432 - Local (0.0.0.0:0)
+        at internalConnectMultiple (node:net:1186:16)
+        at internalConnectMultiple (node:net:1190:5)
+        at defaultTriggerAsyncIdScope (node:internal/async_hooks:464:18)
+        at GetAddrInfoReqWrap.emitLookup [as callback] (node:net:1526:7)
+        at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:134:8) {
+      errno: -1,
+      code: 'EPERM',
+      syscall: 'connect',
+      address: '127.0.0.1',
+      port: 5432
+    }
+  ]
+}
+
+Node.js v20.20.1

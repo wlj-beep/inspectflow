@@ -2,6 +2,12 @@ import { query } from "../db.js";
 import { getActorRole } from "./authSession.js";
 
 const VALID_ROLES = ["Operator", "Quality", "Supervisor", "Admin"];
+const DEFAULT_ROLE_CAPABILITIES = Object.freeze({
+  Operator: ["view_operator", "submit_records", "view_records"],
+  Quality: ["view_admin", "view_jobs", "view_records", "edit_records"],
+  Supervisor: ["view_admin", "view_jobs", "manage_jobs", "view_records", "edit_records"],
+  Admin: ["view_admin", "view_jobs", "manage_jobs", "view_records", "edit_records", "manage_parts", "manage_tools", "manage_users", "manage_roles"]
+});
 
 function roleFromRequest(req) {
   const role = getActorRole(req);
@@ -23,11 +29,20 @@ function roleFromRequest(req) {
 export async function getRoleCaps(req) {
   if (req._roleCaps) return req._roleCaps;
   const role = roleFromRequest(req);
-  const { rows } = await query(
-    "SELECT capability FROM role_capabilities WHERE role=$1",
-    [role]
-  );
-  const caps = rows.map((r) => r.capability);
+  let caps = DEFAULT_ROLE_CAPABILITIES[role] || [];
+  try {
+    const { rows } = await query(
+      "SELECT capability FROM role_capabilities WHERE role=$1",
+      [role]
+    );
+    if (rows.length > 0) {
+      caps = rows.map((r) => r.capability);
+    }
+  } catch (error) {
+    if (String(error?.code || "") !== "42P01") {
+      throw error;
+    }
+  }
   req._roleCaps = caps;
   req._roleName = role;
   return caps;

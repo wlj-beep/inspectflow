@@ -26,13 +26,13 @@ Use only tracks that are needed:
 
 ## Standard Run Sequence
 1. Confirm claimed `BL-###`, dependencies, and acceptance criteria.
-2. Write bounded sub-agent task packets.
+2. Write bounded sub-agent task packets (use `compact-prompt-packets.md` by default).
 3. Spawn sub-agents in parallel.
 4. Wait for all sub-agents and collect evidence.
 5. Resolve overlap/conflicts, then integrate.
 6. Run final verification.
 7. Publish run report with gate (`Green | Yellow | Red`).
-8. Update `STATUS.md`, `docs/backlog.md` (if needed), and `WORKLOG.md` (on completion).
+8. Update `STATUS.md`, relevant `docs/backlog/*.md` shard files (if needed), and `WORKLOG.md` (on completion).
 
 ## Gate Policy
 - `Green`: acceptance met, no unresolved blocking risk.
@@ -49,6 +49,7 @@ Every sub-agent output must include:
 
 ## Prompt Discipline
 - Keep prompts short and bounded.
+- Keep controller prompts <= 220 tokens and sub-agent prompts <= 160 tokens when possible.
 - Assign ownership by file paths or contract boundaries.
 - Require structured output so controller merge is deterministic.
 - Ask sub-agents to avoid touching out-of-scope files.

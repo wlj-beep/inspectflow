@@ -1,0 +1,31 @@
+Step: 05-gate-commercialization-load
+Started: 2026-04-01T23:54:41Z
+Command: npm run gate:commercialization:load
+
+
+> inspectflow@0.1.0 gate:commercialization:load
+> bash scripts/load/run-commercialization-load-gate.sh
+
+Commercialization load gate started at 2026-04-01T235352Z
+Repository: /Users/joshlane/Documents/Playground 2/inspectflow
+Baseline summary: /Users/joshlane/Documents/Playground 2/inspectflow/var/load/bl056/load-gate-summary.json
+Observed summary: /Users/joshlane/Documents/Playground 2/inspectflow/scripts/load/commercialization-target.fixture.json
+Summary output: /Users/joshlane/Documents/Playground 2/inspectflow/docs/operations/cycles/evidence/2026-04-01T235352Z-release-path/commercialization-load-summary.json
+Evidence file: /Users/joshlane/Documents/Playground 2/inspectflow/docs/operations/cycles/evidence/2026-04-01T235352Z-release-path/commercialization-load-gate.txt
+Commercialization target summary written.
+Target profile: 25x (625 jobs / 6250 measurement rows)
+Observed budgets: import p95=980 ms, dashboard p95=760 ms, queue drain=540 s, error rate=0.2%
+Duplicate writes=0, replay failures=0, support bundle leak=false
+PASS: baseline_passed - BL-056 baseline artifact passed
+PASS: baseline_multiplier_floor - BL-056 baseline multiplier is at least 10x
+PASS: commercialization_volume - Observed volume meets 25x commercialization target
+PASS: import_latency_budget - Import p95 stays within 1200 ms
+PASS: dashboard_latency_budget - Dashboard p95 stays within 900 ms
+PASS: queue_drain_budget - Queue drain finishes within 900 seconds
+PASS: error_rate_budget - Error rate stays within 1%
+PASS: duplicate_write_budget - Duplicate writes stay within 0
+PASS: replay_failure_budget - Replay failures stay within 0
+PASS: support_bundle_safety - Support bundle summary remains metadata-only
+Overall result: PASS
+Commercialization load gate passed.
+Attach /Users/joshlane/Documents/Playground 2/inspectflow/docs/operations/cycles/evidence/2026-04-01T235352Z-release-path/commercialization-load-summary.json and /Users/joshlane/Documents/Playground 2/inspectflow/docs/operations/cycles/evidence/2026-04-01T235352Z-release-path/commercialization-load-gate.txt to the BL-103 release evidence trail.

@@ -7,6 +7,7 @@ Quality and traceability: correction workflows, chain-of-events reporting, expor
 - `QUAL-TRACE-v1`: part/job/lot/piece trace query contract.
 - `QUAL-EXPORT-v1`: CSV and starter AS9102 export contract.
 - `QUAL-FAI-v2`: first-article workflow and export profile contract.
+- `QUAL-DOC-v1`: controlled document workflow contract for revisioned procedures/forms linked to CAPA records.
 
 ## Consumes
 - `OPS-JOBFLOW-v1` for lifecycle context.
@@ -21,3 +22,4 @@ Quality and traceability: correction workflows, chain-of-events reporting, expor
 - Export outputs reproducible and validated by acceptance fixtures.
 - Correction lineage visible and auditable.
 - Trace queries cover full lifecycle chain.
+- Controlled documents preserve revision, approval, release, and change-reason lineage inside quality workflows.

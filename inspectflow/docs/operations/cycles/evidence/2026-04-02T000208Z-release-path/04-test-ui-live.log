@@ -1,0 +1,75 @@
+Step: 04-test-ui-live
+Started: 2026-04-02T00:03:04Z
+Command: npm run test:ui:live
+
+
+> inspectflow@0.1.0 test:ui:live
+> bash scripts/run-ui-live-tests.sh
+
+[ui-live] DATABASE_URL_TEST not set; defaulting to postgres://postgres@localhost:5432/inspectflow_test.
+[ui-live] Preparing test database...
+
+> inspectflow@0.1.0 db:test:setup
+> npm run db:test:setup --prefix backend
+
+
+> inspectflow-backend@0.1.0 db:test:setup
+> npm run db:migrate:test && npm run db:seed:test
+
+
+> inspectflow-backend@0.1.0 db:migrate:test
+> NODE_ENV=test node src/scripts/migrate.js
+
+Schema applied.
+
+> inspectflow-backend@0.1.0 db:seed:test
+> NODE_ENV=test node src/scripts/seed.js
+
+Seeded local credentials for 185 users.
+Seed applied.
+[ui-live] Starting backend API...
+[ui-live] Running live Playwright suite...
+
+> inspectflow-frontend@0.1.0 test:ui
+> playwright test --grep @live
+
+[WebServer] (node:25214) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 1 test using 1 worker
+[live][response:401] http://localhost:4000/api/auth/session
+(node:25216) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[live][console:error] Failed to load resource: the server responded with a status of 401 (Unauthorized)
+[live][response:401] http://localhost:4000/api/auth/session
+[live][console:error] Failed to load resource: the server responded with a status of 401 (Unauthorized)
+F
+
+  1) tests/live.critical.spec.js:40:3 › Live UI critical path @live › admin creates job, operator submits measurements, record persists 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: getByRole('navigation', { name: 'Primary navigation' })
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 5000ms[22m
+    [2m  - waiting for getByRole('navigation', { name: 'Primary navigation' })[22m
+
+
+      29 |   async function login(page, userLabel) {
+      30 |     if (await page.getByLabel("Username").count() === 0) {
+    > 31 |       await expect(page.getByRole("navigation", { name: "Primary navigation" })).toBeVisible();
+         |                                                                                  ^
+      32 |       return;
+      33 |     }
+      34 |     await page.getByLabel("Username").fill(userLabel);
+        at login (/Users/joshlane/Documents/Playground 2/inspectflow/frontend/tests/live.critical.spec.js:31:82)
+        at /Users/joshlane/Documents/Playground 2/inspectflow/frontend/tests/live.critical.spec.js:112:5
+
+    Error Context: test-results/live.critical-Live-UI-crit-301f1-easurements-record-persists/error-context.md
+
+  1 failed
+    tests/live.critical.spec.js:40:3 › Live UI critical path @live › admin creates job, operator submits measurements, record persists 
