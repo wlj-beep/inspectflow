@@ -21,6 +21,28 @@ async function unlockUser(name) {
   );
 }
 
+async function findLatestActiveSessionId(userId) {
+  const { rows } = await query(
+    `SELECT id
+     FROM auth_sessions
+     WHERE user_id=$1 AND revoked_at IS NULL
+     ORDER BY created_at DESC, id DESC
+     LIMIT 1`,
+    [userId]
+  );
+  return rows[0]?.id ? Number(rows[0].id) : null;
+}
+
+async function countLogoutEventsForSession(userId, sessionId) {
+  const { rows } = await query(
+    `SELECT COUNT(*)::INT AS count
+     FROM auth_event_log
+     WHERE event_type='logout' AND user_id=$1 AND session_id=$2`,
+    [userId, sessionId]
+  );
+  return Number(rows[0]?.count || 0);
+}
+
 async function resetUserPassword(name, password) {
   const userId = await findUserIdByName(name);
   if (!userId) return;
@@ -59,6 +81,13 @@ const DEFAULT_ENTITLEMENTS = {
   licenseTier: "core",
   seatPack: 25,
   seatSoftLimit: 25,
+  seatPolicyOptionId: "soft_visibility",
+  hardSeatEnabled: false,
+  directoryAuthEnabled: false,
+  directoryAuthMode: "local",
+  directoryAuthLabel: null,
+  directoryAuthIssuer: null,
+  directoryAuthTenant: null,
   diagnosticsOptIn: false,
   moduleFlags: {
     CORE: true,
@@ -106,31 +135,155 @@ describe("Auth hardening + entitlement contract", () => {
     expect(failures.body.count).toBeGreaterThan(0);
   });
 
+  it("does not expose a pre-auth auth user directory and requires username-based login", async () => {
+    const authUsers = await request(app).get("/api/auth/users");
+    expect(authUsers.status).toBe(404);
+
+    const loginWithUserId = await request(app)
+      .post("/api/auth/login")
+      .send({ userId: 1, password: "inspectflow" });
+    expect(loginWithUserId.status).toBe(400);
+    expect(loginWithUserId.body).toMatchObject({ error: "username_required" });
+  });
+
   it("records logout events for authenticated sessions", async () => {
     const actor = await loginAdminAgent();
     const me = await actor.get("/api/auth/me");
     expect(me.status).toBe(200);
     const userId = me.body.user.id;
+    const sessionId = await findLatestActiveSessionId(userId);
+    expect(sessionId).toBeTruthy();
 
-    const observer = await loginAdminAgent();
-    const before = await observer
-      .get("/api/auth/events")
-      .query({ eventType: "logout", userId, limit: 200 });
-    expect(before.status).toBe(200);
+    const beforeCount = await countLogoutEventsForSession(userId, sessionId);
 
     const logout = await actor.post("/api/auth/logout");
     expect(logout.status).toBe(200);
 
-    const after = await observer
-      .get("/api/auth/events")
-      .query({ eventType: "logout", userId, limit: 200 });
-    expect(after.status).toBe(200);
-    expect(after.body.count).toBe(before.body.count + 1);
-    expect(after.body.events[0]).toMatchObject({
+    const afterCount = await countLogoutEventsForSession(userId, sessionId);
+    expect(afterCount).toBe(beforeCount + 1);
+
+    const { rows } = await query(
+      `SELECT event_type, user_id, metadata
+       FROM auth_event_log
+       WHERE event_type='logout' AND user_id=$1 AND session_id=$2
+       ORDER BY created_at DESC, id DESC
+       LIMIT 1`,
+      [userId, sessionId]
+    );
+    expect(rows[0]).toMatchObject({
       event_type: "logout",
       user_id: userId,
       metadata: { reason: "logout" }
     });
+  });
+
+  it("exposes the auth profile and enforces hard named-seat capacity", async () => {
+    const admin = await loginAdminAgent();
+
+    const profile = await admin.get("/api/auth/profile");
+    expect(profile.status).toBe(200);
+    expect(profile.body).toMatchObject({
+      contractId: "PLAT-AUTH-v1",
+      localAccountMode: true,
+      directoryEnabled: false,
+      mode: "local",
+      providerLabel: "Local Accounts"
+    });
+
+    const enableHardSeats = await admin
+      .put("/api/auth/entitlements")
+      .send({
+        seatPack: 1,
+        seatSoftLimit: 1,
+        seatPolicyOptionId: "named_seat",
+        hardSeatEnabled: true,
+        directoryAuthEnabled: true,
+        directoryAuthMode: "hybrid",
+        directoryAuthLabel: "Azure AD"
+      });
+    expect(enableHardSeats.status).toBe(200);
+    expect(enableHardSeats.body.packaging).toMatchObject({
+      hardSeatEnabled: true,
+      authProfile: {
+        directoryEnabled: true,
+        mode: "hybrid",
+        providerLabel: "Azure AD"
+      },
+      seatPolicy: {
+        optionId: "named_seat",
+        allocationMode: "named",
+        hardSeatEnabled: true
+      }
+    });
+
+    await admin.post("/api/auth/logout");
+    const relogin = await login(admin, "S. Admin", "inspectflow");
+    expect(relogin.status).toBe(200);
+    expect(relogin.body.seatAssignment).toMatchObject({
+      seatMode: "named",
+      seatKey: expect.stringContaining("user:")
+    });
+
+    const blockedUser = request.agent(app);
+    await resetUserPassword("A. Vasquez", "inspectflow");
+    await unlockUser("A. Vasquez");
+    const blockedLogin = await login(blockedUser, "A. Vasquez", "inspectflow");
+    expect(blockedLogin.status).toBe(409);
+    expect(blockedLogin.body).toMatchObject({ error: "seat_limit_reached" });
+
+    await admin.put("/api/auth/entitlements").send(DEFAULT_ENTITLEMENTS);
+    await admin.post("/api/auth/logout");
+  });
+
+  it("surfaces soft seat warnings in session state and audit logs without blocking login", async () => {
+    const admin = await loginAdminAgent();
+
+    const enableSoftSeatWarnings = await admin
+      .put("/api/auth/entitlements")
+      .send({
+        seatPack: 5000,
+        seatSoftLimit: 1,
+        seatPolicyOptionId: "soft_buffer",
+        hardSeatEnabled: false
+      });
+    expect(enableSoftSeatWarnings.status).toBe(200);
+    expect(enableSoftSeatWarnings.body.packaging.seatPolicy).toMatchObject({
+      optionId: "soft_buffer",
+      warningThreshold: 1,
+      contractId: "COMM-SEAT-v1",
+      seatPack: 5000
+    });
+
+    const session = await admin.get("/api/auth/session");
+    expect(session.status).toBe(200);
+    expect(session.body.seatWarning).toMatchObject({
+      contractId: "COMM-SEAT-v1",
+      status: "warning",
+      warningThreshold: 1,
+      seatPack: 5000,
+      auditable: true
+    });
+
+    const loginRes = await admin.post("/api/auth/logout");
+    expect(loginRes.status).toBe(200);
+
+    const relogin = await login(admin, "S. Admin", "inspectflow");
+    expect(relogin.status).toBe(200);
+    expect(relogin.body.seatWarning).toMatchObject({
+      contractId: "COMM-SEAT-v1",
+      status: "warning",
+      warningThreshold: 1,
+      seatPack: 5000
+    });
+
+    const audit = await admin
+      .get("/api/auth/events")
+      .query({ eventType: "seat_warning", limit: 10 });
+    expect(audit.status).toBe(200);
+    expect(audit.body.count).toBeGreaterThan(0);
+
+    await admin.put("/api/auth/entitlements").send(DEFAULT_ENTITLEMENTS);
+    await admin.post("/api/auth/logout");
   });
 
   it("exposes and updates PLAT-ENT-v1 contract", async () => {
@@ -140,19 +293,32 @@ describe("Auth hardening + entitlement contract", () => {
     expect(current.status).toBe(200);
     expect(current.body.contractId).toBe("PLAT-ENT-v1");
     expect(current.body.moduleFlags).toMatchObject(DEFAULT_ENTITLEMENTS.moduleFlags);
+    expect(current.body.packaging).toMatchObject({
+      contractId: "COMM-PACKAGING-v1",
+      licenseContractId: "COMM-LICENSE-v1",
+      currentLicenseTier: "core"
+    });
+    expect(current.body.packaging.activeBundleIds).toEqual(["core_site"]);
+    expect(current.body.packaging.seatPolicy).toMatchObject({
+      optionId: "soft_visibility",
+      contractId: "COMM-SEAT-v1",
+      warningThreshold: 25
+    });
+    expect(current.body.packaging.bundleCatalog.map((bundle) => bundle.bundleId)).toEqual(
+      expect.arrayContaining(["core_site", "quality_pro", "integration_suite", "analytics_suite", "multisite", "edge"])
+    );
+    expect(current.body.packaging.upgradePrompts.map((prompt) => prompt.promptId)).toEqual(
+      expect.arrayContaining(["upgrade_quality_pro", "upgrade_integration_suite", "upgrade_analytics_suite"])
+    );
 
     const updatedPayload = {
       licenseTier: "core_plus",
       seatPack: 30,
       seatSoftLimit: 28,
       diagnosticsOptIn: true,
-      moduleFlags: {
-        CORE: true,
-        QUALITY_PRO: true,
-        INTEGRATION_SUITE: false,
-        ANALYTICS_SUITE: true,
-        MULTISITE: false,
-        EDGE: false
+      packaging: {
+        bundleIds: ["quality_pro", "analytics_suite"],
+        seatPolicyOptionId: "soft_buffer"
       }
     };
 
@@ -167,11 +333,45 @@ describe("Auth hardening + entitlement contract", () => {
       seatSoftLimit: 28,
       diagnosticsOptIn: true
     });
-    expect(updated.body.moduleFlags).toMatchObject(updatedPayload.moduleFlags);
+    expect(updated.body.moduleFlags).toMatchObject({
+      CORE: true,
+      QUALITY_PRO: true,
+      INTEGRATION_SUITE: false,
+      ANALYTICS_SUITE: true,
+      MULTISITE: false,
+      EDGE: false
+    });
+    expect(updated.body.packaging).toMatchObject({
+      contractId: "COMM-PACKAGING-v1",
+      currentLicenseTier: "core_plus"
+    });
+    expect(updated.body.packaging.activeBundleIds).toEqual(
+      expect.arrayContaining(["core_site", "quality_pro", "analytics_suite"])
+    );
+    expect(updated.body.packaging.seatPolicy).toMatchObject({
+      optionId: "soft_buffer",
+      contractId: "COMM-SEAT-v1",
+      warningThreshold: 28
+    });
+    expect(updated.body.packaging.upgradePrompts.map((prompt) => prompt.promptId)).not.toContain("upgrade_quality_pro");
+    expect(updated.body.packaging.upgradePrompts.map((prompt) => prompt.promptId)).not.toContain("upgrade_analytics_suite");
+    expect(updated.body.packaging.upgradePrompts.map((prompt) => prompt.promptId)).toEqual(
+      expect.arrayContaining(["upgrade_integration_suite", "upgrade_multisite"])
+    );
 
     const readBack = await admin.get("/api/auth/entitlements");
     expect(readBack.status).toBe(200);
-    expect(readBack.body.moduleFlags).toMatchObject(updatedPayload.moduleFlags);
+    expect(readBack.body.moduleFlags).toMatchObject({
+      CORE: true,
+      QUALITY_PRO: true,
+      INTEGRATION_SUITE: false,
+      ANALYTICS_SUITE: true,
+      MULTISITE: false,
+      EDGE: false
+    });
+    expect(readBack.body.packaging.activeBundleIds).toEqual(
+      expect.arrayContaining(["core_site", "quality_pro", "analytics_suite"])
+    );
 
     const events = await admin
       .get("/api/auth/events")
@@ -179,6 +379,19 @@ describe("Auth hardening + entitlement contract", () => {
     expect(events.status).toBe(200);
     expect(events.body.count).toBeGreaterThan(0);
     expect(events.body.events[0]?.metadata?.contractId).toBe("PLAT-ENT-v1");
+    expect(events.body.events[0]?.metadata?.packaging).toMatchObject({
+      contractId: "COMM-PACKAGING-v1",
+      licenseContractId: "COMM-LICENSE-v1",
+      activeBundleIds: expect.arrayContaining(["core_site", "quality_pro", "analytics_suite"]),
+      seatPolicy: {
+        optionId: "soft_buffer",
+        contractId: "COMM-SEAT-v1",
+        warningThreshold: 28
+      }
+    });
+    expect(events.body.events[0]?.metadata?.packaging?.upgradePromptIds).toEqual(
+      expect.arrayContaining(["upgrade_integration_suite", "upgrade_multisite"])
+    );
 
     await admin.put("/api/auth/entitlements").send(DEFAULT_ENTITLEMENTS);
   });

@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { query } from "./db.js";
+import { getPlatformEntitlements } from "./services/platform/entitlements.js";
 
 export const AUTH_SESSION_COOKIE = process.env.AUTH_SESSION_COOKIE || "inspectflow_session";
 
@@ -31,6 +32,195 @@ function parseCookieHeader(header) {
       }
     });
   return out;
+}
+
+function normalizeSeatKey(value) {
+  const trimmed = String(value || "").trim();
+  if (!trimmed) return null;
+  return trimmed.slice(0, 160);
+}
+
+function mapSeatAllocationModeToStoredSeatMode(allocationMode) {
+  if (allocationMode === "named") return "named_seat";
+  if (allocationMode === "device") return "device_seat";
+  if (allocationMode === "concurrent") return "concurrent_seat";
+  return allocationMode;
+}
+
+function mapStoredSeatModeToAllocationMode(seatMode) {
+  if (seatMode === "named_seat") return "named";
+  if (seatMode === "device_seat") return "device";
+  if (seatMode === "concurrent_seat") return "concurrent";
+  return seatMode;
+}
+
+function resolveSeatAssignmentKey({ allocationMode, userId, sessionId, deviceId, userAgent, ipAddress }) {
+  if (!allocationMode) return null;
+  if (allocationMode === "named") return `user:${Number(userId)}`;
+  if (allocationMode === "device") {
+    const source = normalizeSeatKey(deviceId || userAgent || ipAddress || userId);
+    return source ? `device:${source}` : `device:${Number(userId)}`;
+  }
+  return `session:${Number(sessionId)}`;
+}
+
+async function countActiveSessions() {
+  const { rows } = await query(
+    `SELECT COUNT(*)::int AS count
+     FROM auth_sessions
+     WHERE revoked_at IS NULL
+       AND expires_at > NOW()`,
+    []
+  );
+  return Number(rows[0]?.count || 0);
+}
+
+async function buildSeatWarning(seatPolicy) {
+  if (!seatPolicy || seatPolicy.enforcement !== "warn_only") return null;
+  const warningThreshold = Number(seatPolicy.warningThreshold || 0);
+  if (warningThreshold <= 0) return null;
+
+  const activeSessionCount = await countActiveSessions();
+  if (activeSessionCount < warningThreshold) return null;
+
+  const seatPack = Number(seatPolicy.seatPack || warningThreshold);
+  const remainingSeats = Math.max(0, seatPack - activeSessionCount);
+  const status = activeSessionCount > seatPack ? "over_capacity" : "warning";
+
+  return {
+    contractId: seatPolicy.contractId || null,
+    allocationMode: seatPolicy.allocationMode || null,
+    enforcement: seatPolicy.enforcement || "warn_only",
+    status,
+    activeSessionCount,
+    warningThreshold,
+    seatPack,
+    remainingSeats,
+    message: status === "over_capacity"
+      ? `Seat usage is above the purchased pack of ${seatPack}.`
+      : `Seat usage reached the warning threshold of ${warningThreshold}.`,
+    auditable: true
+  };
+}
+
+async function releaseSeatAssignment(sessionId, reason = "logout") {
+  if (!sessionId) return;
+  await query(
+    `UPDATE auth_seat_assignments
+     SET status='released',
+         released_at=NOW(),
+         release_reason=$2
+     WHERE session_id=$1
+       AND status='active'`,
+    [sessionId, reason]
+  );
+}
+
+async function allocateSeatAssignment({
+  sessionId,
+  userId,
+  seatPolicy,
+  ipAddress = null,
+  userAgent = null,
+  deviceId = null
+} = {}) {
+  const allocationMode = seatPolicy?.allocationMode || null;
+  if (!allocationMode) {
+    return {
+      seatMode: null,
+      seatKey: null,
+      seatAssignmentId: null,
+      reused: false,
+      activeCount: 0,
+      capacity: seatPolicy?.seatPack || null,
+      hardSeatEnabled: false
+    };
+  }
+
+  const seatKey = resolveSeatAssignmentKey({ allocationMode, userId, sessionId, deviceId, userAgent, ipAddress });
+  const storedSeatMode = mapSeatAllocationModeToStoredSeatMode(allocationMode);
+  if (!seatKey) {
+    return { error: "seat_key_required" };
+  }
+
+  const activeAssignmentRes = await query(
+    `SELECT id, session_id
+     FROM auth_seat_assignments
+     WHERE seat_mode=$1 AND seat_key=$2 AND status='active'
+     LIMIT 1`,
+    [storedSeatMode, seatKey]
+  );
+  if (activeAssignmentRes.rows[0]) {
+    return {
+      seatMode: allocationMode,
+      seatKey,
+      seatAssignmentId: Number(activeAssignmentRes.rows[0].id),
+      reused: true,
+      activeCount: null,
+      capacity: seatPolicy?.seatPack || null,
+      hardSeatEnabled: true
+    };
+  }
+
+  const countRes = await query(
+    `SELECT COUNT(*)::int AS count
+     FROM auth_seat_assignments
+     WHERE seat_mode=$1 AND status='active'`,
+    [storedSeatMode]
+  );
+  const activeCount = Number(countRes.rows[0]?.count || 0);
+  const capacity = Number(seatPolicy?.seatPack || 0);
+  if (capacity > 0 && activeCount >= capacity) {
+    return {
+      error: "seat_limit_reached",
+      seatMode: allocationMode,
+      seatKey,
+      activeCount,
+      capacity,
+      hardSeatEnabled: true
+    };
+  }
+
+  const insertRes = await query(
+    `INSERT INTO auth_seat_assignments
+       (session_id, user_id, seat_mode, seat_key, status, metadata)
+     VALUES ($1,$2,$3,$4,'active',$5::jsonb)
+     RETURNING id`,
+    [
+      sessionId,
+      userId,
+      storedSeatMode,
+      seatKey,
+      JSON.stringify({
+        ipAddress,
+        userAgent,
+        enforcement: seatPolicy?.enforcement || null
+      })
+    ]
+  );
+  return {
+    seatMode: allocationMode,
+    seatKey,
+    seatAssignmentId: Number(insertRes.rows[0].id),
+    reused: false,
+    activeCount: activeCount + 1,
+    capacity,
+    hardSeatEnabled: true
+  };
+}
+
+async function getAuthProfile() {
+  const entitlements = await getPlatformEntitlements();
+  return entitlements.authProfile || {
+    contractId: "PLAT-ENT-v1",
+    localAccountMode: true,
+    directoryEnabled: false,
+    mode: "local",
+    providerLabel: "Local Accounts",
+    issuer: null,
+    tenant: null,
+    loginHint: "Local account login is active."
+  };
 }
 
 export function readSessionTokenFromRequest(req) {
@@ -94,7 +284,13 @@ export function clearSessionCookie(res) {
   });
 }
 
-export async function createAuthSession({ userId, ipAddress = null, userAgent = null } = {}) {
+export async function createAuthSession({
+  userId,
+  ipAddress = null,
+  userAgent = null,
+  deviceId = null,
+  seatPolicy = null
+} = {}) {
   const token = crypto.randomBytes(SESSION_TOKEN_BYTES).toString("hex");
   const tokenHash = sessionTokenHash(token);
   const ttlHours = toPositiveInt(DEFAULT_SESSION_TTL_HOURS, 12);
@@ -106,10 +302,36 @@ export async function createAuthSession({ userId, ipAddress = null, userAgent = 
      RETURNING id`,
     [userId, tokenHash, expiresAt.toISOString(), ipAddress, userAgent]
   );
+  const sessionId = Number(rows[0].id);
+  const seatAssignment = await allocateSeatAssignment({
+    sessionId,
+    userId,
+    seatPolicy,
+    ipAddress,
+    userAgent,
+    deviceId
+  });
+  if (seatAssignment?.error) {
+    await query(
+      `UPDATE auth_sessions
+       SET revoked_at=NOW(),
+           revoked_reason=$2
+       WHERE id=$1`,
+      [sessionId, seatAssignment.error]
+    );
+    return {
+      error: seatAssignment.error,
+      seatAssignment,
+      sessionId
+    };
+  }
+  const seatWarning = await buildSeatWarning(seatPolicy);
   return {
     token,
     expiresAt,
-    sessionId: Number(rows[0].id)
+    sessionId,
+    seatAssignment,
+    seatWarning
   };
 }
 
@@ -136,9 +358,33 @@ export async function getAuthSessionByToken(token) {
   if (!session || session.user_active === false) return null;
 
   await query("UPDATE auth_sessions SET last_seen_at=NOW() WHERE id=$1", [session.session_id]);
+  const seatAssignmentRes = await query(
+    `SELECT id, seat_mode, seat_key, status, allocated_at, released_at, release_reason, metadata
+     FROM auth_seat_assignments
+     WHERE session_id=$1 AND status='active'
+     ORDER BY allocated_at DESC, id DESC
+     LIMIT 1`,
+    [session.session_id]
+  );
+  const seatAssignment = seatAssignmentRes.rows[0]
+    ? {
+        id: Number(seatAssignmentRes.rows[0].id),
+        seatMode: mapStoredSeatModeToAllocationMode(seatAssignmentRes.rows[0].seat_mode),
+        seatKey: seatAssignmentRes.rows[0].seat_key,
+        status: seatAssignmentRes.rows[0].status,
+        allocatedAt: seatAssignmentRes.rows[0].allocated_at,
+        releasedAt: seatAssignmentRes.rows[0].released_at,
+        releaseReason: seatAssignmentRes.rows[0].release_reason,
+        metadata: seatAssignmentRes.rows[0].metadata || {}
+      }
+    : null;
+  const entitlements = await getPlatformEntitlements();
+  const seatWarning = await buildSeatWarning(entitlements?.packaging?.seatPolicy || null);
   return {
     sessionId: session.session_id,
     expiresAt: session.expires_at,
+    seatAssignment,
+    seatWarning,
     user: {
       id: Number(session.user_id),
       name: session.user_name,
@@ -159,6 +405,7 @@ export async function revokeAuthSessionByToken(token, reason = "logout") {
     [tokenHash, reason]
   );
   if (!rows[0]) return null;
+  await releaseSeatAssignment(Number(rows[0].id), reason);
   return {
     sessionId: Number(rows[0].id),
     userId: Number(rows[0].user_id)

@@ -1,0 +1,34 @@
+Step: 03-test-ui-mock
+Started: 2026-04-01T23:47:31Z
+Command: npm run test:ui:mock
+
+
+> inspectflow@0.1.0 test:ui:mock
+> npm run test:ui --prefix frontend -- --grep @mock
+
+
+> inspectflow-frontend@0.1.0 test:ui
+> playwright test --grep @mock
+
+[2m[WebServer] [22m(node:90999) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[2m[WebServer] [22m(Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 15 tests using 3 workers
+
+  ✓   2 tests/mocked.smoke.spec.js:250:3 › Mocked UI smoke @mock › loads the InspectFlow shell (1.0s)
+  ✓   3 tests/navigation-url-driven.spec.js:142:3 › URL-driven navigation (BL-062) @mock › admin sub-tab is encoded in URL and survives back/forward (1.5s)
+  ✓   1 tests/shell-layout.spec.js:205:3 › shell layout @mock › stays within the viewport at desktop and tablet widths (1.9s)
+  ✓   4 tests/mocked.smoke.spec.js:259:3 › Mocked UI smoke @mock › shows loading and success transitions during part creation (2.1s)
+  ✓   5 tests/mocked.smoke.spec.js:278:3 › Mocked UI smoke @mock › shows failure transition when part creation fails (821ms)
+  ✓   6 tests/mocked.smoke.spec.js:296:3 › Mocked UI smoke @mock › reuses original base prefix and increments family run index for duplicate lot jobs (783ms)
+  ✓   7 tests/mocked.smoke.spec.js:333:3 › Mocked UI smoke @mock › allows admins to import tools via CSV from the Data Imports tab (1.1s)
+  ✓   8 tests/mocked.smoke.spec.js:355:3 › Mocked UI smoke @mock › restores route state on reload and browser back/forward (2.2s)
+  ✓   9 tests/mocked.smoke.spec.js:377:3 › Mocked UI smoke @mock › scopes '?' shortcut and restores focus when help closes (635ms)
+  ✓  10 tests/mocked.smoke.spec.js:399:3 › Mocked UI smoke @mock › shows role-aware dashboard primary actions (551ms)
+  ✓  11 tests/mocked.smoke.spec.js:413:3 › Mocked UI smoke @mock › guides first-run onboarding and can reset the walkthrough (668ms)
+  ✓  12 tests/mocked.smoke.spec.js:439:3 › Mocked UI smoke @mock › shows system trust indicators for backup freshness, update readiness, import health, and audit confidence (484ms)
+  ✓  13 tests/mocked.smoke.spec.js:454:3 › Mocked UI smoke @mock › shows operator-specific dashboard primary action (745ms)
+  ✓  14 tests/mocked.smoke.spec.js:464:3 › Mocked UI smoke @mock › uses one coherent admin navigation surface (762ms)
+  ✓  15 tests/mocked.smoke.spec.js:476:3 › Mocked UI smoke @mock › paginates jobs and records consistently for large datasets (956ms)
+
+  15 passed (14.7s)

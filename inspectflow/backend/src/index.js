@@ -3,7 +3,7 @@ import cors from "cors";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import dotenv from "dotenv";
-import { startImportScheduler } from "./routes/importsCore.js";
+import { startImportSchedulerWorker } from "./services/integration/schedulerWorker.js";
 import { attachAuthSession } from "./middleware/authSession.js";
 import { registerAppRoutes } from "./routes/registerAppRoutes.js";
 
@@ -61,7 +61,10 @@ app.use((err, req, res, next) => {
 
 const port = process.env.PORT || 4000;
 if (process.env.NODE_ENV !== "test") {
-  startImportScheduler();
+  const runEmbeddedScheduler = String(process.env.IMPORT_SCHEDULER_EMBEDDED || "").toLowerCase() === "true";
+  if (runEmbeddedScheduler) {
+    startImportSchedulerWorker();
+  }
   app.listen(port, () => {
     console.log(`InspectFlow API running on :${port}`);
   });

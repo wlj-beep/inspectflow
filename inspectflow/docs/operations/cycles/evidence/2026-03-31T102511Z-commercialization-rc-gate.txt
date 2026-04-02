@@ -1,0 +1,148 @@
+Commercialization RC gate started at 2026-03-31T102511Z
+Repository: /Users/joshlane/Documents/Playground 2/inspectflow
+Running standardized gate checks...
+
+> inspectflow@0.1.0 test:coordination
+> npm run coordination:check && npm run context:budget
+
+
+> inspectflow@0.1.0 coordination:check
+> node scripts/validate-coordination.mjs
+
+Coordination validation passed.
+
+> inspectflow@0.1.0 context:budget
+> node scripts/context/enforce-context-budget.mjs
+
+PASS: context budget within policy.
+
+> inspectflow@0.1.0 test:api
+> npm run test --prefix backend
+
+
+> inspectflow-backend@0.1.0 test
+> NODE_ENV=test npm run db:test:setup && NODE_ENV=test vitest run
+
+
+> inspectflow-backend@0.1.0 db:test:setup
+> npm run db:migrate:test && npm run db:seed:test
+
+
+> inspectflow-backend@0.1.0 db:migrate:test
+> NODE_ENV=test node src/scripts/migrate.js
+
+Schema applied.
+
+> inspectflow-backend@0.1.0 db:seed:test
+> NODE_ENV=test node src/scripts/seed.js
+
+Seeded local credentials for 113 users.
+Seed applied.
+
+ RUN  v2.1.9 /Users/joshlane/Documents/Playground 2/inspectflow/backend
+
+ ✓ test/backlog-validation.test.js (15 tests) 226ms
+ ✓ test/backlog-validation-imports.test.js (13 tests) 216ms
+ ✓ test/quality-export.test.js (3 tests) 108ms
+ ✓ test/analytics-kpi-dashboard-risk-workflow.test.js (2 tests) 232ms
+ ✓ test/auth-hardening-entitlements.test.js (4 tests) 1571ms
+   ✓ Auth hardening + entitlement contract > records login failure and lockout events 312ms
+   ✓ Auth hardening + entitlement contract > records password change and reset events 1085ms
+ ✓ test/analytics-multisite-kpi.test.js (2 tests) 74ms
+ ✓ test/analytics-calibration-impact.test.js (2 tests) 187ms
+ ✓ test/technical-ops-api.test.js (5 tests) 112ms
+ ✓ test/analytics-mart-runtime.test.js (2 tests) 217ms
+ ✓ test/ops-routing-workflows.test.js (3 tests) 159ms
+ ✓ test/integration-adapter-support-bundle.test.js (3 tests) 85ms
+ ✓ test/idempotency-entrypoints.test.js (3 tests) 103ms
+ ✓ test/integration-envelope.test.js (7 tests) 5ms
+ ✓ test/operational-regression.test.js (3 tests) 77ms
+ ✓ test/integration-connector-runtime.test.js (4 tests) 4ms
+ ✓ test/capa-workflow.test.js (1 test) 62ms
+ ✓ test/auth.test.js (3 tests) 196ms
+ ✓ test/future-analytics-anomaly.test.js (6 tests) 3ms
+ ✓ test/future-analytics-kpi.test.js (5 tests) 4ms
+ ✓ test/analytics-contracts.test.js (5 tests) 3ms
+ ✓ test/future-quality-export-engine.test.js (4 tests) 4ms
+ ✓ test/analytics-spc.test.js (1 test) 143ms
+ ✓ test/integration-runtime-policy.test.js (4 tests) 3ms
+ ✓ test/future-quality-risk-escalation.test.js (4 tests) 3ms
+ ✓ test/future-idempotency-envelope.test.js (4 tests) 3ms
+ ✓ test/future-integration-policy.test.js (4 tests) 2ms
+ ✓ test/permissions.test.js (4 tests) 34ms
+ ✓ test/stream-routes-contract.test.js (1 test) 53ms
+ ✓ test/revisions.test.js (2 tests) 1ms
+ ✓ test/smoke.test.js (2 tests) 25ms
+
+ Test Files  30 passed (30)
+      Tests  121 passed (121)
+   Start at  06:25:15
+   Duration  8.87s (transform 160ms, setup 18ms, collect 2.20s, tests 3.91s, environment 2ms, prepare 762ms)
+
+
+> inspectflow@0.1.0 test:ui:mock
+> npm run test:ui --prefix frontend -- --grep @mock
+
+
+> inspectflow-frontend@0.1.0 test:ui
+> playwright test --grep @mock
+
+[2m[WebServer] [22m(node:67812) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[2m[WebServer] [22m(Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 11 tests using 1 worker
+
+  ✓   1 tests/mocked.smoke.spec.js:242:3 › Mocked UI smoke @mock › loads the InspectFlow shell (716ms)
+  ✓   2 tests/mocked.smoke.spec.js:251:3 › Mocked UI smoke @mock › shows loading and success transitions during part creation (1.5s)
+  ✓   3 tests/mocked.smoke.spec.js:270:3 › Mocked UI smoke @mock › shows failure transition when part creation fails (678ms)
+  ✓   4 tests/mocked.smoke.spec.js:288:3 › Mocked UI smoke @mock › reuses original base prefix and increments family run index for duplicate lot jobs (461ms)
+  ✓   5 tests/mocked.smoke.spec.js:325:3 › Mocked UI smoke @mock › allows admins to import tools via CSV from the Data Imports tab (545ms)
+  ✓   6 tests/mocked.smoke.spec.js:347:3 › Mocked UI smoke @mock › restores route state on reload and browser back/forward (715ms)
+  ✓   7 tests/mocked.smoke.spec.js:369:3 › Mocked UI smoke @mock › scopes '?' shortcut and restores focus when help closes (487ms)
+  ✓   8 tests/mocked.smoke.spec.js:391:3 › Mocked UI smoke @mock › shows role-aware dashboard primary actions (436ms)
+  ✓   9 tests/mocked.smoke.spec.js:405:3 › Mocked UI smoke @mock › guides first-run onboarding and can reset the walkthrough (505ms)
+  ✓  10 tests/mocked.smoke.spec.js:425:3 › Mocked UI smoke @mock › shows operator-specific dashboard primary action (417ms)
+  ✓  11 tests/mocked.smoke.spec.js:435:3 › Mocked UI smoke @mock › uses one coherent admin navigation surface (477ms)
+
+  11 passed (8.6s)
+DATABASE_URL_TEST not set; defaulting to postgres://postgres@localhost:5432/inspectflow_test for live UI gate.
+
+> inspectflow@0.1.0 test:ui:live
+> bash scripts/run-ui-live-tests.sh
+
+[ui-live] Preparing test database...
+
+> inspectflow@0.1.0 db:test:setup
+> npm run db:test:setup --prefix backend
+
+
+> inspectflow-backend@0.1.0 db:test:setup
+> npm run db:migrate:test && npm run db:seed:test
+
+
+> inspectflow-backend@0.1.0 db:migrate:test
+> NODE_ENV=test node src/scripts/migrate.js
+
+Schema applied.
+
+> inspectflow-backend@0.1.0 db:seed:test
+> NODE_ENV=test node src/scripts/seed.js
+
+Seeded local credentials for 115 users.
+Seed applied.
+[ui-live] Starting backend API...
+[ui-live] Running live Playwright suite...
+
+> inspectflow-frontend@0.1.0 test:ui
+> playwright test --grep @live
+
+[2m[WebServer] [22m(node:68150) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[2m[WebServer] [22m(Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 1 test using 1 worker
+
+  ✓  1 tests/live.critical.spec.js:36:3 › Live UI critical path @live › admin creates job, operator submits measurements, record persists (3.2s)
+
+  1 passed (4.6s)
+Commercialization RC gate passed.
+Evidence written to /Users/joshlane/Documents/Playground 2/inspectflow/docs/operations/cycles/evidence/2026-03-31T102511Z-commercialization-rc-gate.txt

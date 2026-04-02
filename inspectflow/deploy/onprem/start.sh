@@ -19,6 +19,7 @@ mkdir -p "${PID_DIR}" "${LOG_DIR}"
 
 backend_pid_file="${PID_DIR}/backend.pid"
 frontend_pid_file="${PID_DIR}/frontend.pid"
+imports_worker_pid_file="${PID_DIR}/imports-worker.pid"
 
 is_running() {
   local pid_file="$1"
@@ -36,7 +37,7 @@ else
   echo "Starting backend on port ${BACKEND_PORT:-4000}..."
   (
     cd "${ROOT_DIR}"
-    PORT="${BACKEND_PORT:-4000}" NODE_ENV="${NODE_ENV:-production}" nohup npm run start --prefix backend >> "${LOG_DIR}/backend.log" 2>&1 &
+    PORT="${BACKEND_PORT:-4000}" NODE_ENV="${NODE_ENV:-production}" IMPORT_SCHEDULER_EMBEDDED="false" nohup npm run start --prefix backend >> "${LOG_DIR}/backend.log" 2>&1 &
     echo $! > "${backend_pid_file}"
   )
 fi
@@ -49,6 +50,17 @@ else
     cd "${ROOT_DIR}"
     nohup npm run preview --prefix frontend -- --host "${FRONTEND_HOST:-0.0.0.0}" --port "${FRONTEND_PORT:-4173}" >> "${LOG_DIR}/frontend.log" 2>&1 &
     echo $! > "${frontend_pid_file}"
+  )
+fi
+
+if is_running "${imports_worker_pid_file}"; then
+  echo "Imports worker already running (pid $(cat "${imports_worker_pid_file}"))."
+else
+  echo "Starting imports scheduler worker..."
+  (
+    cd "${ROOT_DIR}"
+    NODE_ENV="${NODE_ENV:-production}" IMPORT_SCHEDULER_EMBEDDED="false" nohup npm run worker:imports --prefix backend >> "${LOG_DIR}/imports-worker.log" 2>&1 &
+    echo $! > "${imports_worker_pid_file}"
   )
 fi
 

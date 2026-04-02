@@ -532,27 +532,40 @@ export function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, curr
     <div>
       <input ref={importFileRef} type="file" accept=".csv,text/csv" style={{display:"none"}} onChange={handleImportUpload}/>
       {showModal&&<MissingPieceModal pieces={incompletePieces} missingPieces={missing} onSave={handleMissingSave} onCancel={()=>setShowModal(false)}/>}
-      <OperatorStageBar step={step} />
-      <PinnedSpecLegend currentJob={currentJob} part={part} opData={opData} />
-      <div className="job-strip">
-        <div className="strip-field"><div className="strip-label">Job #</div><div className="strip-val">{currentJob.jobNumber}</div></div>
-        <div className="strip-field"><div className="strip-label">Part</div><div className="strip-val">{currentJob.partNumber} <span style={{fontFamily:"var(--sans)",fontSize:".78rem",color:"var(--muted)"}}>{part?.description}</span></div></div>
-        <div className="strip-field"><div className="strip-label">Operation</div><div className="strip-val">Op {currentJob.operation} — <span style={{fontFamily:"var(--sans)",fontSize:".82rem",color:"var(--text)"}}>{opData?.label}</span></div></div>
-        <div className="strip-field"><div className="strip-label">Lot</div><div className="strip-val">{currentJob.lot}</div></div>
-        <div className="strip-field"><div className="strip-label">Qty</div><div className="strip-val">{currentJob.qty} pcs</div></div>
-        <div className="strip-field"><div className="strip-label">Operator</div><div className="strip-val" style={{fontFamily:"var(--sans)",fontSize:".85rem",color:"var(--text)"}}>{currentUserName || "—"}</div></div>
-        <button className="btn btn-ghost btn-sm" style={{marginLeft:"auto"}} onClick={reset}>← Back</button>
+      <div
+        style={{
+          position: "sticky",
+          top: 58,
+          zIndex: 120,
+          paddingTop: ".25rem",
+          paddingBottom: ".35rem",
+          background: "linear-gradient(180deg, rgba(13,16,23,.92) 0%, rgba(13,16,23,.72) 100%)",
+          backdropFilter: "blur(10px)"
+        }}
+      >
+        <OperatorStageBar step={step} />
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:".75rem",flexWrap:"wrap"}}>
+          <PinnedSpecLegend
+            currentJob={currentJob}
+            part={part}
+            opData={opData}
+            operatorName={currentUserName}
+            summary={summary}
+            compact
+          />
+          <button className="btn btn-ghost btn-sm" onClick={reset}>← Back</button>
+        </div>
       </div>
 
       <div className="card" style={{padding:0}}>
         <div className="card-head">
           <div className="card-title">Measurement Entry</div>
-          <div className="gap1">
-            <button className={`btn btn-ghost btn-sm ${density===TABLE_DENSITY.compact?"active":""}`} onClick={()=>{ const next=writeTableDensity(TABLE_DENSITY.compact); setDensity(next); }}>Compact</button>
-            <button className={`btn btn-ghost btn-sm ${density===TABLE_DENSITY.expanded?"active":""}`} onClick={()=>{ const next=writeTableDensity(TABLE_DENSITY.expanded); setDensity(next); }}>Expanded</button>
-            <button className="btn btn-ghost btn-sm" onClick={()=>setColWidths(p=>applyColumnWidthPreset(dims.map(d=>d.id),"narrow",p))}>Narrow</button>
-            <button className="btn btn-ghost btn-sm" onClick={()=>setColWidths(p=>applyColumnWidthPreset(dims.map(d=>d.id),"default",p))}>Default</button>
-            <button className="btn btn-ghost btn-sm" onClick={()=>setColWidths(p=>applyColumnWidthPreset(dims.map(d=>d.id),"wide",p))}>Wide</button>
+          <div className="gap1" role="toolbar" aria-label="Measurement density controls">
+            <button type="button" aria-pressed={density===TABLE_DENSITY.compact} className={`btn btn-ghost btn-sm ${density===TABLE_DENSITY.compact?"active":""}`} onClick={()=>{ const next=writeTableDensity(TABLE_DENSITY.compact); setDensity(next); }}>Compact</button>
+            <button type="button" aria-pressed={density===TABLE_DENSITY.expanded} className={`btn btn-ghost btn-sm ${density===TABLE_DENSITY.expanded?"active":""}`} onClick={()=>{ const next=writeTableDensity(TABLE_DENSITY.expanded); setDensity(next); }}>Expanded</button>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={()=>setColWidths(p=>applyColumnWidthPreset(dims.map(d=>d.id),"narrow",p))}>Narrow</button>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={()=>setColWidths(p=>applyColumnWidthPreset(dims.map(d=>d.id),"default",p))}>Default</button>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={()=>setColWidths(p=>applyColumnWidthPreset(dims.map(d=>d.id),"wide",p))}>Wide</button>
           </div>
           <div className="text-muted ux-hint">+ unlocks N/A cells · × re-locks empty cells · Enter/Arrow keys move between cells · Esc clears a value · auto-save after 20 min idle · drag near any column edge to resize</div>
         </div>
@@ -833,6 +846,7 @@ export function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, curr
   if(step==="saved") return (
     <div className="draft-card">
       <OperatorStageBar step={step} />
+      <PinnedSpecLegend currentJob={currentJob} part={part} opData={opData} operatorName={currentUserName} summary={summary} />
       <div style={{fontSize:"2rem"}}>💾</div>
       <div className="draft-title">Draft Saved</div>
       <p className="text-muted">Job <strong style={{color:"var(--draft)"}}>{currentJob.jobNumber}</strong> saved. Resume anytime from the job list.</p>
@@ -842,6 +856,7 @@ export function OperatorView({ parts, jobs, toolLibrary, onSubmit, onDraft, curr
   return (
     <div className="success-card">
       <OperatorStageBar step={step} />
+      <PinnedSpecLegend currentJob={currentJob} part={part} opData={opData} operatorName={currentUserName} summary={summary} />
       <div style={{fontSize:"2rem"}}>✔</div>
       <div className="success-title">{lastSubmitSource==="csv" ? "CSV Imported — Job Closed" : "Record Submitted — Job Closed"}</div>
       <p className="text-muted">Job <strong style={{color:"var(--accent2)"}}>{currentJob?.jobNumber}</strong> · {currentJob?.lot} · Op {currentJob?.operation}</p>

@@ -1,4 +1,4 @@
-const TOP_LEVEL_VIEWS = Object.freeze(["home", "operator", "records", "admin"]);
+const TOP_LEVEL_VIEWS = Object.freeze(["home", "proof", "operator", "records", "admin"]);
 const ADMIN_TABS = Object.freeze([
   "jobs",
   "records",
@@ -10,39 +10,46 @@ const ADMIN_TABS = Object.freeze([
   "roles"
 ]);
 
-export const ADMIN_TAB_GROUPS = Object.freeze([
+export const ADMIN_NAV_SECTIONS = Object.freeze([
   Object.freeze({
-    label: "Parts & Setup",
+    label: "Planning",
+    description: "Jobs and part setup",
     tabs: Object.freeze(["jobs", "parts"])
   }),
   Object.freeze({
-    label: "Tools & Calibration",
-    tabs: Object.freeze(["tools"])
+    label: "Measurement",
+    description: "Tool library and import intake",
+    tabs: Object.freeze(["tools", "imports"])
   }),
   Object.freeze({
-    label: "Imports",
-    tabs: Object.freeze(["imports"])
-  }),
-  Object.freeze({
-    label: "Users",
-    tabs: Object.freeze(["users"])
-  }),
-  Object.freeze({
-    label: "System",
-    tabs: Object.freeze(["records", "issues", "roles"])
+    label: "Governance",
+    description: "Records, issues, and access",
+    tabs: Object.freeze(["records", "issues", "users", "roles"])
   })
 ]);
 
+export const ADMIN_TAB_GROUPS = ADMIN_NAV_SECTIONS;
+
 const VIEW_LABELS = Object.freeze({
   home: "Home",
+  proof: "Proof Center",
   operator: "Operator Entry",
   records: "Records",
   admin: "Admin"
 });
 
-const ADMIN_TAB_TO_GROUP = new Map(
-  ADMIN_TAB_GROUPS.flatMap((group) => group.tabs.map((tab) => [tab, group.label]))
-);
+export const ADMIN_TAB_LABELS = Object.freeze({
+  jobs: "Job Management",
+  records: "Inspection Records",
+  issues: "Issue Reports",
+  imports: "Data Imports",
+  parts: "Part / Op Setup",
+  tools: "Tool Library",
+  users: "Users",
+  roles: "Role Capabilities"
+});
+
+const ADMIN_TAB_TO_GROUP = new Map(ADMIN_NAV_SECTIONS.flatMap((group) => group.tabs.map((tab) => [tab, group.label])));
 
 function readSearchParams() {
   if (typeof window === "undefined") return new URLSearchParams();
@@ -59,6 +66,14 @@ function normalizeAdminTab(rawTab) {
   return ADMIN_TABS.includes(value) ? value : "jobs";
 }
 
+export function normalizeUiRouteState(input) {
+  const view = normalizeView(input?.view);
+  if (view === "admin") {
+    return { view, adminTab: normalizeAdminTab(input?.adminTab) };
+  }
+  return { view };
+}
+
 export function readUiRouteState() {
   const params = readSearchParams();
   const view = normalizeView(params.get("view"));
@@ -73,11 +88,12 @@ export function writeUiRouteState(next) {
   if (typeof window === "undefined" || typeof window.history === "undefined") return;
 
   const current = new URLSearchParams(window.location.search);
-  const view = normalizeView(next?.view);
+  const normalized = normalizeUiRouteState(next);
+  const view = normalized.view;
   current.set("view", view);
 
   if (view === "admin") {
-    current.set("adminTab", normalizeAdminTab(next?.adminTab));
+    current.set("adminTab", normalized.adminTab);
   } else {
     current.delete("adminTab");
   }
@@ -87,6 +103,25 @@ export function writeUiRouteState(next) {
   window.history.replaceState({}, "", nextUrl);
 }
 
+export function writeUiRouteStateWithMode(next, mode = "replace") {
+  if (typeof window === "undefined" || typeof window.history === "undefined") return;
+  const method = mode === "push" ? "pushState" : "replaceState";
+  const current = new URLSearchParams(window.location.search);
+  const normalized = normalizeUiRouteState(next);
+  const view = normalized.view;
+  current.set("view", view);
+
+  if (view === "admin") {
+    current.set("adminTab", normalized.adminTab);
+  } else {
+    current.delete("adminTab");
+  }
+
+  const nextQuery = current.toString();
+  const nextUrl = `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}${window.location.hash || ""}`;
+  window.history[method]({}, "", nextUrl);
+}
+
 export function buildBreadcrumbs({ view, adminTab }) {
   const normalizedView = normalizeView(view);
   if (normalizedView !== "admin") {
@@ -94,6 +129,10 @@ export function buildBreadcrumbs({ view, adminTab }) {
   }
 
   const normalizedTab = normalizeAdminTab(adminTab);
-  const sectionLabel = ADMIN_TAB_TO_GROUP.get(normalizedTab) || "Parts & Setup";
-  return [VIEW_LABELS.admin, sectionLabel];
+  const sectionLabel = ADMIN_TAB_TO_GROUP.get(normalizedTab) || "Planning";
+  const tabLabel = ADMIN_TAB_LABELS[normalizedTab] || normalizedTab;
+
+  return tabLabel === sectionLabel
+    ? [VIEW_LABELS.admin, sectionLabel]
+    : [VIEW_LABELS.admin, sectionLabel, tabLabel];
 }

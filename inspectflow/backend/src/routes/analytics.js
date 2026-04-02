@@ -9,18 +9,31 @@ import {
   getKpiDashboard,
   listKpiDashboardDefinitions
 } from "../services/analytics/kpiDashboard.js";
+import { getPilotReadinessScorecard } from "../services/analytics/pilotReadiness.js";
+import { getPlatformEntitlements } from "../services/platform/entitlements.js";
 import {
   acknowledgeCalibrationRiskEvent,
   escalateCalibrationRiskEventToIssue,
   getCalibrationImpactAnalytics,
+  getCalibrationImpactRemediationView,
   listCalibrationRiskEvents,
   refreshCalibrationImpactAnalytics,
   resolveCalibrationRiskEvent
 } from "../services/analytics/calibrationImpact.js";
+import { getMeasurementSystemAnalytics } from "../services/analytics/measurementSystem.js";
+import { getSpcControlChart } from "../services/analytics/spcAnalytics.js";
 
 const router = Router();
 
 const KPI_DASHBOARD_CAPABILITIES = ["submit_records", "view_jobs", "manage_jobs", "view_admin"];
+const REMEDIATION_VIEW_CAPABILITIES = [
+  "view_operator",
+  "view_records",
+  "submit_records",
+  "view_jobs",
+  "manage_jobs",
+  "view_admin"
+];
 
 router.get("/marts/status", requireCapability("view_admin"), async (req, res, next) => {
   try {
@@ -61,7 +74,53 @@ router.get("/kpis/definitions", requireAnyCapability(KPI_DASHBOARD_CAPABILITIES)
 
 router.get("/kpis/dashboard", requireAnyCapability(KPI_DASHBOARD_CAPABILITIES), async (req, res, next) => {
   try {
+    const entitlements = await getPlatformEntitlements();
     const result = await getKpiDashboard({
+      dateFrom: req.query.dateFrom,
+      dateTo: req.query.dateTo,
+      limit: req.query.limit,
+      siteId: req.query.siteId ?? req.query.site_id ?? req.header("x-site-id"),
+      entitlements
+    });
+    res.json(result);
+  } catch (error) {
+    if (String(error?.message || "").startsWith("invalid_")) {
+      return res.status(400).json({ error: error.message });
+    }
+    if (String(error?.message || "") === "multisite_not_enabled") {
+      return res.status(403).json({ error: "multisite_not_enabled" });
+    }
+    if (String(error?.message || "").startsWith("invalid_kpi_contracts")) {
+      return res.status(500).json({ error: "invalid_kpi_contracts" });
+    }
+    next(error);
+  }
+});
+
+router.get("/pilot-readiness/scorecard", requireCapability("view_admin"), async (req, res, next) => {
+  try {
+    const entitlements = await getPlatformEntitlements();
+    const result = await getPilotReadinessScorecard({
+      dateFrom: req.query.dateFrom,
+      dateTo: req.query.dateTo,
+      siteId: req.query.siteId ?? req.query.site_id ?? req.header("x-site-id"),
+      entitlements
+    });
+    res.json(result);
+  } catch (error) {
+    if (String(error?.message || "").startsWith("invalid_")) {
+      return res.status(400).json({ error: error.message });
+    }
+    if (String(error?.message || "") === "multisite_not_enabled") {
+      return res.status(403).json({ error: "multisite_not_enabled" });
+    }
+    next(error);
+  }
+});
+
+router.get("/performance/calibration-impact", requireCapability("view_admin"), async (req, res, next) => {
+  try {
+    const result = await getCalibrationImpactAnalytics({
       dateFrom: req.query.dateFrom,
       dateTo: req.query.dateTo,
       limit: req.query.limit
@@ -71,16 +130,13 @@ router.get("/kpis/dashboard", requireAnyCapability(KPI_DASHBOARD_CAPABILITIES), 
     if (String(error?.message || "").startsWith("invalid_")) {
       return res.status(400).json({ error: error.message });
     }
-    if (String(error?.message || "").startsWith("invalid_kpi_contracts")) {
-      return res.status(500).json({ error: "invalid_kpi_contracts" });
-    }
     next(error);
   }
 });
 
-router.get("/performance/calibration-impact", requireCapability("view_admin"), async (req, res, next) => {
+router.get("/performance/calibration-impact/remediation-view", requireAnyCapability(REMEDIATION_VIEW_CAPABILITIES), async (req, res, next) => {
   try {
-    const result = await getCalibrationImpactAnalytics({
+    const result = await getCalibrationImpactRemediationView({
       dateFrom: req.query.dateFrom,
       dateTo: req.query.dateTo,
       limit: req.query.limit
@@ -174,6 +230,42 @@ router.post("/risk-events/:id/resolve", requireCapability("view_admin"), async (
   } catch (error) {
     if (String(error?.message || "") === "invalid_event_id") {
       return res.status(400).json({ error: "invalid_event_id" });
+    }
+    next(error);
+  }
+});
+
+router.get("/spc/control-chart", requireAnyCapability(KPI_DASHBOARD_CAPABILITIES), async (req, res, next) => {
+  try {
+    const result = await getSpcControlChart({
+      dimensionId: req.query.dimensionId,
+      dateFrom: req.query.dateFrom,
+      dateTo: req.query.dateTo,
+      limit: req.query.limit
+    });
+    res.json(result);
+  } catch (error) {
+    if (String(error?.message || "").startsWith("invalid_")) {
+      return res.status(400).json({ error: error.message });
+    }
+    if (String(error?.message || "") === "dimension_not_found") {
+      return res.status(404).json({ error: "dimension_not_found" });
+    }
+    next(error);
+  }
+});
+
+router.get("/performance/measurement-system", requireAnyCapability(KPI_DASHBOARD_CAPABILITIES), async (req, res, next) => {
+  try {
+    const result = await getMeasurementSystemAnalytics({
+      dateFrom: req.query.dateFrom,
+      dateTo: req.query.dateTo,
+      limit: req.query.limit
+    });
+    res.json(result);
+  } catch (error) {
+    if (String(error?.message || "").startsWith("invalid_")) {
+      return res.status(400).json({ error: error.message });
     }
     next(error);
   }

@@ -1,0 +1,65 @@
+Step: 04-test-ui-live
+Started: 2026-04-01T23:39:39Z
+Command: npm run test:ui:live
+
+
+> inspectflow@0.1.0 test:ui:live
+> bash scripts/run-ui-live-tests.sh
+
+[ui-live] Preparing test database...
+
+> inspectflow@0.1.0 db:test:setup
+> npm run db:test:setup --prefix backend
+
+
+> inspectflow-backend@0.1.0 db:test:setup
+> npm run db:migrate:test && npm run db:seed:test
+
+
+> inspectflow-backend@0.1.0 db:migrate:test
+> NODE_ENV=test node src/scripts/migrate.js
+
+Schema applied.
+
+> inspectflow-backend@0.1.0 db:seed:test
+> NODE_ENV=test node src/scripts/seed.js
+
+Seeded local credentials for 159 users.
+Seed applied.
+[ui-live] Starting backend API...
+[ui-live] Running live Playwright suite...
+
+> inspectflow-frontend@0.1.0 test:ui
+> playwright test --grep @live
+
+[2m[WebServer] [22m(node:77415) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[2m[WebServer] [22m(Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 1 test using 1 worker
+
+  ✘  1 tests/live.critical.spec.js:36:3 › Live UI critical path @live › admin creates job, operator submits measurements, record persists (30.0s)
+
+
+  1) tests/live.critical.spec.js:36:3 › Live UI critical path @live › admin creates job, operator submits measurements, record persists 
+
+    [31mTest timeout of 30000ms exceeded.[39m
+
+    Error: locator.fill: Test timeout of 30000ms exceeded.
+    Call log:
+    [2m  - waiting for getByLabel('Username')[22m
+
+
+      28 |
+      29 |   async function login(page, userLabel) {
+    > 30 |     await page.getByLabel("Username").fill(userLabel);
+         |                                       ^
+      31 |     await page.getByLabel("Password").fill(DEFAULT_PASSWORD);
+      32 |     await page.getByRole("button", { name: "Sign In" }).click();
+      33 |     await expect(page.getByText("Manufacturing Inspection System")).toBeVisible();
+        at login (/Users/joshlane/Documents/Playground 2/inspectflow/frontend/tests/live.critical.spec.js:30:39)
+        at /Users/joshlane/Documents/Playground 2/inspectflow/frontend/tests/live.critical.spec.js:90:11
+
+    Error Context: test-results/live.critical-Live-UI-crit-301f1-easurements-record-persists/error-context.md
+
+  1 failed
+    tests/live.critical.spec.js:36:3 › Live UI critical path @live › admin creates job, operator submits measurements, record persists 

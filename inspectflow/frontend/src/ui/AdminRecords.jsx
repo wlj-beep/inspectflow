@@ -29,7 +29,52 @@ function triggerCsvDownload(csv, filename){
   }, 0);
 }
 
-function RecordDetailModal({ record, parts, toolLibrary, usersById, canEdit, onEditValue, onClose }) {
+function triggerTextDownload(text, filename){
+  const blob=new Blob([text],{type:"text/plain;charset=utf-8"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url;
+  a.download=filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(()=>{
+    a.remove();
+    URL.revokeObjectURL(url);
+  }, 0);
+}
+
+function buildAs9102ShareText(exportData) {
+  if (!exportData) return "";
+  const profile = exportData.profile || {};
+  const record = exportData.record || {};
+  const summary = exportData.package?.summary || {};
+  const input = exportData.input || {};
+  const artifacts = Array.isArray(exportData.output?.artifacts) ? exportData.output.artifacts : [];
+  const lines = [];
+  lines.push(profile.name || "AS9102 Summary Pack");
+  lines.push(`Contract: ${exportData.contractId || "QUAL-AS9102-PKG-v1"}`);
+  lines.push(`Profile: ${profile.id || "as9102-basic"}${profile.version ? ` v${profile.version}` : ""}`);
+  lines.push(`Part: ${record.partId || input.part?.id || "—"}`);
+  lines.push(`Revision: ${record.partRevision || input.part?.revision || "—"}`);
+  lines.push(`Lot: ${record.lot || input.lot || "—"}`);
+  lines.push(`Quantity: ${record.qty ?? "—"}`);
+  lines.push(`Measured: ${summary.measured ?? "—"}`);
+  lines.push(`Failed: ${summary.failed ?? "—"}`);
+  lines.push(`Pass Rate: ${summary.passRate == null ? "—" : `${Math.round(Number(summary.passRate) * 100)}%`}`);
+  if (input.balloonSummary) lines.push(`Balloon Summary: ${input.balloonSummary}`);
+  if (input.fixtureSummary) lines.push(`Fixture Summary: ${input.fixtureSummary}`);
+  lines.push("");
+  lines.push("Safe to present: yes, with redactions.");
+  if (artifacts.length) {
+    lines.push("Artifacts:");
+    for (const artifact of artifacts) {
+      lines.push(`- ${artifact.description || artifact.templateId}${artifact.fileName ? ` (${artifact.fileName})` : ""}`);
+    }
+  }
+  return lines.join("\n");
+}
+
+function RecordDetailModal({ record, parts, toolLibrary, usersById, currentRole, canEdit, onEditValue, onClose }) {
   const [localRecord,setLocalRecord]=useState(record);
   const [editTarget,setEditTarget]=useState(null);
   const [editValue,setEditValue]=useState("");
@@ -38,6 +83,11 @@ function RecordDetailModal({ record, parts, toolLibrary, usersById, canEdit, onE
   const [saving,setSaving]=useState(false);
   const [exportErr,setExportErr]=useState("");
   const [exporting,setExporting]=useState(false);
+  const [summaryPack,setSummaryPack]=useState(null);
+  const [summaryPackLoading,setSummaryPackLoading]=useState(false);
+  const [summaryPackErr,setSummaryPackErr]=useState("");
+  const [summaryPackProfileId,setSummaryPackProfileId]=useState("as9102-basic");
+  const [summaryPackCopyState,setSummaryPackCopyState]=useState("idle");
   useEffect(()=>{ setLocalRecord(record); },[record]);
   useEffect(()=>{
     const onKeyDown=(event)=>{
@@ -48,6 +98,30 @@ function RecordDetailModal({ record, parts, toolLibrary, usersById, canEdit, onE
     window.addEventListener("keydown", onKeyDown);
     return ()=>window.removeEventListener("keydown", onKeyDown);
   },[onClose]);
+  useEffect(()=>{
+    let active=true;
+    async function loadSummaryPack(){
+      if(!localRecord?.id) return;
+      setSummaryPackLoading(true);
+      setSummaryPackErr("");
+      try{
+        const next=await api.records.exportAs9102(localRecord.id, summaryPackProfileId, currentRole);
+        if(!active) return;
+        setSummaryPack(next);
+        const nextProfileId = next?.profile?.id || summaryPackProfileId;
+        if(nextProfileId !== summaryPackProfileId){
+          setSummaryPackProfileId(nextProfileId);
+        }
+      }catch(e){
+        if(!active) return;
+        setSummaryPackErr(e?.message||"Unable to load summary pack preview.");
+      }finally{
+        if(active) setSummaryPackLoading(false);
+      }
+    }
+    loadSummaryPack();
+    return ()=>{ active=false; };
+  },[localRecord?.id, summaryPackProfileId, currentRole]);
 
   const part   = parts[localRecord.partNumber];
   const opData = part?.operations[localRecord.operation];
@@ -133,6 +207,34 @@ function RecordDetailModal({ record, parts, toolLibrary, usersById, canEdit, onE
       setExporting(false);
     }
   }
+  async function handleCopySummaryPack(){
+    if(!summaryPack){
+      setSummaryPackCopyState("error");
+      return;
+    }
+    const text=buildAs9102ShareText(summaryPack);
+    if(!text) return;
+    try{
+      if(!navigator?.clipboard?.writeText) throw new Error("clipboard_unavailable");
+      await navigator.clipboard.writeText(text);
+      setSummaryPackCopyState("copied");
+      setTimeout(()=>setSummaryPackCopyState("idle"), 2000);
+    }catch{
+      setSummaryPackCopyState("error");
+      setTimeout(()=>setSummaryPackCopyState("idle"), 2000);
+    }
+  }
+  function handleDownloadSummaryPack(){
+    if(!summaryPack) return;
+    triggerTextDownload(
+      buildAs9102ShareText(summaryPack),
+      `record_${localRecord.id}_${summaryPack.profile?.id || summaryPackProfileId}_summary.txt`
+    );
+  }
+  const summaryProfiles = Array.isArray(summaryPack?.availableProfiles) && summaryPack.availableProfiles.length
+    ? summaryPack.availableProfiles
+    : [{ id:"as9102-basic", name:"AS9102 Basic", version:"0.1.0" }];
+  const summaryShareText = buildAs9102ShareText(summaryPack);
   return (
     <div className="modal-overlay">
       <div className="rec-modal">
@@ -230,6 +332,80 @@ function RecordDetailModal({ record, parts, toolLibrary, usersById, canEdit, onE
                 })}
               </tbody>
             </table>
+          </div>
+          <div className="det-section">Branded Summary Pack</div>
+          <div style={{border:"1px solid var(--border2)",borderRadius:"12px",padding:"1rem",background:"linear-gradient(180deg, rgba(24,30,41,.96) 0%, rgba(18,22,30,.96) 100%)",marginBottom:"1.25rem"}}>
+            <div style={{display:"flex",gap:".75rem",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",marginBottom:".75rem"}}>
+              <div style={{minWidth:"220px"}}>
+                <div style={{fontFamily:"var(--cond)",fontSize:".68rem",fontWeight:700,letterSpacing:".14em",textTransform:"uppercase",color:"var(--info)",marginBottom:".35rem"}}>Customer-ready preview</div>
+                <div style={{fontFamily:"var(--cond)",fontSize:"1rem",letterSpacing:".08em",textTransform:"uppercase",color:"#f0f4ff"}}>{summaryPack?.profile?.name || "AS9102 Basic"}</div>
+                <div className="text-muted" style={{fontSize:".76rem",lineHeight:1.55,marginTop:".3rem"}}>
+                  Shareable output bundles the first-article summary, balloon reference trace, and fixture proof into one customer-friendly package.
+                </div>
+              </div>
+              <div style={{display:"flex",gap:".45rem",flexWrap:"wrap",alignItems:"center"}}>
+                <select aria-label="Summary pack profile" value={summaryPackProfileId} onChange={(e)=>setSummaryPackProfileId(e.target.value)}>
+                  {summaryProfiles.map((profile)=>(
+                    <option key={profile.id} value={profile.id}>{profile.name} ({profile.id})</option>
+                  ))}
+                </select>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={handleCopySummaryPack} disabled={!summaryShareText || summaryPackLoading}>
+                  {summaryPackCopyState==="copied" ? "Copied Pack" : summaryPackCopyState==="error" ? "Copy Failed" : "Copy Summary Pack"}
+                </button>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={handleDownloadSummaryPack} disabled={!summaryShareText || summaryPackLoading}>
+                  Download Summary Pack
+                </button>
+              </div>
+            </div>
+            {summaryPackErr && <div className="err-text" style={{marginBottom:".75rem"}}>{summaryPackErr}</div>}
+            <div className="proof-preview" style={{marginBottom:".8rem"}}>
+              <div className="proof-preview__headline">{summaryPack?.profile?.name || "AS9102 Summary Pack"}</div>
+              <p className="proof-preview__summary" style={{maxWidth:"none"}}>
+                {summaryPackLoading
+                  ? "Loading customer-facing preview and shareable output…"
+                  : summaryPack
+                    ? `Record ${summaryPack.record?.jobId || localRecord.jobNumber} · ${summaryPack.record?.partId || localRecord.partNumber} · ${summaryPack.record?.lot || localRecord.lot} · ${summaryPack.record?.qty ?? localRecord.qty} pcs`
+                    : "The summary pack preview will appear here after the export loads."}
+              </p>
+              <div className="proof-preview__footer">
+                <span className="proof-preview__footer-label">Safe to present</span>
+                <span className="proof-preview__footer-value">{summaryPack ? "Yes, with redactions" : "Loading"}</span>
+              </div>
+            </div>
+            <div className="row3" style={{marginBottom:".8rem"}}>
+              <div className="proof-summary-chip">
+                <div className="proof-summary-chip__label">Measured</div>
+                <div className="proof-summary-chip__value">{summaryPack?.package?.summary?.measured ?? "—"}</div>
+              </div>
+              <div className="proof-summary-chip">
+                <div className="proof-summary-chip__label">Failed</div>
+                <div className="proof-summary-chip__value">{summaryPack?.package?.summary?.failed ?? "—"}</div>
+              </div>
+              <div className="proof-summary-chip">
+                <div className="proof-summary-chip__label">Pass rate</div>
+                <div className="proof-summary-chip__value">
+                  {summaryPack?.package?.summary?.passRate == null
+                    ? "—"
+                    : `${Math.round(Number(summaryPack.package.summary.passRate) * 100)}%`}
+                </div>
+              </div>
+            </div>
+            <div style={{display:"grid",gap:".6rem"}}>
+              <div>
+                <div className="proof-export-note" style={{marginBottom:".45rem"}}>Preview for customer presentation</div>
+                <textarea
+                  readOnly
+                  className="proof-export-text"
+                  value={summaryShareText || ""}
+                  aria-label="Summary pack preview"
+                />
+              </div>
+              <div className="text-muted" style={{fontSize:".72rem",lineHeight:1.55}}>
+                {summaryPack?.output?.artifacts?.length
+                  ? `Artifacts included: ${summaryPack.output.artifacts.map((artifact)=>artifact.templateId).join(", ")}`
+                  : "Artifacts will be listed after the export preview loads."}
+              </div>
+            </div>
           </div>
           {canEdit && !editTarget && (
             <div className="text-muted" style={{fontSize:".72rem",marginBottom:"1rem"}}>Supervisor edit: click a measurement value to change it.</div>
@@ -334,7 +510,7 @@ function RecordDetailModal({ record, parts, toolLibrary, usersById, canEdit, onE
   );
 }
 
-export function AdminRecords({ records, parts, toolLibrary, usersById, loadRecordDetail, canEdit, onEditValue }) {
+export function AdminRecords({ records, parts, toolLibrary, usersById, loadRecordDetail, currentRole, canEdit, onEditValue }) {
   const defaultFilter={part:"",op:"",lot:"",status:"",search:""};
   const [filter,setFilter]=useState(()=>readRecordsFilterFromUrl(defaultFilter));
   const [selected,setSelected]=useState(null);
@@ -392,6 +568,13 @@ export function AdminRecords({ records, parts, toolLibrary, usersById, loadRecor
   useEffect(()=>{ setPage(1); },[filter, sortKey, sortDir, pageSize]);
   useEffect(()=>{ if(clampedPage!==page) setPage(clampedPage || 1); },[clampedPage,page]);
   useEffect(()=>{ writeRecordsFilterToUrl(filter); },[filter]);
+  useEffect(()=>{
+    const onPopState = () => {
+      setFilter(readRecordsFilterFromUrl(defaultFilter));
+    };
+    window.addEventListener("popstate", onPopState);
+    return ()=>window.removeEventListener("popstate", onPopState);
+  },[]);
   const hasActiveFilters = !!(filter.part || filter.op || filter.lot || filter.status || filter.search.trim());
   const sb=r=>{
     if(r.status==="incomplete")return <span className="badge badge-incomplete">Incomplete</span>;
@@ -553,9 +736,12 @@ export function AdminRecords({ records, parts, toolLibrary, usersById, loadRecor
   }
   return (
     <div>
-      {selected && <RecordDetailModal record={selected} parts={parts} toolLibrary={toolLibrary} usersById={usersById} canEdit={canEdit} onEditValue={handleEdit} onClose={()=>setSelected(null)}/>}
+      {selected && <RecordDetailModal record={selected} parts={parts} toolLibrary={toolLibrary} usersById={usersById} currentRole={currentRole} canEdit={canEdit} onEditValue={handleEdit} onClose={()=>setSelected(null)}/>}
       <div className="card">
-        <div className="card-head"><div className="card-title">Filter</div></div>
+        <div className="card-head">
+          <div className="card-title">Filter</div>
+          <div className="text-muted" style={{fontSize:".7rem"}}>{hasActiveFilters ? "URL-synced filters active" : "Showing all records"}</div>
+        </div>
         <div className="card-body">
           <div className="row2" style={{marginBottom:".75rem"}}>
             <div className="field" style={{gridColumn:"span 2"}}>
@@ -576,6 +762,17 @@ export function AdminRecords({ records, parts, toolLibrary, usersById, loadRecor
               <select value={filter.status} onChange={e=>setFilter(p=>({...p,status:e.target.value}))}>
                 <option value="">All</option><option value="complete">Complete/OK</option><option value="oot">OOT</option><option value="incomplete">Incomplete</option>
               </select></div>
+            <div className="field" style={{alignItems:"flex-end",justifyContent:"flex-end"}}>
+              <label className="sr-only">Filter actions</label>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                disabled={!hasActiveFilters}
+                onClick={()=>setFilter(defaultFilter)}
+              >
+                Clear Filters
+              </button>
+            </div>
           </div>
           {detailErr && <p className="err-text mt1">{detailErr}</p>}
           {loadingId && <p className="text-muted mt1" style={{fontSize:".75rem"}}>Loading record detail…</p>}
@@ -656,11 +853,13 @@ export function AdminRecords({ records, parts, toolLibrary, usersById, loadRecor
           page={page}
           totalPages={totalPages}
           pageSize={pageSize}
+          totalRows={totalRows}
+          itemLabel="record"
           onPageChange={setPage}
           onPageSizeChange={setPageSize}
+          pageSizeOptions={[25, 50, 100, 250]}
         />
       </div>
-      <p className="text-muted">{totalRows} record{totalRows!==1?"s":""}</p>
     </div>
   );
 }

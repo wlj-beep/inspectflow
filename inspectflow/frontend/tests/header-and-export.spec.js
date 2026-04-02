@@ -138,6 +138,73 @@ const RECORD_DETAILS = {
   }
 };
 
+const AS9102_EXPORT = {
+  contractId: "QUAL-AS9102-PKG-v1",
+  exportContractId: "AS9102-EXPORT-v1",
+  profile: {
+    id: "as9102-basic",
+    name: "AS9102 Basic",
+    version: "0.1.0",
+    templateIds: ["fai-summary-v1", "fai-line-v1"]
+  },
+  record: {
+    id: 201,
+    jobId: "J-5001",
+    partId: "1234",
+    partRevision: "A",
+    operationId: 10,
+    operationNumber: "10",
+    operationLabel: "Rough Turn",
+    lot: "Lot-A",
+    qty: 1,
+    status: "complete",
+    createdAt: "2026-03-30T10:00:00.000Z"
+  },
+  input: {
+    part: {
+      id: "1234",
+      revision: "A",
+      description: "Hydraulic Cylinder Body"
+    },
+    lot: "Lot-A",
+    balloonSummary: "B1:#1",
+    fixtureSummary: "fixture-first-article:pass",
+    stats: {
+      measured: 1,
+      failed: 0,
+      expectedMeasurements: 1,
+      passRate: 1
+    }
+  },
+  package: {
+    contractId: "QUAL-AS9102-PKG-v1",
+    summary: {
+      measured: 1,
+      failed: 0,
+      expectedMeasurements: 1,
+      passRate: 1
+    }
+  },
+  output: {
+    artifacts: [
+      {
+        templateId: "fai-summary-v1",
+        description: "Human-readable first article summary",
+        fileName: "as9102-1234-as9102-basic.txt"
+      },
+      {
+        templateId: "fai-package-json-v1",
+        description: "Structured AS9102 package payload",
+        fileName: "as9102-1234-as9102-basic.json"
+      }
+    ]
+  },
+  availableProfiles: [
+    { id: "as9102-basic", name: "AS9102 Basic", version: "0.1.0" },
+    { id: "as9102-fixture-pack", name: "AS9102 Fixture Pack", version: "0.1.0" }
+  ]
+};
+
 async function mockApi(page) {
   await page.addInitScript(() => {
     window.__capturedExportCsv = null;
@@ -161,6 +228,94 @@ async function mockApi(page) {
     }
     if (req.method() === "GET" && pathname === "/api/auth/users") {
       return route.fulfill({ status: 200, json: [{ id: 1, name: "Admin User", role: "Admin", active: true }] });
+    }
+    if (req.method() === "GET" && pathname === "/api/auth/profile") {
+      return route.fulfill({ status: 200, json: { mode: "local", summary: "Local accounts enabled." } });
+    }
+    if (req.method() === "GET" && pathname === "/api/proof-center/summary") {
+      return route.fulfill({
+        status: 200,
+        json: {
+          contractId: "ANA-PROOF-v1",
+          siteScope: "default",
+          entitlements: {
+            licenseTier: "core_plus",
+            activeBundles: [{ bundleId: "core_site", label: "Core Site" }, { bundleId: "quality_pro", label: "Quality Pro" }],
+            seatPolicy: { label: "Soft Buffer" },
+            authProfile: { providerLabel: "Local Accounts" }
+          },
+          proofPack: {
+            headline: "Customer proof pack",
+            summary: "Redacted summary for customer presentation.",
+            bullets: ["Value score 88/100 with ready deployment readiness."],
+            redactions: ["raw measurement payloads"]
+          },
+          trustIndicators: [
+            { key: "backups", label: "Backup freshness", value: "Current", detail: "Last verified 2026-03-31T12:00:00.000Z." },
+            { key: "updates", label: "Update readiness", value: "Ready", detail: "Retention and storage targets are within plan." },
+            { key: "imports", label: "Import health", value: "Healthy", detail: "Connector monitoring is online and ready." },
+            { key: "audit", label: "Audit/log confidence", value: "Current", detail: "4 records and 2 import runs are traceable in-app." }
+          ],
+          readiness: {
+            valueScore: 88,
+            deploymentCompletion: { status: "ready" },
+            adoptionMilestone: { milestone: "adopting" },
+            renewalRisk: { level: "low" }
+          },
+          kpiDashboard: {
+            contractId: "ANA-KPI-v3",
+            kpis: { first_pass_yield: 0.91 },
+            breakdowns: { byWorkCenter: [{ workCenterId: "wc-1", kpis: { first_pass_yield: 0.91 } }] }
+          },
+          runtimeSlo: {
+            contractId: "PLAT-SLO-v1",
+            current: { status: "healthy", tone: "success", label: "Operationally ready", summary: "All runtime SLO signals are green." },
+            targets: {
+              uptime: { targetPct: 99.5 },
+              importSuccess: { targetPct: 99 }
+            },
+            alertThresholds: {
+              backupFreshnessHours: { warning: 24, degraded: 72 }
+            },
+            incidentResponse: {
+              runbookPath: "docs/technical-ops-runbook.md"
+            }
+          },
+          readOnlyDrilldowns: [
+            { id: "runtime-slo", label: "Runtime SLO", status: "healthy", detail: "Uptime target 99.5% and import success target 99% are tracked alongside the active operationally ready posture.", deferredBy: null },
+            { id: "customer-value", label: "Customer value", status: "ready", detail: "Value score 88/100 combines deployment completion, adoption milestone, and renewal-risk signals.", deferredBy: null },
+            { id: "trust-evidence", label: "Trust evidence", status: "healthy", detail: "Read-only trust drilldowns summarize backups, update readiness, import health, and audit confidence without exposing restricted internals.", deferredBy: null }
+          ],
+          ecosystem: {
+            contractId: "PLAT-ECO-v1",
+            summary: { status: "ready", readyChecks: 6, deferredChecks: 0, totalChecks: 6 },
+            checks: [
+              { id: "extension-sdk-boundary", label: "Extension SDK boundary", status: "pass", detail: "Policy-gated.", deferredBy: null },
+              { id: "proof-drilldowns", label: "Customer proof drilldowns", status: "pass", detail: "Read-only drilldowns are backed by the runtime SLO and customer proof surfaces.", deferredBy: null }
+            ]
+          },
+          shareableText: "Customer proof pack\n\nRedacted summary for customer presentation.\n\nRuntime SLO: Operationally ready (healthy).\n\nRedactions:\n- raw measurement payloads"
+        }
+      });
+    }
+    if (req.method() === "GET" && pathname === "/api/integration/ecosystem/compatibility") {
+      return route.fulfill({
+        status: 200,
+        json: {
+          contractId: "PLAT-ECO-v1",
+          policy: {
+            mode: "entitlement-driven"
+          },
+          runtimeScaffold: {
+            extensionRuntime: { status: "scaffolded" }
+          },
+          summary: { status: "ready", readyChecks: 6, deferredChecks: 0, totalChecks: 6 },
+          checks: [
+            { id: "extension-sdk-boundary", label: "Extension SDK boundary", status: "pass", detail: "Policy-gated.", deferredBy: null },
+            { id: "proof-drilldowns", label: "Customer proof drilldowns", status: "pass", detail: "Read-only drilldowns are backed by the runtime SLO and customer proof surfaces.", deferredBy: null }
+          ]
+        }
+      });
     }
     if (req.method() === "POST" && pathname === "/api/auth/login") {
       return route.fulfill({
@@ -191,6 +346,9 @@ async function mockApi(page) {
     }
     if (req.method() === "GET" && pathname === "/api/records/201") {
       return route.fulfill({ status: 200, json: RECORD_DETAILS[201] });
+    }
+    if (req.method() === "GET" && pathname.startsWith("/api/records/201/export/as9102")) {
+      return route.fulfill({ status: 200, json: AS9102_EXPORT });
     }
     if (req.method() === "GET" && pathname === "/api/records/202") {
       return route.fulfill({ status: 200, json: RECORD_DETAILS[202] });
@@ -228,7 +386,7 @@ async function mockApi(page) {
 
 async function loginAsAdmin(page) {
   await expect(page.getByText("InspectFlow Login")).toBeVisible();
-  await page.locator("select").first().selectOption("1");
+  await page.getByLabel("Username").fill("Admin User");
   await page.getByLabel("Password").fill("inspectflow");
   await page.getByRole("button", { name: "Sign In" }).click();
   await expect(page.getByText("Manufacturing Inspection System")).toBeVisible();
@@ -264,5 +422,38 @@ test.describe("Authenticated header and export mode", () => {
     const csv = await page.evaluate(() => window.__capturedExportCsv || "");
     expect(csv).toContain("Selected record one");
     expect(csv).not.toContain("Unselected record");
+  });
+
+  test("shows the customer proof center with redacted shareable output", async ({ page }) => {
+    await mockApi(page);
+    await page.goto("/");
+    await loginAsAdmin(page);
+
+    await page.getByRole("button", { name: "Proof Center" }).click();
+
+    await expect(page.getByText("Present the proof pack, not the internals.")).toBeVisible();
+    await expect(page.getByText("Customer proof pack", { exact: true })).toBeVisible();
+    await expect(page.getByText("raw measurement payloads", { exact: true })).toBeVisible();
+    await expect(page.getByTestId("proof-drilldowns")).toBeVisible();
+    await expect(page.getByTestId("runtime-slo-policy")).toBeVisible();
+    await expect(page.getByText("Extension SDK boundary")).toBeVisible();
+    await expect(page.getByText("Customer proof drilldowns")).toBeVisible();
+    await expect(page.getByLabel("Shareable proof export preview")).toHaveValue(/Redacted summary/);
+  });
+
+  test("shows the branded AS9102 summary pack in record details", async ({ page }) => {
+    await mockApi(page);
+    await page.goto("/");
+    await loginAsAdmin(page);
+
+    await page.getByRole("button", { name: "Records", exact: true }).click();
+    await page.locator("tbody tr").nth(1).click();
+
+    await expect(page.getByText("Inspection Record — J-5001")).toBeVisible();
+    await expect(page.getByText("Branded Summary Pack")).toBeVisible();
+    await expect(page.getByLabel("Summary pack profile")).toHaveValue("as9102-basic");
+    await expect(page.getByLabel("Summary pack preview")).toHaveValue(/AS9102 Basic/);
+    await expect(page.getByText("Safe to present", { exact: true })).toBeVisible();
+    await expect(page.getByText("Artifacts included: fai-summary-v1, fai-package-json-v1")).toBeVisible();
   });
 });

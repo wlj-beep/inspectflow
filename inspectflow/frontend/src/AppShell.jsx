@@ -10,18 +10,19 @@ import {
   mapToolLibrary,
   mapToolLocations
 } from "./domains/jobflow/mappers.js";
-import { TableSkeleton, Breadcrumbs } from "./ui/feedback.jsx";
+import { TableSkeleton } from "./ui/feedback.jsx";
 import { HomeDashboard } from "./ui/homeDashboard.jsx";
-import { readUiRouteState, writeUiRouteState, buildBreadcrumbs } from "./ui/navigation.js";
+import { readUiRouteState, writeUiRouteStateWithMode, buildBreadcrumbs, normalizeUiRouteState } from "./ui/navigation.js";
 import { OperatorView } from "./ui/OperatorView.jsx";
 import { AdminView } from "./ui/AdminView.jsx";
 import { AdminRecords } from "./ui/AdminRecords.jsx";
-import { TransitionBanner } from "./ui/TransitionBanner.jsx";
-import { ShortcutHelpOverlay } from "./ui/shortcutHelp.jsx";
-import { useToastStack, ToastStack } from "./ui/toast.jsx";
+import { ProofCenter } from "./ui/ProofCenter.jsx";
+import { useToastStack } from "./ui/toast.jsx";
 import { getRoleThemeClass, getRoleAccentLabel } from "./ui/roleTheme.js";
+import { ShellFrame } from "./ui/ShellFrame.jsx";
 import { INITIAL_TOOLS, INITIAL_PARTS, INITIAL_JOBS, INITIAL_RECORDS, INITIAL_USERS } from "./data/initialData.js";
 import { isOOT, nextRevisionCode, revisionCodeToIndex, uid, normalizeOpNumber } from "./ui/appHelpers.js";
+import { buildLiveTrustIndicators, buildFallbackTrustIndicators, formatShortTimestamp } from "./ui/appShellHelpers.js";
 import "./ui/app.css";
 
 const jobflowAdapter = createJobflowAdapter(api);
@@ -77,7 +78,24 @@ export default function AppShell({ authUser = null, onLogout = null }) {
   const transitionTimeoutRef=useRef(null);
   const [transitionState,setTransitionState]=useState({ status:"idle", message:"" });
   const [showShortcutHelp,setShowShortcutHelp]=useState(false);
+  const [trustSignals,setTrustSignals]=useState({
+    loading:true,
+    summary:null,
+    lifecycle:null
+  });
   const { toasts, pushToast, dismissToast } = useToastStack();
+  const currentCaps=roleCaps[currentRole] || [];
+  const hasCap = cap => currentCaps.includes(cap);
+  const canViewAdmin = hasCap("view_admin");
+  const canViewOperator = hasCap("view_operator") || currentRole==="Operator";
+  const canViewRecords = hasCap("view_records");
+  const canEditRecords = hasCap("edit_records");
+  const canManageJobs = hasCap("manage_jobs");
+  const canManageParts = hasCap("manage_parts");
+  const canManageTools = hasCap("manage_tools");
+  const canManageUsers = hasCap("manage_users");
+  const canManageRoles = hasCap("manage_roles");
+  const canViewProof = canViewAdmin;
 
   function setTransition(status, message, resetMs){
     if(transitionTimeoutRef.current){
@@ -110,15 +128,24 @@ export default function AppShell({ authUser = null, onLogout = null }) {
 
   useEffect(()=>()=>{ if(transitionTimeoutRef.current) clearTimeout(transitionTimeoutRef.current); },[]);
   useEffect(()=>{
+    if(showShortcutHelp) return undefined;
+    const isEditableTarget = (target) => {
+      if (!target || !(target instanceof Element)) return false;
+      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) {
+        return true;
+      }
+      return Boolean(target.closest("[contenteditable='true'], [contenteditable=''], [role='textbox']"));
+    };
     const onKeyDown=(event)=>{
-      if(event.key==="?"){
+      const isShortcutTrigger = event.key === "?" || (event.key === "/" && event.shiftKey);
+      if(isShortcutTrigger && !event.metaKey && !event.ctrlKey && !event.altKey && !isEditableTarget(event.target)){
         event.preventDefault();
         setShowShortcutHelp(true);
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return ()=>window.removeEventListener("keydown", onKeyDown);
-  },[]);
+  },[showShortcutHelp]);
 
   useEffect(()=>{
     let active=true;
@@ -152,6 +179,46 @@ export default function AppShell({ authUser = null, onLogout = null }) {
       });
     return ()=>{active=false;};
   },[]);
+
+  useEffect(()=>{
+    let active = true;
+    async function loadTrustSignals() {
+      if (dataStatus === "loading") {
+        if (active) {
+          setTrustSignals((current) => ({ ...current, loading: true }));
+        }
+        return;
+      }
+
+      if (dataStatus === "live" && canViewAdmin) {
+        try {
+          const [summary, lifecycle] = await Promise.all([
+            api.technicalOps.summary(currentRole),
+            api.technicalOps.lifecycleSummary(currentRole)
+          ]);
+          if (!active) return;
+          setTrustSignals({
+            loading: false,
+            summary,
+            lifecycle
+          });
+          return;
+        } catch {
+          if (!active) return;
+        }
+      }
+
+      if (!active) return;
+      setTrustSignals({
+        loading: false,
+        summary: null,
+        lifecycle: null
+      });
+    }
+
+    loadTrustSignals();
+    return ()=>{ active = false; };
+  },[dataStatus, canViewAdmin, currentRole]);
 
   useEffect(()=>{
     let active=true;
@@ -264,35 +331,53 @@ export default function AppShell({ authUser = null, onLogout = null }) {
     }
   }
 
-  const currentCaps=roleCaps[currentRole] || [];
-  const hasCap = cap => currentCaps.includes(cap);
-  const canViewAdmin = hasCap("view_admin");
-  const canViewOperator = hasCap("view_operator") || currentRole==="Operator";
-  const canViewRecords = hasCap("view_records");
-  const canEditRecords = hasCap("edit_records");
-  const canManageJobs = hasCap("manage_jobs");
-  const canManageParts = hasCap("manage_parts");
-  const canManageTools = hasCap("manage_tools");
-  const canManageUsers = hasCap("manage_users");
-  const canManageRoles = hasCap("manage_roles");
   const crumbs = buildBreadcrumbs({ view, adminTab });
   const roleThemeClass=getRoleThemeClass(currentRole);
   const roleAccentLabel=getRoleAccentLabel(currentRole);
-  function navigateView(nextView){
-    setView(nextView);
-    if(nextView==="admin" && !adminTab){
-      setAdminTab("jobs");
+  function applyRouteState(next, historyMode="push"){
+    const normalized = normalizeUiRouteState({
+      view: next?.view ?? view,
+      adminTab: next?.adminTab ?? adminTab
+    });
+    setView(normalized.view);
+    if (normalized.view === "admin") {
+      setAdminTab(normalized.adminTab || adminTab || "jobs");
     }
+    // URL is the source of truth for route state. For non-admin views, this will strip `adminTab`.
+    writeUiRouteStateWithMode(normalized, historyMode);
+  }
+  function navigateView(nextView){
+    applyRouteState({ view: nextView }, "push");
+  }
+  function navigateToRoute(routeLike){
+    if(!routeLike) return;
+    if(typeof routeLike === "string"){
+      navigateView(routeLike);
+      return;
+    }
+    applyRouteState({ view: routeLike.view || view, adminTab: routeLike.adminTab || adminTab }, "push");
+  }
+  function handleAdminTabChange(nextAdminTab){
+    applyRouteState({ view:"admin", adminTab:nextAdminTab }, "push");
   }
   useEffect(()=>{
-    writeUiRouteState({ view, adminTab });
-  },[view,adminTab]);
+    const onPopState = ()=>{
+      const route = readUiRouteState();
+      setView(route.view || "home");
+      if (route.view === "admin") {
+        setAdminTab(route.adminTab || "jobs");
+      }
+    };
+    window.addEventListener("popstate", onPopState);
+    return ()=>window.removeEventListener("popstate", onPopState);
+  },[]);
 
   useEffect(()=>{
-    if(view==="admin" && !canViewAdmin) navigateView(canViewOperator?"operator":"records");
-    if(view==="operator" && !canViewOperator) navigateView(canViewAdmin?"admin":"records");
-    if(view==="records" && !canViewRecords) navigateView(canViewOperator?"operator":"admin");
-  },[currentRole,view,canViewAdmin,canViewOperator,canViewRecords]);
+    if(view==="admin" && !canViewAdmin) applyRouteState({ view:canViewOperator?"operator":"records" }, "replace");
+    if(view==="proof" && !canViewProof) applyRouteState({ view:canViewAdmin?"admin":canViewOperator?"operator":"records" }, "replace");
+    if(view==="operator" && !canViewOperator) applyRouteState({ view:canViewAdmin?"admin":"records" }, "replace");
+    if(view==="records" && !canViewRecords) applyRouteState({ view:canViewOperator?"operator":"admin" }, "replace");
+  },[currentRole,view,canViewAdmin,canViewOperator,canViewRecords,canViewProof]);
   async function handleSubmit(record,jobNumber){
     if(dataStatus!=="live"){
       const nextStatus=record.status==="complete"?"closed":"incomplete";
@@ -384,7 +469,9 @@ export default function AppShell({ authUser = null, onLogout = null }) {
         qty:job.qty,
         status:job.status || "open"
       }, currentRole);
-      const mapped=mapJobsFromApi([created], opIdToNumber)[0];
+      const mappedJobs = mapJobsFromApi([created], opIdToNumber);
+      const mapped = mappedJobs[String(created?.id ?? job.jobNumber)] || Object.values(mappedJobs)[0];
+      if (!mapped) throw new Error("Job mapping missing for created job.");
       setJobs(prev=>({...prev,[mapped.jobNumber]:mapped}));
     });
   }
@@ -803,74 +890,77 @@ export default function AppShell({ authUser = null, onLogout = null }) {
   const dataChipLabel = dataStatus==="live" ? "Live Data" : dataStatus==="loading" ? "Loading" : "Local Demo";
   const dataChipClass = dataStatus==="live" ? "data-live" : dataStatus==="loading" ? "data-loading" : "data-fallback";
   const signedInUserName = authUser?.name || usersById?.[String(authUser?.id)] || "Authenticated user";
+  const trustIndicators = trustSignals.summary
+    ? buildLiveTrustIndicators(trustSignals.summary, trustSignals.lifecycle)
+    : buildFallbackTrustIndicators({ dataStatus, jobs, records, toolLibrary, canViewAdmin });
+  const runtimePosture = trustSignals.summary?.runtimeSlo?.current || trustSignals.summary?.posture || null;
+  const trustSourceLabel = trustSignals.summary
+    ? `Runtime SLO posture ${runtimePosture?.label || "unclassified"} (${runtimePosture?.status || "unknown"}) updated ${formatShortTimestamp(trustSignals.summary.generatedAt)}.`
+    : dataStatus === "live"
+      ? "Operational confidence is summarized from the current workspace."
+      : "Demo confidence is based on the sample workspace state.";
+  const navItems = [
+    { key: "home", label: "Home", active: view === "home", visible: true, onClick: () => navigateView("home") },
+    { key: "proof", label: "Proof Center", active: view === "proof", visible: canViewProof, onClick: () => navigateView("proof") },
+    { key: "operator", label: "Operator Entry", active: view === "operator", visible: canViewOperator, onClick: () => navigateView("operator") },
+    { key: "records", label: "Records", active: view === "records", visible: canViewRecords, onClick: () => navigateView("records") },
+    { key: "admin", label: "Admin", active: view === "admin", visible: canViewAdmin, onClick: () => navigateView("admin") }
+  ];
+  const pageContent = (
+    <>
+      {dataStatus==="loading" && <TableSkeleton rows={8} columns={8} ariaLabel="Loading application data" />}
+      {dataStatus!=="loading" && view==="home" && (
+        <HomeDashboard
+          jobs={Object.values(jobs || {})}
+          records={records}
+          toolLibrary={toolLibrary}
+          currentRole={currentRole}
+          onNavigate={navigateToRoute}
+        />
+      )}
+      {dataStatus!=="loading" && view==="proof" && (
+        <ProofCenter currentRole={currentRole} onNavigate={navigateToRoute} />
+      )}
+      {dataStatus!=="loading" && view==="operator" && (
+        <OperatorView parts={parts} jobs={jobs} toolLibrary={toolLibrary} onSubmit={handleSubmit} onDraft={handleDraft} currentUserId={currentUserId} currentRole={currentRole} onLockJob={handleLockJob} onUnlockJob={handleUnlockJob} onRefreshData={reloadLiveData} dataStatus={dataStatus} usersById={usersById}/>
+      )}
+      {dataStatus!=="loading" && view==="records" && (
+        <AdminRecords records={records} parts={parts} toolLibrary={toolLibrary} usersById={usersById} loadRecordDetail={loadRecordDetail} currentRole={currentRole} canEdit={canEditRecords} onEditValue={handleEditRecordValue}/>
+      )}
+      {dataStatus!=="loading" && view==="admin" && (
+        <AdminView parts={parts} jobs={jobs} records={records} toolLibrary={toolLibrary} toolLocations={toolLocations} users={users} usersById={usersById} currentCaps={currentCaps} roleCaps={roleCaps} currentRole={currentRole} currentUserId={currentUserId} adminTab={adminTab} onAdminTabChange={handleAdminTabChange} loadRecordDetail={loadRecordDetail} onEditValue={handleEditRecordValue} onCreateJob={handleCreateJob} onCreatePart={handleCreatePart} onUpdatePart={handleUpdatePart} onBulkUpdateParts={handleBulkUpdateParts} onCreateOp={handleCreateOp} onCreateDim={handleCreateDim} onUpdateDim={handleUpdateDim} onRemoveDim={handleRemoveDim} onCreateTool={handleCreateTool} onUpdateTool={handleUpdateTool} onCreateToolLocation={handleCreateToolLocation} onUpdateToolLocation={handleUpdateToolLocation} onRemoveToolLocation={handleRemoveToolLocation} onCreateUser={handleCreateUser} onUpdateUser={handleUpdateUser} onRemoveUser={handleRemoveUser} onUpdateRoleCaps={handleUpdateRoleCaps} onUnlockJob={handleUnlockJob} onRefreshData={reloadLiveData}/>
+      )}
+    </>
+  );
   return (
     <ErrorBoundary>
-      <>
-        <ToastStack toasts={toasts} onDismiss={dismissToast} />
-        <ShortcutHelpOverlay open={showShortcutHelp} onClose={()=>setShowShortcutHelp(false)} />
-        <div className={`app-header ${roleThemeClass}`}>
-          <div className="logo"><div className="logo-icon"/>InspectFlow</div>
-          <div className="header-sep"/>
-          <div>
-            <div className="header-sub">Manufacturing Inspection System</div>
-            <div className="role-accent">{roleAccentLabel}</div>
-          </div>
-          <div className="header-right">
-            <div className="user-ctrl">
-              {authUser?.id ? (
-                <div className="user-ctrl-identity">{signedInUserName}</div>
-              ) : (
-                <>
-                  <div className="user-ctrl-label">Current User</div>
-                  <div className="user-ctrl-row">
-                    <select value={currentUserId} onChange={(e)=>setCurrentUserId(e.target.value)}>
-                      <option value="">Select user…</option>
-                      {users.map(u=>(
-                        <option key={u.id} value={u.id}>{u.name} — {u.role}</option>
-                      ))}
-                    </select>
-                    <span className={`role-chip role-${(currentRole||"").toLowerCase()}`}>{currentRole||"Unknown"}</span>
-                  </div>
-                </>
-              )}
-              {authUser?.id?<div className="user-ctrl-hint">Authenticated session user is fixed for protected actions.</div>:null}
-              {userLoadErr?<div className="user-ctrl-hint">{userLoadErr}</div>:null}
-              {dataErr?<div className="user-ctrl-hint">{dataErr}</div>:null}
-            </div>
-            <span className={`data-chip ${dataChipClass}`}>{dataChipLabel}</span>
-            {onLogout ? <button className="nav-btn" onClick={onLogout}>Sign Out</button> : null}
-            <nav className="nav">
-              <button className={`nav-btn ${view==="home"?"active":""}`} onClick={()=>navigateView("home")}>Home</button>
-              {canViewOperator && <button className={`nav-btn ${view==="operator"?"active":""}`} onClick={()=>navigateView("operator")}>Operator Entry</button>}
-              {canViewRecords && <button className={`nav-btn ${view==="records"?"active":""}`} onClick={()=>navigateView("records")}>Records</button>}
-              {canViewAdmin && <button className={`nav-btn ${view==="admin"?"active":""}`} onClick={()=>navigateView("admin")}>Admin</button>}
-            </nav>
-          </div>
-        </div>
-        <div className="page">
-          <Breadcrumbs items={crumbs} />
-          <TransitionBanner state={transitionState}/>
-          {dataStatus==="loading" && <TableSkeleton rows={8} columns={8} ariaLabel="Loading application data" />}
-          {dataStatus!=="loading" && view==="home" && (
-            <HomeDashboard
-              jobs={Object.values(jobs || {})}
-              records={records}
-              toolLibrary={toolLibrary}
-              currentRole={currentRole}
-              onNavigate={navigateView}
-            />
-          )}
-          {dataStatus!=="loading" && view==="operator" && (
-            <OperatorView parts={parts} jobs={jobs} toolLibrary={toolLibrary} onSubmit={handleSubmit} onDraft={handleDraft} currentUserId={currentUserId} currentRole={currentRole} onLockJob={handleLockJob} onUnlockJob={handleUnlockJob} onRefreshData={reloadLiveData} dataStatus={dataStatus} usersById={usersById}/>
-          )}
-          {dataStatus!=="loading" && view==="records" && (
-            <AdminRecords records={records} parts={parts} toolLibrary={toolLibrary} usersById={usersById} loadRecordDetail={loadRecordDetail} canEdit={canEditRecords} onEditValue={handleEditRecordValue}/>
-          )}
-          {dataStatus!=="loading" && view==="admin" && (
-            <AdminView parts={parts} jobs={jobs} records={records} toolLibrary={toolLibrary} toolLocations={toolLocations} users={users} usersById={usersById} currentCaps={currentCaps} roleCaps={roleCaps} currentRole={currentRole} currentUserId={currentUserId} adminTab={adminTab} onAdminTabChange={setAdminTab} loadRecordDetail={loadRecordDetail} onEditValue={handleEditRecordValue} onCreateJob={handleCreateJob} onCreatePart={handleCreatePart} onUpdatePart={handleUpdatePart} onBulkUpdateParts={handleBulkUpdateParts} onCreateOp={handleCreateOp} onCreateDim={handleCreateDim} onUpdateDim={handleUpdateDim} onRemoveDim={handleRemoveDim} onCreateTool={handleCreateTool} onUpdateTool={handleUpdateTool} onCreateToolLocation={handleCreateToolLocation} onUpdateToolLocation={handleUpdateToolLocation} onRemoveToolLocation={handleRemoveToolLocation} onCreateUser={handleCreateUser} onUpdateUser={handleUpdateUser} onRemoveUser={handleRemoveUser} onUpdateRoleCaps={handleUpdateRoleCaps} onUnlockJob={handleUnlockJob} onRefreshData={reloadLiveData}/>
-          )}
-        </div>
-      </>
+      <ShellFrame
+        authUser={authUser}
+        onLogout={onLogout}
+        signedInUserName={signedInUserName}
+        currentUserId={currentUserId}
+        currentRole={currentRole}
+        users={users}
+        onCurrentUserChange={setCurrentUserId}
+        userLoadErr={userLoadErr}
+        dataErr={dataErr}
+        dataChipLabel={dataChipLabel}
+        dataChipClass={dataChipClass}
+        roleThemeClass={roleThemeClass}
+        roleAccentLabel={roleAccentLabel}
+        navItems={navItems}
+        trustIndicators={trustIndicators}
+        trustLoading={trustSignals.loading}
+        trustSourceLabel={trustSourceLabel}
+        crumbs={crumbs}
+        transitionState={transitionState}
+        showShortcutHelp={showShortcutHelp}
+        onCloseShortcutHelp={() => setShowShortcutHelp(false)}
+        toasts={toasts}
+        dismissToast={dismissToast}
+      >
+        {pageContent}
+      </ShellFrame>
     </ErrorBoundary>
   );
 }

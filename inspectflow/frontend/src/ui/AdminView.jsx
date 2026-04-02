@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from "react";
-import { ADMIN_TAB_GROUPS } from "./navigation.js";
 import { AdminTools } from "./AdminTools.jsx";
 import { AdminUsers } from "./AdminUsers.jsx";
 import { AdminRoles } from "./AdminRoles.jsx";
@@ -8,11 +7,17 @@ import { AdminRecords } from "./AdminRecords.jsx";
 import { AdminIssueReports } from "./AdminIssueReports.jsx";
 import { AdminImports } from "./AdminImports.jsx";
 import { AdminParts } from "./AdminParts.jsx";
+import { ADMIN_NAV_SECTIONS, ADMIN_TAB_LABELS } from "./navigation.js";
 
 export function AdminView({ parts, jobs, records, toolLibrary, toolLocations, users, usersById, currentCaps, roleCaps, currentRole, currentUserId, adminTab, onAdminTabChange, loadRecordDetail, onEditValue, onCreateJob, onCreatePart, onUpdatePart, onBulkUpdateParts, onCreateOp, onCreateDim, onUpdateDim, onRemoveDim, onCreateTool, onUpdateTool, onCreateToolLocation, onUpdateToolLocation, onRemoveToolLocation, onCreateUser, onUpdateUser, onRemoveUser, onUpdateRoleCaps, onUnlockJob, onRefreshData }) {
   const [tabState,setTabState]=useState(adminTab || "jobs");
   const [dirtyByTab,setDirtyByTab]=useState({});
   const tab = adminTab || tabState;
+  useEffect(()=>{
+    if (adminTab && adminTab !== tabState) {
+      setTabState(adminTab);
+    }
+  },[adminTab,tabState]);
   function commitTab(next){
     if(onAdminTabChange){
       onAdminTabChange(next);
@@ -32,16 +37,6 @@ export function AdminView({ parts, jobs, records, toolLibrary, toolLocations, us
   const canViewAdmin=hasCap("view_admin");
   const canViewIssueReports=hasCap("view_admin");
   const canViewImports=canManageParts || canManageTools || canManageJobs;
-  const tabLabels = {
-    jobs: "Job Management",
-    records: "Inspection Records",
-    issues: "Issue Reports",
-    imports: "Data Imports",
-    parts: "Part / Op Setup",
-    tools: "Tool Library",
-    users: "Users",
-    roles: "Roles"
-  };
   const visibleTabs = new Set();
   if(canViewJobs) visibleTabs.add("jobs");
   if(canViewRecords) visibleTabs.add("records");
@@ -51,7 +46,7 @@ export function AdminView({ parts, jobs, records, toolLibrary, toolLocations, us
   if(canManageTools) visibleTabs.add("tools");
   if(canManageUsers) visibleTabs.add("users");
   if(canManageRoles) visibleTabs.add("roles");
-  const defaultTab = [...visibleTabs][0] || "jobs";
+  const defaultTab = ADMIN_NAV_SECTIONS.flatMap((section) => section.tabs).find((tabId) => visibleTabs.has(tabId)) || "jobs";
   useEffect(()=>{
     if(!canViewAdmin || !visibleTabs.has(tab)){
       commitTab(defaultTab);
@@ -72,36 +67,47 @@ export function AdminView({ parts, jobs, records, toolLibrary, toolLocations, us
     if(dirtyByTab[tab] && !window.confirm("You have unsaved changes. Leave this page without saving?")) return;
     commitTab(next);
   }
-  const groupedTabs = ADMIN_TAB_GROUPS
-    .map(group=>({
-      ...group,
-      tabs:group.tabs.filter(tabId=>visibleTabs.has(tabId))
-    }))
-    .filter(group=>group.tabs.length>0);
+  const currentLabel = ADMIN_TAB_LABELS[tab] || tab;
+  const visibleSections = ADMIN_NAV_SECTIONS.filter((section) => section.tabs.some((tabId) => visibleTabs.has(tabId)));
   return (
     <div className="admin-layout">
-      <aside className="admin-sidebar">
-        {groupedTabs.map(group=>(
-          <div key={group.label} className="admin-sidebar-group">
-            <div className="admin-sidebar-label">{group.label}</div>
-            {group.tabs.map(tabId=>(
-              <button
-                key={tabId}
-                className={`admin-side-btn ${tab===tabId?"active":""}`}
-                onClick={()=>setTabSafe(tabId)}
-              >
-                {tabLabels[tabId] || tabId}
-              </button>
-            ))}
+      <aside className="admin-sidebar" aria-label="Admin navigation">
+        <div className="admin-sidebar-group admin-sidebar-group--hero">
+          <div className="admin-sidebar-label">Admin Workspace</div>
+          <p className="admin-sidebar-note">Flattened groups keep the current area visible and the next action close at hand.</p>
+        </div>
+        {visibleSections.map((section)=>(
+          <div className="admin-sidebar-group" key={section.label}>
+            <div className="admin-sidebar-label">{section.label}</div>
+            <p className="admin-sidebar-note">{section.description}</p>
+            <div className="admin-sidebar-links">
+              {section.tabs.filter((tabId) => visibleTabs.has(tabId)).map(tabId=>(
+                <button
+                  key={tabId}
+                  type="button"
+                  className={`admin-side-btn ${tab===tabId?"active":""}`}
+                  aria-current={tab===tabId?"page":undefined}
+                  onClick={()=>setTabSafe(tabId)}
+                >
+                  {ADMIN_TAB_LABELS[tabId] || tabId}
+                </button>
+              ))}
+            </div>
           </div>
         ))}
       </aside>
       <div className="admin-main">
-        <div className="sub-tabs">
-          {visibleTabs.has(tab) && <button className="sub-tab active">{tabLabels[tab] || tab}</button>}
+        <div className="admin-main__header">
+          <div>
+            <div className="section-label" style={{ marginBottom: ".35rem" }}>Admin Area</div>
+            <h1 className="admin-main__title">{currentLabel}</h1>
+          </div>
+          <div className="admin-main__meta text-muted">
+            {currentRole} access · {visibleTabs.size} section{visibleTabs.size === 1 ? "" : "s"} available
+          </div>
         </div>
         {tab==="jobs"&&canViewJobs&&<AdminJobs parts={parts} jobs={jobs} usersById={usersById} onCreateJob={onCreateJob} canManageJobs={canManageJobs} onUnlockJob={onUnlockJob}/>}
-        {tab==="records"&&canViewRecords&&<AdminRecords records={records} parts={parts} toolLibrary={toolLibrary} usersById={usersById} loadRecordDetail={loadRecordDetail} canEdit={canEdit} onEditValue={onEditValue}/>}
+        {tab==="records"&&canViewRecords&&<AdminRecords records={records} parts={parts} toolLibrary={toolLibrary} usersById={usersById} loadRecordDetail={loadRecordDetail} currentRole={currentRole} canEdit={canEdit} onEditValue={onEditValue}/>}
         {tab==="issues"&&canViewIssueReports&&<AdminIssueReports currentRole={currentRole} currentUserId={currentUserId}/>}
         {tab==="imports"&&canViewImports&&<AdminImports currentRole={currentRole} canManageTools={canManageTools} canManageParts={canManageParts} canManageJobs={canManageJobs} onRefreshData={onRefreshData}/>}
         {tab==="parts"&&canManageParts&&<AdminParts parts={parts} toolLibrary={toolLibrary} onCreatePart={onCreatePart} onUpdatePart={onUpdatePart} onBulkUpdateParts={onBulkUpdateParts} onCreateOp={onCreateOp} onCreateDim={onCreateDim} onUpdateDim={onUpdateDim} onRemoveDim={onRemoveDim} onDirtyChange={dirty=>setDirtyByTab(p=>({...p,parts:dirty}))}/>}

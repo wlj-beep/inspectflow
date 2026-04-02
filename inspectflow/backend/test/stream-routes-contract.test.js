@@ -9,7 +9,7 @@ describe("Stream route composition contract", () => {
     expect(health.body).toMatchObject({ ok: true, service: "inspectflow-backend" });
 
     const authUsers = await request(app).get("/api/auth/users");
-    expect(authUsers.status).toBe(200);
+    expect(authUsers.status).toBe(404);
 
     const jobs = await request(app).get("/api/jobs").set("x-user-role", "Admin");
     expect(jobs.status).toBe(200);

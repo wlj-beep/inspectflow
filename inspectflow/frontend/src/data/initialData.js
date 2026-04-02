@@ -65,3 +65,35 @@ export const INITIAL_USERS = [
   { id:9, name:"A. Vasquez", role:"Operator", active:true },
   { id:10, name:"S. Admin", role:"Admin", active:true }
 ];
+
+export const INITIAL_DEMO_WORKSPACE = {
+  workspaceLabel: "Hydraulic Cylinder demo workspace",
+  sampleJob: "J-10042",
+  summary: "Start with a live-looking sample part, open job, and completed record so new customers can see entry, review, and proof flows without setting up master data first.",
+  steps: [
+    {
+      id: "workspace-tour",
+      title: "Inspect the sample workspace",
+      description: "Review the seeded part, lot, and open work order that power the built-in demo path.",
+      actionLabel: "Open job setup",
+      repeatLabel: "Reopen setup",
+      target: { view: "admin", adminTab: "jobs" }
+    },
+    {
+      id: "operator-flow",
+      title: "Walk the operator workflow",
+      description: "Load job J-10042 and see how measurement entry feels for an operator on the floor.",
+      actionLabel: "Open operator entry",
+      repeatLabel: "Open operator again",
+      target: { view: "operator" }
+    },
+    {
+      id: "quality-proof",
+      title: "Review proof and traceability",
+      description: "Open recent records to see completed measurements, trace context, and export-ready data.",
+      actionLabel: "Review records",
+      repeatLabel: "Reopen records",
+      target: { view: "records" }
+    }
+  ]
+};

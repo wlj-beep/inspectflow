@@ -7,7 +7,15 @@ export function TableSkeleton({ rows = 6, columns = 6, className = "", ariaLabel
   const safeColumns = Math.max(1, Number(columns) || 1);
 
   return (
-    <div className={joinClassNames("table-skeleton", className)} aria-label={ariaLabel} aria-busy="true">
+    <div
+      className={joinClassNames("table-skeleton", className)}
+      aria-label={ariaLabel}
+      aria-busy="true"
+      role="status"
+      aria-live="polite"
+      style={{ "--table-skeleton-columns": safeColumns }}
+    >
+      <div className="table-skeleton__shine" aria-hidden="true" />
       <div className="table-skeleton__table" role="presentation">
         {Array.from({ length: safeRows }).map((_, rowIndex) => (
           <div className="table-skeleton__row" key={`row-${rowIndex}`}>
@@ -31,13 +39,15 @@ export function EmptyState({
   className = "",
   children
 }) {
+  const hasAction = actionLabel && typeof onAction === "function";
   return (
     <section className={joinClassNames("empty-state", className)} aria-label={title || "Empty state"}>
+      <div className="empty-state__eyebrow">InspectFlow</div>
       {title ? <h3 className="empty-state__title">{title}</h3> : null}
       {description ? <p className="empty-state__description">{description}</p> : null}
       {children ? <div className="empty-state__content">{children}</div> : null}
-      {actionLabel ? (
-        <button type="button" className="empty-state__action" onClick={onAction} disabled={!onAction}>
+      {hasAction ? (
+        <button type="button" className="empty-state__action" onClick={onAction}>
           {actionLabel}
         </button>
       ) : null}

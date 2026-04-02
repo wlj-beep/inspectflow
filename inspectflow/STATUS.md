@@ -1,6 +1,6 @@
 # Status
 
-Canonical global execution queue for active backlog work.
+Canonical global execution queue for active backlog work. The live queue is currently empty.
 
 ## Queue Rules
 - `STATUS.md` is the single source of truth for global priority order and active ownership.
@@ -14,7 +14,9 @@ Canonical global execution queue for active backlog work.
 
 | Rank | Item ID | Priority | Status | Owner | Updated | Work Item |
 | --- | --- | --- | --- | --- | --- | --- |
-No active items remain in the queue.
+## Active Queue State
+- No active queue items remain as of 2026-04-01.
+- Add new work here before implementation starts; completed items stay in `WORKLOG.md`.
 
 ## Active Gate Defaults
 - For BL-058 acceptance, duplicate/replay behavior is fixed to idempotent skip plus audit trail updates (no strict hard-reject mode).
@@ -23,6 +25,46 @@ No active items remain in the queue.
 
 | Date | Item ID | From | To | Note |
 | --- | --- | --- | --- | --- |
+| 2026-04-01 | BL-119 | @codex | @owner | Completed responsive shell and layout cleanup for login, home, operator, and admin surfaces, with shared spacing/token cleanup and overflow checks. |
+| 2026-04-01 | BL-120 | @codex | @owner | Completed shell modularity and context-budget reduction by splitting shell chrome and shared helpers into bounded modules. |
+| 2026-04-01 | BL-121 | @codex | @owner | Completed shareable customer proof-pack handoff with redacted copy/share/download actions and presentation-ready proof text. |
+| 2026-04-01 | BL-114 | @codex | @owner | Completed release-path automation with a single wrapper command, consolidated evidence bundle, and automatic cycle-report artifact generation. |
+| 2026-04-01 | BL-115 | @codex | @owner | Completed automatic cycle-report generation through `ops:cycle:report:auto` with bundle storage and report traceability. |
+| 2026-04-01 | BL-116 | @codex | @owner | Completed split release sequencing so fast feedback runs before the standardized gate and the commercialization gates stay in the final pass. |
+| 2026-04-01 | BL-117 | @codex | @owner | Completed single on-prem preflight -> start/health -> rollback-ready operator flow wrapper and runbook update. |
+| 2026-04-01 | BL-118 | @codex | @owner | Completed early prereq/artifact failure surfacing for commercialization gates and cycle-report enforcement. |
+| 2026-04-01 | BL-020 | @codex | @owner | Completed signed offline update bundle workflow with preflight and rollback procedures. |
+| 2026-04-01 | BL-023 | @codex | @owner | Completed route resequencing and operation move workflows with revision trace. |
+| 2026-04-01 | BL-036 | @codex | @owner | Completed optional AD/SSO integration path without breaking local account mode. |
+| 2026-04-01 | BL-037 | @codex | @owner | Completed optional paid hard-seat modes behind entitlement flags. |
+| 2026-03-31 | BL-094 | @codex | @owner | Completed controlled document workflow with revisioned procedures/forms, release state, and reason-trail coverage. |
+| 2026-03-31 | BL-095 | @codex | @owner | Completed training and competency tracking for released quality documents plus role/user completion gating. |
+| 2026-03-31 | BL-096 | @codex | @owner | Completed supplier quality workflow with supplier-linked nonconformance intake, SCAR lifecycle, response tracking, and closure export. |
+| 2026-03-31 | BL-097 | @codex | @owner | Completed FAI package workflow with characteristic-indexed balloon references and richer AS9102 package export. |
+| 2026-03-31 | BL-100 | @codex | @owner | Completed measurement-system and calibration-impact analytics with tool-health correlation and operator-safe remediation views. |
+| 2026-03-31 | BL-030 | @codex | @owner | Completed the R1 acceptance matrix automation and manual release evidence checklist with a dedicated cycle artifact and aligned release-test coverage. |
+| 2026-03-31 | BL-084 | @codex | @owner | Completed runtime regression recovery for import/integration paths and support-bundle views with focused recovery and replay coverage. |
+| 2026-03-31 | BL-085 | @codex | @owner | Completed backend test parsing and standardized gate health repair, including the live UI fallback for missing `DATABASE_URL_TEST`. |
+| 2026-03-31 | BL-091 | @codex | @owner | Completed AS9102 export pass-rate semantics reconciliation and runbook parity for zero and partial measurement cases. |
+| 2026-03-31 | BL-058 | @codex | @owner | Completed duplicate/replay idempotency enforcement across manual, API, and webhook ingest entrypoints with audit-traceable skips. |
+| 2026-03-31 | BL-103 | @codex | @owner | Completed commercialization-target load/performance gate with deterministic evidence artifacts and reusable gate/self-test hooks. |
+| 2026-03-31 | BL-104 | @codex | @owner | Completed data-growth policy surface with large-table footprint signals, index/partition/archive guidance, and rollback-safe operator notes. |
+| 2026-03-31 | BL-105 | @codex | @owner | Completed customer activation toolkit with mapping templates, dry-run preflight reporting, and Admin Imports integration. |
+| 2026-03-31 | BL-106 | @codex | @owner | Completed pilot-readiness scorecard endpoint and compact dashboard cue with deterministic customer-site scoring. |
+| 2026-03-31 | BL-107 | @codex | @owner | Completed commercial packaging metadata contract with bundles, seat policy options, and upgrade prompt audit payloads. |
+| 2026-03-31 | BL-102 | @codex | @owner | Completed connector dead-letter capture and replay guidance for terminal failures after BL-101 unblocked the queueing slice. |
+| 2026-03-31 | BL-109 | @codex | @owner | Completed guided onboarding with a resettable demo path and explicit workflow CTA. |
+| 2026-03-31 | BL-112 | @codex | @owner | Completed system trust indicator wording and coverage for backup freshness, update readiness, import health, and audit/log confidence. |
+| 2026-03-31 | BL-111 | @codex | @owner | Completed the remaining premium-feel polish pass across shared widgets, navigation, theme labels, and supporting styles. |
+| 2026-03-31 | BL-043 | @codex | @owner | Completed multi-site KPI boundary proof with stricter site-scoped regression coverage. |
+| 2026-03-31 | BL-092 | @codex | @owner | Completed commercialization RC gate automation, self-test coverage, and gate evidence wiring for release closeout. |
+| 2026-03-31 | BL-101 | @codex | @owner | Completed scheduler extraction with advisory-lock worker semantics, clean shutdown hooks, and on-prem startup wiring. |
+| 2026-03-31 | BL-093 | @codex | @owner | Completed CAPA lifecycle foundation with staged transitions, evidence gates, and audit-lineage coverage. |
+| 2026-03-31 | BL-098 | @codex | @owner | Completed metrology adapter canonical-envelope ingestion with deterministic reject metadata and replay-safe batch identity. |
+| 2026-03-31 | BL-099 | @codex | @owner | Completed SPC analytics control-chart signals, traceable drilldown references, and regression coverage. |
+| 2026-03-31 | BL-084 | @codex | @owner | Completed runtime regression recovery by restoring import/integration helper exports and validating recovery suites. |
+| 2026-03-31 | BL-085 | @codex | @owner | Completed backend test-gate repair by fixing backlog-validation syntax and adding Vitest setup bootstrap. |
+| 2026-03-31 | BL-091 | @codex | @owner | Completed AS9102 pass-rate correction for zero/partial capture with dedicated regression coverage. |
 | 2026-03-30 | BL-082 | @codex | @owner | Completed shell-wrapper retirement: production now routes through `frontend/src/AppShell.jsx` directly and the legacy wrapper file has been removed. |
 | 2026-03-30 | BL-017 | @codex | @owner | Completed capability migration: authenticated sessions now own capability checks, legacy role headers are opt-in for compatibility, and auth/routing regression coverage confirms spoofed headers do not override session identity. |
 | 2026-03-30 | BL-060 | @codex | @owner | Completed authenticated header cleanup: signed-in sessions now render only the identity text and no longer show the post-login selector. |

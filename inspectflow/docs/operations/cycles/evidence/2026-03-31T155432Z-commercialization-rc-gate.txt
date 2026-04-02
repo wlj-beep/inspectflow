@@ -1,0 +1,173 @@
+Commercialization RC gate started at 2026-03-31T155432Z
+Repository: /Users/joshlane/Documents/Playground 2/inspectflow
+Status file: /Users/joshlane/Documents/Playground 2/inspectflow/STATUS.md
+Worklog file: /Users/joshlane/Documents/Playground 2/inspectflow/WORKLOG.md
+Evidence file: /Users/joshlane/Documents/Playground 2/inspectflow/docs/operations/cycles/evidence/2026-03-31T155432Z-commercialization-rc-gate.txt
+Standardized command: npm run test:standardized
+Checking prerequisite backlog recoveries...
+PASS: BL-084 is marked completed in STATUS.md.
+WARN: BL-084 is not yet called out in WORKLOG.md; attach this evidence file to the release record before sign-off.
+PASS: BL-085 is marked completed in STATUS.md.
+WARN: BL-085 is not yet called out in WORKLOG.md; attach this evidence file to the release record before sign-off.
+PASS: BL-091 is marked completed in STATUS.md.
+WARN: BL-091 is not yet called out in WORKLOG.md; attach this evidence file to the release record before sign-off.
+DATABASE_URL_TEST not set; defaulting to postgres://postgres@localhost:5432/inspectflow_test for standardized/live UI checks.
+Running standardized commercialization gate...
+
+> inspectflow@0.1.0 test:standardized
+> npm run test:coordination && npm run test:api && npm run test:ui:mock && npm run test:ui:live
+
+
+> inspectflow@0.1.0 test:coordination
+> npm run coordination:check && npm run context:budget
+
+
+> inspectflow@0.1.0 coordination:check
+> node scripts/validate-coordination.mjs
+
+Coordination validation passed.
+
+> inspectflow@0.1.0 context:budget
+> node scripts/context/enforce-context-budget.mjs
+
+PASS: context budget within policy.
+
+> inspectflow@0.1.0 test:api
+> npm run test --prefix backend
+
+
+> inspectflow-backend@0.1.0 test
+> NODE_ENV=test npm run db:test:setup && NODE_ENV=test vitest run
+
+
+> inspectflow-backend@0.1.0 db:test:setup
+> npm run db:migrate:test && npm run db:seed:test
+
+
+> inspectflow-backend@0.1.0 db:migrate:test
+> NODE_ENV=test node src/scripts/migrate.js
+
+Schema applied.
+
+> inspectflow-backend@0.1.0 db:seed:test
+> NODE_ENV=test node src/scripts/seed.js
+
+Seeded local credentials for 115 users.
+Seed applied.
+
+ RUN  v2.1.9 /Users/joshlane/Documents/Playground 2/inspectflow/backend
+
+ ✓ test/backlog-validation.test.js (15 tests) 266ms
+ ✓ test/backlog-validation-imports.test.js (13 tests) 263ms
+ ✓ test/capa-workflow.test.js (1 test) 79ms
+ ✓ test/quality-export.test.js (3 tests) 124ms
+ ✓ test/analytics-kpi-dashboard-risk-workflow.test.js (2 tests) 215ms
+ ✓ test/auth-hardening-entitlements.test.js (4 tests) 1750ms
+   ✓ Auth hardening + entitlement contract > records login failure and lockout events 317ms
+   ✓ Auth hardening + entitlement contract > records password change and reset events 1247ms
+ ✓ test/analytics-multisite-kpi.test.js (2 tests) 77ms
+ ✓ test/analytics-calibration-impact.test.js (2 tests) 169ms
+ ✓ test/integration-adapter-support-bundle.test.js (3 tests) 97ms
+ ✓ test/integration-envelope.test.js (8 tests) 6ms
+ ✓ test/technical-ops-api.test.js (5 tests) 122ms
+ ✓ test/analytics-mart-runtime.test.js (2 tests) 208ms
+ ✓ test/analytics-spc.test.js (1 test) 188ms
+ ✓ test/ops-routing-workflows.test.js (3 tests) 169ms
+ ✓ test/idempotency-entrypoints.test.js (3 tests) 103ms
+ ✓ test/operational-regression.test.js (3 tests) 79ms
+ ✓ test/integration-connector-runtime.test.js (4 tests) 5ms
+ ✓ test/auth.test.js (3 tests) 208ms
+ ✓ test/future-analytics-anomaly.test.js (6 tests) 3ms
+ ✓ test/future-analytics-kpi.test.js (5 tests) 4ms
+ ✓ test/analytics-contracts.test.js (5 tests) 2ms
+ ✓ test/future-quality-export-engine.test.js (4 tests) 4ms
+ ✓ test/import-scheduler-worker.test.js (3 tests) 5ms
+ ✓ test/integration-runtime-policy.test.js (4 tests) 4ms
+ ✓ test/future-quality-risk-escalation.test.js (4 tests) 2ms
+ ✓ test/future-idempotency-envelope.test.js (4 tests) 2ms
+ ✓ test/future-integration-policy.test.js (4 tests) 3ms
+ ✓ test/permissions.test.js (4 tests) 34ms
+ ✓ test/stream-routes-contract.test.js (1 test) 58ms
+ ✓ test/revisions.test.js (2 tests) 1ms
+ ✓ test/smoke.test.js (2 tests) 27ms
+
+ Test Files  31 passed (31)
+      Tests  125 passed (125)
+   Start at  11:54:39
+   Duration  10.18s (transform 196ms, setup 21ms, collect 2.35s, tests 4.28s, environment 3ms, prepare 866ms)
+
+
+> inspectflow@0.1.0 test:ui:mock
+> npm run test:ui --prefix frontend -- --grep @mock
+
+
+> inspectflow-frontend@0.1.0 test:ui
+> playwright test --grep @mock
+
+[2m[WebServer] [22m(node:81510) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[2m[WebServer] [22m(Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 11 tests using 1 worker
+
+(node:81512) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:81512) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓   1 tests/mocked.smoke.spec.js:242:3 › Mocked UI smoke @mock › loads the InspectFlow shell (1.1s)
+  ✓   2 tests/mocked.smoke.spec.js:251:3 › Mocked UI smoke @mock › shows loading and success transitions during part creation (1.7s)
+  ✓   3 tests/mocked.smoke.spec.js:270:3 › Mocked UI smoke @mock › shows failure transition when part creation fails (682ms)
+  ✓   4 tests/mocked.smoke.spec.js:288:3 › Mocked UI smoke @mock › reuses original base prefix and increments family run index for duplicate lot jobs (505ms)
+  ✓   5 tests/mocked.smoke.spec.js:325:3 › Mocked UI smoke @mock › allows admins to import tools via CSV from the Data Imports tab (606ms)
+  ✓   6 tests/mocked.smoke.spec.js:347:3 › Mocked UI smoke @mock › restores route state on reload and browser back/forward (823ms)
+  ✓   7 tests/mocked.smoke.spec.js:369:3 › Mocked UI smoke @mock › scopes '?' shortcut and restores focus when help closes (520ms)
+  ✓   8 tests/mocked.smoke.spec.js:391:3 › Mocked UI smoke @mock › shows role-aware dashboard primary actions (464ms)
+  ✓   9 tests/mocked.smoke.spec.js:405:3 › Mocked UI smoke @mock › guides first-run onboarding and can reset the walkthrough (537ms)
+  ✓  10 tests/mocked.smoke.spec.js:425:3 › Mocked UI smoke @mock › shows operator-specific dashboard primary action (419ms)
+  ✓  11 tests/mocked.smoke.spec.js:435:3 › Mocked UI smoke @mock › uses one coherent admin navigation surface (475ms)
+
+  11 passed (10.3s)
+
+> inspectflow@0.1.0 test:ui:live
+> bash scripts/run-ui-live-tests.sh
+
+[ui-live] Preparing test database...
+
+> inspectflow@0.1.0 db:test:setup
+> npm run db:test:setup --prefix backend
+
+
+> inspectflow-backend@0.1.0 db:test:setup
+> npm run db:migrate:test && npm run db:seed:test
+
+
+> inspectflow-backend@0.1.0 db:migrate:test
+> NODE_ENV=test node src/scripts/migrate.js
+
+Schema applied.
+
+> inspectflow-backend@0.1.0 db:seed:test
+> NODE_ENV=test node src/scripts/seed.js
+
+Seeded local credentials for 117 users.
+Seed applied.
+[ui-live] Starting backend API...
+[ui-live] Running live Playwright suite...
+
+> inspectflow-frontend@0.1.0 test:ui
+> playwright test --grep @live
+
+[2m[WebServer] [22m(node:82038) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[2m[WebServer] [22m(Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 1 test using 1 worker
+
+(node:82040) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:82040) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 tests/live.critical.spec.js:36:3 › Live UI critical path @live › admin creates job, operator submits measurements, record persists (3.2s)
+
+  1 passed (4.7s)
+Commercialization RC gate passed.
+Attach this evidence file in the release runbook/worklog record for BL-092 sign-off.
+Evidence written to /Users/joshlane/Documents/Playground 2/inspectflow/docs/operations/cycles/evidence/2026-03-31T155432Z-commercialization-rc-gate.txt

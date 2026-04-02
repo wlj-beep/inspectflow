@@ -1,23 +1,23 @@
 const ROLE_THEME_MAP = Object.freeze({
   operator: {
     className: "role-theme-operator",
-    label: "Operator mode"
+    label: "Operator workflow"
   },
   quality: {
     className: "role-theme-quality",
-    label: "Quality review mode"
+    label: "Quality command"
   },
   supervisor: {
     className: "role-theme-supervisor",
-    label: "Supervisor mode"
+    label: "Shift oversight"
   },
   admin: {
     className: "role-theme-admin",
-    label: "Admin mode"
+    label: "Admin workspace"
   },
   neutral: {
     className: "role-theme-neutral",
-    label: "Neutral mode"
+    label: "Shared workspace"
   }
 });
 

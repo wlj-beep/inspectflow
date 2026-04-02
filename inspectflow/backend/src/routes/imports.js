@@ -17,6 +17,292 @@ import {
 import * as importsCore from "./importsCore.js";
 const router = Router();
 
+function buildTemplateCatalog() {
+  return {
+    tools: {
+      headers: ["name", "type", "it_num", "size", "active", "visible"]
+    },
+    partDimensions: {
+      headers: [
+        "part_id",
+        "part_name",
+        "op_number",
+        "op_label",
+        "dimension_name",
+        "nominal",
+        "tol_plus",
+        "tol_minus",
+        "unit",
+        "sampling",
+        "sampling_interval",
+        "input_mode",
+        "tool_it_nums"
+      ]
+    },
+    jobs: {
+      headers: [
+        "job_id",
+        "part_id",
+        "part_revision",
+        "operation_id",
+        "op_number",
+        "lot",
+        "qty",
+        "status"
+      ]
+    },
+    measurements: {
+      headers: [
+        "record_key",
+        "job_id",
+        "part_id",
+        "part_revision",
+        "operation_ref",
+        "piece_number",
+        "dimension_name",
+        "value",
+        "is_oot",
+        "operator_user_id",
+        "status",
+        "comment",
+        "tool_it_nums",
+        "missing_reason",
+        "nc_num",
+        "details"
+      ]
+    },
+    operatorMeasurement: {
+      headers: [
+        "piece_number",
+        "dimension_name",
+        "value",
+        "is_oot",
+        "tool_it_nums",
+        "missing_reason",
+        "nc_num",
+        "details"
+      ]
+    }
+  };
+}
+
+function buildOnboardingToolkit(templates) {
+  return {
+    contractId: "INT-ONBOARD-v1",
+    imports: [
+      {
+        importType: "jobs",
+        label: "Jobs activation",
+        templateKey: "jobs",
+        sampleFile: "jobs-import-template.csv",
+        headers: templates.jobs.headers,
+        requiredHeaders: ["job_id", "part_id", "lot", "qty"],
+        validators: [
+          "Each row needs a customer job number, part, lot, and quantity.",
+          "Provide either `operation_id` or `op_number` for every job row.",
+          "Statuses should stay within open, closed, draft, or incomplete."
+        ]
+      },
+      {
+        importType: "part_dimensions",
+        label: "Part and setup activation",
+        templateKey: "partDimensions",
+        sampleFile: "part-dimensions-import-template.csv",
+        headers: templates.partDimensions.headers,
+        requiredHeaders: ["part_id", "op_number", "dimension_name", "nominal", "tol_plus", "tol_minus", "unit", "sampling"],
+        validators: [
+          "Each row should describe one characteristic with tolerance, unit, and sampling plan.",
+          "Use a positive sampling interval only when `sampling` is `custom_interval`.",
+          "List tool IT numbers with `|` separators when multiple gages can measure the characteristic."
+        ]
+      },
+      {
+        importType: "measurements",
+        label: "Measurements activation",
+        templateKey: "measurements",
+        sampleFile: "measurements-import-template.csv",
+        headers: templates.measurements.headers,
+        requiredHeaders: ["job_id", "operation_ref", "piece_number", "dimension_name"],
+        validators: [
+          "Each row needs enough context to map back to a job, operation, piece, and characteristic.",
+          "Provide either a measured `value` or a documented missing reason.",
+          "Measurement imports work best when operator IDs and tool IT numbers are included before go-live."
+        ]
+      }
+    ]
+  };
+}
+
+function summarizeDryRunStatus(issueCount) {
+  return issueCount > 0 ? "needs_attention" : "ready";
+}
+
+function buildDryRunMessage({ importType, issueCount, totalRows }) {
+  const importLabel = importType === "part_dimensions"
+    ? "part setup"
+    : importType;
+  if (!totalRows) {
+    return `No ${importLabel} rows were found in the uploaded file.`;
+  }
+  if (issueCount > 0) {
+    return `The ${importLabel} file is close, but ${issueCount} preflight issue${issueCount === 1 ? "" : "s"} should be corrected before customer activation.`;
+  }
+  return `The ${importLabel} file is ready for a live activation pass.`;
+}
+
+function validateDryRunRows({ importType, rows, headers }) {
+  const issues = [];
+  const canonicalHeaders = Array.isArray(headers) ? headers.map((header) => importsCore.canonicalHeader(header)) : [];
+  const headerSet = new Set(canonicalHeaders);
+
+  const rulesByType = {
+    jobs: {
+      requiredHeaders: ["job_id", "part_id", "lot", "qty"],
+      requiredPerRow: ["job_id", "part_id", "lot", "qty"],
+      validators: (row, line) => {
+        const qty = importsCore.parsePositiveInteger(row.qty);
+        if (qty === null) issues.push({ line, field: "qty", error: "Quantity must be a positive whole number." });
+        const opNumber = String(row.op_number || "").trim();
+        const operationId = String(row.operation_id || "").trim();
+        if (!opNumber && !operationId) {
+          issues.push({ line, field: "op_number", error: "Provide either an operation number or operation ID for each job row." });
+        }
+      }
+    },
+    part_dimensions: {
+      requiredHeaders: ["part_id", "op_number", "dimension_name", "nominal", "tol_plus", "tol_minus", "unit", "sampling"],
+      requiredPerRow: ["part_id", "op_number", "dimension_name", "nominal", "tol_plus", "tol_minus", "unit", "sampling"],
+      validators: (row, line) => {
+        if (importsCore.parseOptionalNumber(row.nominal) === null) issues.push({ line, field: "nominal", error: "Nominal must be numeric." });
+        if (importsCore.parseOptionalNumber(row.tol_plus) === null) issues.push({ line, field: "tol_plus", error: "Upper tolerance must be numeric." });
+        if (importsCore.parseOptionalNumber(row.tol_minus) === null) issues.push({ line, field: "tol_minus", error: "Lower tolerance must be numeric." });
+        if (!importsCore.VALID_UNITS.includes(String(row.unit || "").trim())) {
+          issues.push({ line, field: "unit", error: `Unit must be one of: ${importsCore.VALID_UNITS.join(", ")}.` });
+        }
+        if (!importsCore.VALID_SAMPLING.includes(String(row.sampling || "").trim())) {
+          issues.push({ line, field: "sampling", error: `Sampling must be one of: ${importsCore.VALID_SAMPLING.join(", ")}.` });
+        }
+        if (String(row.sampling || "").trim() === "custom_interval" && importsCore.parseInterval(row.sampling_interval) === null) {
+          issues.push({ line, field: "sampling_interval", error: "Custom interval sampling requires a positive sampling interval." });
+        }
+      }
+    },
+    measurements: {
+      requiredHeaders: ["job_id", "operation_ref", "piece_number", "dimension_name"],
+      requiredPerRow: ["job_id", "operation_ref", "piece_number", "dimension_name"],
+      validators: (row, line) => {
+        if (importsCore.parsePositiveInteger(row.piece_number) === null) {
+          issues.push({ line, field: "piece_number", error: "Piece number must be a positive whole number." });
+        }
+        const value = String(row.value || "").trim();
+        const missingReason = String(row.missing_reason || "").trim();
+        if (!value && !missingReason) {
+          issues.push({ line, field: "value", error: "Provide either a measured value or a missing reason." });
+        }
+      }
+    }
+  };
+
+  const rules = rulesByType[importType];
+  if (!rules) {
+    return {
+      missingHeaders: [],
+      issues: [{ line: null, field: "importType", error: "Unsupported onboarding import type." }]
+    };
+  }
+
+  const missingHeaders = rules.requiredHeaders.filter((header) => !headerSet.has(header));
+  for (const header of missingHeaders) {
+    issues.push({
+      line: null,
+      field: header,
+      error: `Required column \`${header}\` is missing from the uploaded file.`
+    });
+  }
+
+  rows.forEach((row) => {
+    const line = Number(row._line || 0) || null;
+    for (const field of rules.requiredPerRow) {
+      if (!String(row[field] || "").trim()) {
+        issues.push({ line, field, error: `This row is missing \`${field}\`.` });
+      }
+    }
+    rules.validators(row, line);
+  });
+
+  return { missingHeaders, issues };
+}
+
+function buildDryRunReport({ importType, csvText, toolkit }) {
+  const normalizedImportType = importsCore.parseImportType(importType);
+  const parsed = importsCore.parseCsvText(csvText);
+  const toolkitItem = toolkit.imports.find((item) => item.importType === normalizedImportType) || null;
+  const mappingHeaders = toolkitItem?.headers || parsed.headers || [];
+  const headerMatches = mappingHeaders.map((header) => ({
+    sourceHeader: header,
+    canonicalField: importsCore.canonicalHeader(header),
+    presentInUpload: parsed.headers.includes(importsCore.canonicalHeader(header))
+  }));
+  const unknownHeaders = parsed.headers.filter((header) => !mappingHeaders.includes(header));
+  const validation = validateDryRunRows({
+    importType: normalizedImportType,
+    rows: parsed.rows,
+    headers: parsed.headers
+  });
+  const issueCount = validation.issues.length;
+  const issueLines = new Set(
+    validation.issues
+      .map((issue) => issue.line)
+      .filter((line) => Number.isInteger(line) && line > 0)
+  );
+  const readyRows = Math.max(0, parsed.rows.length - issueLines.size);
+
+  return {
+    contractId: "INT-ONBOARD-v1",
+    importType: normalizedImportType,
+    summary: {
+      status: summarizeDryRunStatus(issueCount),
+      customerMessage: buildDryRunMessage({
+        importType: normalizedImportType,
+        issueCount,
+        totalRows: parsed.rows.length
+      }),
+      totalRows: parsed.rows.length,
+      readyRows,
+      rowsNeedingAttention: Math.max(0, parsed.rows.length - readyRows),
+      issueCount
+    },
+    mappingTemplate: toolkitItem
+      ? {
+          label: toolkitItem.label,
+          sampleFile: toolkitItem.sampleFile,
+          requiredHeaders: toolkitItem.requiredHeaders,
+          headers: toolkitItem.headers
+        }
+      : null,
+    mappingPreview: {
+      matchedHeaders: headerMatches,
+      unknownHeaders,
+      missingRequiredHeaders: validation.missingHeaders
+    },
+    preflight: {
+      validators: toolkitItem?.validators || [],
+      issues: validation.issues.slice(0, 25)
+    },
+    nextSteps: issueCount > 0
+      ? [
+          "Fix the highlighted columns or row values in the customer source file.",
+          "Run this dry-run again until the file reports ready for activation.",
+          "Only then execute the live import for the target customer."
+        ]
+      : [
+          "Keep this file as the approved customer activation snapshot.",
+          "Run the live import from the same template when the customer is ready.",
+          "Attach the dry-run report to the activation notes for traceability."
+        ]
+  };
+}
+
 router.post("/tools/csv", requireCapability("manage_tools"), async (req, res, next) => {
   try {
     const { csvText } = req.body || {};
@@ -611,72 +897,27 @@ router.post("/webhooks/:importType", async (req, res, next) => {
 });
 
 router.get("/templates", requireCapability("view_admin"), (req, res) => {
+  const templates = buildTemplateCatalog();
   res.json({
-    tools: {
-      headers: ["name", "type", "it_num", "size", "active", "visible"]
-    },
-    partDimensions: {
-      headers: [
-        "part_id",
-        "part_name",
-        "op_number",
-        "op_label",
-        "dimension_name",
-        "nominal",
-        "tol_plus",
-        "tol_minus",
-        "unit",
-        "sampling",
-        "sampling_interval",
-        "input_mode",
-        "tool_it_nums"
-      ]
-    },
-    jobs: {
-      headers: [
-        "job_id",
-        "part_id",
-        "part_revision",
-        "operation_id",
-        "op_number",
-        "lot",
-        "qty",
-        "status"
-      ]
-    },
-    measurements: {
-      headers: [
-        "record_key",
-        "job_id",
-        "part_id",
-        "part_revision",
-        "operation_ref",
-        "piece_number",
-        "dimension_name",
-        "value",
-        "is_oot",
-        "operator_user_id",
-        "status",
-        "comment",
-        "tool_it_nums",
-        "missing_reason",
-        "nc_num",
-        "details"
-      ]
-    },
-    operatorMeasurement: {
-      headers: [
-        "piece_number",
-        "dimension_name",
-        "value",
-        "is_oot",
-        "tool_it_nums",
-        "missing_reason",
-        "nc_num",
-        "details"
-      ]
-    }
+    ...templates,
+    onboardingToolkit: buildOnboardingToolkit(templates)
   });
+});
+
+router.post("/onboarding/dry-run", requireCapability("view_admin"), (req, res, next) => {
+  try {
+    const importType = importsCore.parseImportType(req.body?.importType);
+    const csvText = String(req.body?.csvText || "").trim();
+    if (!importType) return res.status(400).json({ error: "invalid_import_type" });
+    if (!csvText) return res.status(400).json({ error: "csv_required" });
+
+    const templates = buildTemplateCatalog();
+    const toolkit = buildOnboardingToolkit(templates);
+    const report = buildDryRunReport({ importType, csvText, toolkit });
+    res.json(report);
+  } catch (err) {
+    next(err);
+  }
 });
 
 export default router;

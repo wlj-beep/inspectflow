@@ -10,6 +10,10 @@ export function AdminImports({ currentRole, canManageTools, canManageParts, canM
   const [partDimsCsv,setPartDimsCsv]=useState("");
   const [jobsCsv,setJobsCsv]=useState("");
   const [measurementsCsv,setMeasurementsCsv]=useState("");
+  const [onboardingImportType,setOnboardingImportType]=useState("jobs");
+  const [onboardingCsv,setOnboardingCsv]=useState("");
+  const [onboardingBusy,setOnboardingBusy]=useState(false);
+  const [onboardingReport,setOnboardingReport]=useState(null);
   const [running,setRunning]=useState("");
   const [err,setErr]=useState("");
   const [result,setResult]=useState("");
@@ -60,6 +64,10 @@ export function AdminImports({ currentRole, canManageTools, canManageParts, canM
     loadAll();
     return ()=>{ active=false; };
   },[currentRole]);
+
+  useEffect(()=>{
+    setOnboardingReport(null);
+  },[onboardingImportType, onboardingCsv]);
 
   async function refreshIntegrations(){
     setLoadingIntegrations(true);
@@ -161,6 +169,45 @@ export function AdminImports({ currentRole, canManageTools, canManageParts, canM
     }
   }
 
+  async function runOnboardingDryRun(){
+    if(onboardingBusy) return;
+    const csvText=onboardingCsv.trim();
+    if(!csvText){
+      setErr("Paste onboarding CSV text or load a template first.");
+      return;
+    }
+    setErr("");
+    setOnboardingBusy(true);
+    try{
+      const response=await fetch("/api/imports/onboarding/dry-run", {
+        method:"POST",
+        credentials:"include",
+        headers:{
+          "content-type":"application/json",
+          "x-user-role": currentRole || "Admin"
+        },
+        body:JSON.stringify({
+          importType:onboardingImportType,
+          csvText
+        })
+      });
+      const body=await response.json();
+      if(!response.ok){
+        throw new Error(body?.error || "Unable to run onboarding dry-run.");
+      }
+      setOnboardingReport(body);
+    }catch(e){
+      setErr(e?.message || "Unable to run onboarding dry-run.");
+    }finally{
+      setOnboardingBusy(false);
+    }
+  }
+
+  function onboardingTemplateEntry(){
+    const catalog=templates?.onboardingToolkit?.imports || [];
+    return catalog.find(item=>item.importType===onboardingImportType) || null;
+  }
+
   function triggerUpload(target){
     setActiveUploadTarget(target);
     if(fileInputRef.current) fileInputRef.current.click();
@@ -175,6 +222,7 @@ export function AdminImports({ currentRole, canManageTools, canManageParts, canM
       if(activeUploadTarget==="tools") setToolsCsv(text);
       else if(activeUploadTarget==="partDimensions") setPartDimsCsv(text);
       else if(activeUploadTarget==="jobs") setJobsCsv(text);
+      else if(activeUploadTarget==="onboarding") setOnboardingCsv(text);
       else setMeasurementsCsv(text);
     };
     reader.readAsText(file);
@@ -292,6 +340,147 @@ export function AdminImports({ currentRole, canManageTools, canManageParts, canM
           {result && (
             <pre style={{margin:0,padding:".7rem",background:"var(--bg-soft)",border:"1px solid var(--border)",borderRadius:"10px",fontSize:".72rem",overflowX:"auto"}}>{result}</pre>
           )}
+          <div className="card" style={{margin:0}}>
+            <div className="card-head">
+              <div className="card-title">Customer Activation Toolkit</div>
+              <div className="text-muted" style={{fontSize:".72rem"}}>
+                Mapping templates, preflight validators, and dry-run reports for customer onboarding.
+              </div>
+            </div>
+            <div className="card-body">
+              <p className="text-muted" style={{marginTop:0,fontSize:".74rem"}}>
+                Start with the customer file, load the matching template, and run a dry-run before the live activation import.
+              </p>
+              <div className="row3">
+                <div className="field">
+                  <label>Activation file type</label>
+                  <select value={onboardingImportType} onChange={e=>setOnboardingImportType(e.target.value)}>
+                    {(templates?.onboardingToolkit?.imports || []).map(item=>(
+                      <option key={item.importType} value={item.importType}>{item.label}</option>
+                    ))}
+                    {!templates?.onboardingToolkit?.imports?.length && (
+                      <>
+                        <option value="jobs">Jobs activation</option>
+                        <option value="part_dimensions">Part and setup activation</option>
+                        <option value="measurements">Measurements activation</option>
+                      </>
+                    )}
+                  </select>
+                </div>
+                <div className="field">
+                  <label>Recommended sample file</label>
+                  <input value={onboardingTemplateEntry()?.sampleFile || ""} readOnly placeholder="Loading toolkit…" />
+                </div>
+                <div className="field">
+                  <label>Required columns</label>
+                  <input value={(onboardingTemplateEntry()?.requiredHeaders || []).join(", ")} readOnly placeholder="Loading toolkit…" />
+                </div>
+              </div>
+              <div className="mt1" style={{display:"grid",gap:".6rem"}}>
+                <div>
+                  <div className="text-muted" style={{fontSize:".72rem",marginBottom:".35rem"}}>Preflight validators</div>
+                  <ul style={{margin:"0 0 0 1rem",padding:0,fontSize:".74rem",lineHeight:1.55}}>
+                    {(onboardingTemplateEntry()?.validators || []).map((validator)=>(
+                      <li key={validator}>{validator}</li>
+                    ))}
+                  </ul>
+                </div>
+                <textarea
+                  value={onboardingCsv}
+                  onChange={e=>setOnboardingCsv(e.target.value)}
+                  rows={8}
+                  placeholder="Paste the customer activation CSV here…"
+                  style={{fontFamily:"var(--mono)",fontSize:".72rem"}}
+                />
+                <div className="gap1">
+                  <button className="btn btn-ghost btn-sm" onClick={()=>downloadTemplate(onboardingTemplateEntry()?.templateKey || "jobs")}>
+                    Download Mapping Template
+                  </button>
+                  <button className="btn btn-ghost btn-sm" onClick={()=>setOnboardingCsv(buildTemplateCsv(onboardingTemplateEntry()?.templateKey || "jobs"))}>
+                    Load Sample File
+                  </button>
+                  <button className="btn btn-ghost btn-sm" onClick={()=>triggerUpload("onboarding")}>
+                    Upload Customer File
+                  </button>
+                  <button className="btn btn-primary btn-sm" disabled={onboardingBusy} onClick={runOnboardingDryRun}>
+                    {onboardingBusy ? "Running dry-run…" : "Run Customer Dry-Run"}
+                  </button>
+                </div>
+                {onboardingReport && (
+                  <div style={{border:"1px solid var(--border)",borderRadius:"10px",padding:".8rem",background:"var(--bg-soft)"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",gap:".75rem",alignItems:"center",flexWrap:"wrap"}}>
+                      <div>
+                        <div className="card-title" style={{marginBottom:".25rem"}}>Dry-Run Report</div>
+                        <div className="text-muted" style={{fontSize:".74rem"}}>{onboardingReport.summary?.customerMessage}</div>
+                      </div>
+                      <span className={`badge ${onboardingReport.summary?.status==="ready" ? "badge-ok" : "badge-incomplete"}`}>
+                        {onboardingReport.summary?.status==="ready" ? "Ready for activation" : "Needs attention"}
+                      </span>
+                    </div>
+                    <div className="row3 mt1">
+                      <div className="card" style={{margin:0}}>
+                        <div className="card-body" style={{padding:".75rem"}}>
+                          <div className="section-label">Rows reviewed</div>
+                          <div className="mono" style={{fontSize:".92rem"}}>{onboardingReport.summary?.totalRows || 0}</div>
+                        </div>
+                      </div>
+                      <div className="card" style={{margin:0}}>
+                        <div className="card-body" style={{padding:".75rem"}}>
+                          <div className="section-label">Ready rows</div>
+                          <div className="mono" style={{fontSize:".92rem"}}>{onboardingReport.summary?.readyRows || 0}</div>
+                        </div>
+                      </div>
+                      <div className="card" style={{margin:0}}>
+                        <div className="card-body" style={{padding:".75rem"}}>
+                          <div className="section-label">Issues found</div>
+                          <div className="mono" style={{fontSize:".92rem"}}>{onboardingReport.summary?.issueCount || 0}</div>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="mt1">
+                      <div className="text-muted" style={{fontSize:".72rem",marginBottom:".35rem"}}>Missing required columns</div>
+                      <div className="mono" style={{fontSize:".72rem"}}>
+                        {(onboardingReport.mappingPreview?.missingRequiredHeaders || []).length
+                          ? onboardingReport.mappingPreview.missingRequiredHeaders.join(", ")
+                          : "None"}
+                      </div>
+                    </div>
+                    <div className="mt1">
+                      <div className="text-muted" style={{fontSize:".72rem",marginBottom:".35rem"}}>Columns not mapped to the standard template</div>
+                      <div className="mono" style={{fontSize:".72rem"}}>
+                        {(onboardingReport.mappingPreview?.unknownHeaders || []).length
+                          ? onboardingReport.mappingPreview.unknownHeaders.join(", ")
+                          : "None"}
+                      </div>
+                    </div>
+                    <div className="mt1">
+                      <div className="text-muted" style={{fontSize:".72rem",marginBottom:".35rem"}}>Next steps</div>
+                      <ul style={{margin:"0 0 0 1rem",padding:0,fontSize:".74rem",lineHeight:1.55}}>
+                        {(onboardingReport.nextSteps || []).map((step)=>(
+                          <li key={step}>{step}</li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div className="mt1">
+                      <div className="text-muted" style={{fontSize:".72rem",marginBottom:".35rem"}}>Preflight issues</div>
+                      {(onboardingReport.preflight?.issues || []).length ? (
+                        <div style={{display:"grid",gap:".35rem"}}>
+                          {onboardingReport.preflight.issues.map((issue, index)=>(
+                            <div key={`${issue.line || "file"}-${issue.field}-${index}`} style={{border:"1px solid var(--border)",borderRadius:"8px",padding:".55rem",fontSize:".74rem"}}>
+                              <strong>{issue.line ? `Line ${issue.line}` : "File check"}</strong> · <span className="mono">{issue.field}</span>
+                              <div className="text-muted" style={{marginTop:".2rem"}}>{issue.error}</div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-muted" style={{fontSize:".74rem"}}>No blocking issues were found in this dry-run.</div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
           <div className="row2 mt1">
             <div className="card" style={{margin:0}}>
               <div className="card-head"><div className="card-title">Tools CSV Import</div></div>

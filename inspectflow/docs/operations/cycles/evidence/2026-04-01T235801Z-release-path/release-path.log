@@ -1,0 +1,15 @@
+Release path bundle directory: /Users/joshlane/Documents/Playground 2/inspectflow/docs/operations/cycles/evidence/2026-04-01T235801Z-release-path
+Running 01-test-coordination: npm run test:coordination
+PASS: 01-test-coordination
+Running 02-test-api: npm run test:api
+PASS: 02-test-api
+Running 03-test-ui-mock: npm run test:ui:mock
+PASS: 03-test-ui-mock
+Running 04-test-ui-live: npm run test:ui:live
+PASS: 04-test-ui-live
+Running 05-gate-commercialization-load: npm run gate:commercialization:load
+PASS: 05-gate-commercialization-load
+Running 06-gate-commercialization-rc: npm run gate:commercialization:rc
+FAIL: 06-gate-commercialization-rc
+Release path failed.
+Bundle written to /Users/joshlane/Documents/Playground 2/inspectflow/docs/operations/cycles/evidence/2026-04-01T235801Z-release-path

@@ -32,7 +32,7 @@ export function readRecordsFilterFromUrl(defaults = {}) {
   return filter;
 }
 
-export function writeRecordsFilterToUrl(filter = {}) {
+export function writeRecordsFilterToUrl(filter = {}, mode = "replace") {
   if (typeof window === "undefined" || typeof window.history === "undefined") return;
 
   const params = new URLSearchParams(window.location.search);
@@ -48,5 +48,6 @@ export function writeRecordsFilterToUrl(filter = {}) {
 
   const query = params.toString();
   const nextUrl = `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash || ""}`;
-  window.history.replaceState({}, "", nextUrl);
+  const method = mode === "push" ? "pushState" : "replaceState";
+  window.history[method]({}, "", nextUrl);
 }

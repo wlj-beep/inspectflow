@@ -59,6 +59,7 @@ async function getUserIdByName(name) {
   return rows[0]?.id;
 }
 
+describe("Backlog validation imports hardening", () => {
   it("imports tools from CSV payload", async () => {
     const suffix = crypto.randomUUID().slice(0, 6);
     const toolName = `Import Tool ${suffix}`;
@@ -401,6 +402,17 @@ async function getUserIdByName(name) {
       sourceType: "api_pull",
       importType: "jobs"
     });
+    expect(failed.body.deadLetter).toMatchObject({
+      schemaVersion: "int-dead-letter-v1",
+      reason: "terminal_failure",
+      sourceType: "api_pull",
+      importType: "jobs",
+      replayControl: {
+        replayable: true,
+        strategy: "resubmit_with_new_token",
+        requiresNewIdempotencyToken: true
+      }
+    });
 
     const runRes = await query(
       "SELECT status, summary FROM import_runs WHERE id=$1",
@@ -408,6 +420,7 @@ async function getUserIdByName(name) {
     );
     expect(runRes.rows[0]?.status).toBe("error");
     expect(runRes.rows[0]?.summary?.runtime?.replayMetadata?.schemaVersion).toBe("int-connector-replay-v1");
+    expect(runRes.rows[0]?.summary?.runtime?.deadLetter?.schemaVersion).toBe("int-dead-letter-v1");
   });
 
   it("supports work center master CRUD and operation assignment audit history", async () => {

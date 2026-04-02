@@ -1,0 +1,47 @@
+Step: 04-test-ui-live
+Started: 2026-04-01T23:58:36Z
+Command: npm run test:ui:live
+
+
+> inspectflow@0.1.0 test:ui:live
+> bash scripts/run-ui-live-tests.sh
+
+[ui-live] DATABASE_URL_TEST not set; defaulting to postgres://postgres@localhost:5432/inspectflow_test.
+[ui-live] Preparing test database...
+
+> inspectflow@0.1.0 db:test:setup
+> npm run db:test:setup --prefix backend
+
+
+> inspectflow-backend@0.1.0 db:test:setup
+> npm run db:migrate:test && npm run db:seed:test
+
+
+> inspectflow-backend@0.1.0 db:migrate:test
+> NODE_ENV=test node src/scripts/migrate.js
+
+Schema applied.
+
+> inspectflow-backend@0.1.0 db:seed:test
+> NODE_ENV=test node src/scripts/seed.js
+
+Seeded local credentials for 177 users.
+Seed applied.
+[ui-live] Starting backend API...
+[ui-live] Running live Playwright suite...
+
+> inspectflow-frontend@0.1.0 test:ui
+> playwright test --grep @live
+
+[WebServer] (node:16654) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 1 test using 1 worker
+[live][response:401] http://localhost:4000/api/auth/session
+(node:16656) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[live][console:error] Failed to load resource: the server responded with a status of 401 (Unauthorized)
+[live][response:401] http://localhost:4000/api/auth/session
+[live][console:error] Failed to load resource: the server responded with a status of 401 (Unauthorized)
+·
+  1 passed (7.0s)

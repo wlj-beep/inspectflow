@@ -7,6 +7,7 @@ import {
   listAs9102Profiles,
   renderAs9102Export
 } from "../services/quality/as9102Exports.js";
+import { buildAs9102Package } from "../services/quality/as9102Package.js";
 
 const router = Router();
 
@@ -101,6 +102,43 @@ function isFiniteNonNegativeNumber(value) {
 function splitRange(value) {
   const [minRaw = "", maxRaw = ""] = String(value || "").split("|");
   return [minRaw.trim(), maxRaw.trim()];
+}
+
+function samplingPieceCount({ sampling, samplingInterval, qty }) {
+  const total = Number(qty);
+  if (!Number.isInteger(total) || total <= 0) return 0;
+
+  const pickByInterval = (interval) => {
+    if (!Number.isInteger(interval) || interval <= 0) return 0;
+    return Math.floor((total - 1) / interval) + 1;
+  };
+
+  switch (String(sampling || "")) {
+    case "first_last":
+      return total === 1 ? 1 : 2;
+    case "first_middle_last":
+      return total <= 2 ? total : 3;
+    case "every_5":
+      return pickByInterval(5);
+    case "every_10":
+      return pickByInterval(10);
+    case "100pct":
+      return total;
+    case "custom_interval":
+      return pickByInterval(Number(samplingInterval));
+    default:
+      return 0;
+  }
+}
+
+function expectedMeasurementSlots(rows, qty) {
+  return (rows || []).reduce((sum, row) => {
+    return sum + samplingPieceCount({
+      sampling: row.sampling,
+      samplingInterval: row.sampling_interval,
+      qty
+    });
+  }, 0);
 }
 
 async function validateRecordRefs(operationId, values, tools) {
@@ -638,12 +676,52 @@ router.get("/:id/export/as9102", requireCapability("view_records"), async (req, 
     if (!record) return res.status(404).json({ error: "not_found" });
 
     const valuesRes = await query(
-      "SELECT is_oot FROM record_values WHERE record_id=$1",
+      `SELECT dimension_id, piece_number, value, is_oot
+       FROM record_values
+       WHERE record_id=$1
+       ORDER BY piece_number ASC, dimension_id ASC`,
       [id]
     );
     const measured = valuesRes.rows.length;
     const failed = valuesRes.rows.filter((row) => row.is_oot).length;
-    const passRate = measured > 0 ? (measured - failed) / measured : 0;
+    const snapshotsRes = await query(
+      `SELECT dimension_id, name, nominal, tol_plus, tol_minus, unit, sampling, sampling_interval, input_mode
+       FROM record_dimension_snapshots
+       WHERE record_id=$1
+       ORDER BY dimension_id ASC`,
+      [id]
+    );
+    const recordToolsRes = await query(
+      `SELECT rt.dimension_id, rt.tool_id, rt.it_num, t.name AS tool_name, t.type AS tool_type
+       FROM record_tools rt
+       LEFT JOIN tools t ON t.id = rt.tool_id
+       WHERE rt.record_id=$1
+       ORDER BY rt.dimension_id ASC, rt.tool_id ASC`,
+      [id]
+    );
+    const missingPiecesRes = await query(
+      `SELECT piece_number, reason, nc_num, details
+       FROM missing_pieces
+       WHERE record_id=$1
+       ORDER BY piece_number ASC`,
+      [id]
+    );
+    const pieceCommentsRes = await query(
+      `SELECT rpc.piece_number, rpc.comment, rpc.serial_number, rpc.created_by_user_id,
+              rpc.created_by_role, rpc.created_at, rpc.updated_at, u.name AS created_by_user_name
+       FROM record_piece_comments rpc
+       LEFT JOIN users u ON u.id = rpc.created_by_user_id
+       WHERE rpc.record_id=$1
+       ORDER BY rpc.piece_number ASC`,
+      [id]
+    );
+    const expectedMeasurements = expectedMeasurementSlots(
+      snapshotsRes.rows,
+      Number(record.job_qty ?? record.qty ?? 0)
+    );
+    const denominator = Math.max(expectedMeasurements, measured);
+    const passing = Math.max(0, measured - failed);
+    const passRate = denominator > 0 ? passing / denominator : 0;
 
     const inspectorRes = await query(
       "SELECT id, name, role FROM users WHERE id=$1",
@@ -654,6 +732,56 @@ router.get("/:id/export/as9102", requireCapability("view_records"), async (req, 
       name: "Unknown",
       role: null
     };
+    const generatedAt = record.timestamp ? new Date(record.timestamp).toISOString() : undefined;
+    const packageData = buildAs9102Package({
+      record: {
+        id: record.id,
+        lot: record.lot,
+        qty: Number(record.job_qty ?? record.qty ?? 0)
+      },
+      part: {
+        id: record.part_id,
+        revision: record.part_revision_code || "A",
+        description: record.part_description || null
+      },
+      operation: {
+        id: record.operation_id,
+        number: record.op_number || null,
+        label: record.op_label || null
+      },
+      inspector,
+      stats: {
+        measured,
+        failed,
+        expectedMeasurements,
+        passRate
+      },
+      snapshots: snapshotsRes.rows,
+      values: valuesRes.rows,
+      tools: recordToolsRes.rows,
+      missingPieces: missingPiecesRes.rows,
+      pieceComments: pieceCommentsRes.rows,
+      generatedAt,
+      profileId
+    });
+    const acceptanceFixtures = [
+      {
+        fixtureId: "fixture-first-article",
+        label: "First article acceptance",
+        status: measured > 0 && failed === 0 ? "pass" : "review",
+        measurements: measured
+      },
+      {
+        fixtureId: "fixture-characteristic-balloon-index",
+        label: "Characteristic-indexed balloon reference trace",
+        status: packageData.balloonReferences.total > 0 ? "pass" : "review",
+        measurements: packageData.balloonReferences.total
+      }
+    ];
+    const balloonSummary = packageData.balloonReferences.total
+      ? packageData.balloonReferences.items.map((entry) => `${entry.label}:#${entry.characteristicIndex}`).join("; ")
+      : "none";
+    const fixtureSummary = acceptanceFixtures.map((fixture) => `${fixture.fixtureId}:${fixture.status}`).join("; ");
 
     const input = {
       part: {
@@ -663,11 +791,17 @@ router.get("/:id/export/as9102", requireCapability("view_records"), async (req, 
       },
       lot: record.lot,
       inspector,
+      balloonReferences: packageData.balloonReferences.items,
+      acceptanceFixtures,
+      balloonSummary,
+      fixtureSummary,
       stats: {
         measured,
         failed,
+        expectedMeasurements,
         passRate
-      }
+      },
+      package: packageData
     };
 
     let exportResult;
@@ -675,7 +809,7 @@ router.get("/:id/export/as9102", requireCapability("view_records"), async (req, 
       exportResult = renderAs9102Export({
         profileId,
         input,
-        generatedAt: record.timestamp ? new Date(record.timestamp).toISOString() : undefined
+        generatedAt
       });
     } catch (error) {
       if (String(error?.message || "") === "unknown_profile") {
@@ -702,6 +836,7 @@ router.get("/:id/export/as9102", requireCapability("view_records"), async (req, 
         createdAt: record.timestamp
       },
       input,
+      package: packageData,
       output: exportResult.output,
       availableProfiles: listAs9102Profiles()
     });

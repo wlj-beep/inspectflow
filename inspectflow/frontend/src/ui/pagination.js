@@ -48,6 +48,8 @@ export function PaginationControls({
   page,
   totalPages,
   pageSize,
+  totalRows,
+  itemLabel,
   onPageChange,
   onPageSizeChange,
   pageSizeOptions = [25, 50, 100]
@@ -57,6 +59,22 @@ export function PaginationControls({
   const safePageSize = normalizePageSize(pageSize);
   const canGoBack = safePage > 1 && safeTotalPages > 0;
   const canGoForward = safeTotalPages > 0 && safePage < safeTotalPages;
+  const safeTotalRows = Number.isFinite(Number(totalRows)) ? Math.max(0, Math.floor(Number(totalRows))) : null;
+  const label = String(itemLabel || "").trim();
+  const displayPage = safeTotalPages === 0 ? 0 : Math.min(safePage, safeTotalPages);
+  const startRow = safeTotalRows === null || safeTotalRows === 0 || displayPage === 0
+    ? 0
+    : ((displayPage - 1) * safePageSize) + 1;
+  const endRow = safeTotalRows === null || safeTotalRows === 0 || displayPage === 0
+    ? 0
+    : Math.min(displayPage * safePageSize, safeTotalRows);
+  const countLabel = safeTotalRows === null
+    ? null
+    : `${safeTotalRows} ${label || "row"}${safeTotalRows === 1 ? "" : "s"}`;
+  const rangeLabel = safeTotalRows === null
+    ? null
+    : `Showing ${startRow}-${endRow}`;
+  const pageLabel = `Page ${displayPage} of ${safeTotalPages}`;
 
   const handlePageChange = (nextPage) => {
     if (typeof onPageChange === "function") {
@@ -76,7 +94,9 @@ export function PaginationControls({
     h(
       "div",
       { className: "pagination-controls__summary", "aria-live": "polite" },
-      `Page ${safeTotalPages === 0 ? 0 : Math.min(safePage, safeTotalPages)} of ${safeTotalPages}`
+      safeTotalRows == null
+        ? pageLabel
+        : `${rangeLabel} of ${countLabel} | ${pageLabel}`
     ),
     h(
       "div",

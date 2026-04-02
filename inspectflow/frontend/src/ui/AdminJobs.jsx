@@ -310,10 +310,12 @@ export function AdminJobs({ parts, jobs, usersById, onCreateJob, canManageJobs, 
           page={page}
           totalPages={totalPages}
           pageSize={pageSize}
+          totalRows={totalRows}
+          itemLabel="job"
           onPageChange={setPage}
           onPageSizeChange={setPageSize}
+          pageSizeOptions={[25, 50, 100, 250]}
         />
-        <div className="text-muted" style={{padding:"0 .85rem .75rem",fontSize:".72rem"}}>{totalRows} total job{totalRows!==1?"s":""}</div>
       </div>
     </div>
   );

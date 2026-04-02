@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "node src/index.js",
     "start": "node src/index.js",
+    "worker:imports": "node src/scripts/importSchedulerWorker.js",
     "db:migrate": "node src/scripts/migrate.js",
     "db:seed": "node src/scripts/seed.js",
     "db:migrate:test": "NODE_ENV=test node src/scripts/migrate.js",

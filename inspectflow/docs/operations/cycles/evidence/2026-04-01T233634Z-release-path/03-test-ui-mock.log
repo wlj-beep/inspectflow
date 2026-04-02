@@ -1,0 +1,61 @@
+Step: 03-test-ui-mock
+Started: 2026-04-01T23:36:53Z
+Command: npm run test:ui:mock
+
+
+> inspectflow@0.1.0 test:ui:mock
+> npm run test:ui --prefix frontend -- --grep @mock
+
+
+> inspectflow-frontend@0.1.0 test:ui
+> playwright test --grep @mock
+
+[2m[WebServer] [22m(node:67717) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[2m[WebServer] [22m(Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 15 tests using 3 workers
+
+  ✓   1 tests/mocked.smoke.spec.js:250:3 › Mocked UI smoke @mock › loads the InspectFlow shell (969ms)
+  ✓   3 tests/navigation-url-driven.spec.js:142:3 › URL-driven navigation (BL-062) @mock › admin sub-tab is encoded in URL and survives back/forward (1.4s)
+  ✓   4 tests/mocked.smoke.spec.js:259:3 › Mocked UI smoke @mock › shows loading and success transitions during part creation (1.7s)
+  ✓   5 tests/mocked.smoke.spec.js:278:3 › Mocked UI smoke @mock › shows failure transition when part creation fails (789ms)
+  ✓   6 tests/mocked.smoke.spec.js:296:3 › Mocked UI smoke @mock › reuses original base prefix and increments family run index for duplicate lot jobs (850ms)
+  ✓   7 tests/mocked.smoke.spec.js:333:3 › Mocked UI smoke @mock › allows admins to import tools via CSV from the Data Imports tab (891ms)
+  ✘   2 tests/shell-layout.spec.js:183:3 › shell layout @mock › stays within the viewport at desktop and tablet widths (5.4s)
+  ✓   8 tests/mocked.smoke.spec.js:355:3 › Mocked UI smoke @mock › restores route state on reload and browser back/forward (968ms)
+  ✓   9 tests/mocked.smoke.spec.js:377:3 › Mocked UI smoke @mock › scopes '?' shortcut and restores focus when help closes (815ms)
+  ✓  10 tests/mocked.smoke.spec.js:399:3 › Mocked UI smoke @mock › shows role-aware dashboard primary actions (870ms)
+  ✓  11 tests/mocked.smoke.spec.js:413:3 › Mocked UI smoke @mock › guides first-run onboarding and can reset the walkthrough (735ms)
+  ✓  12 tests/mocked.smoke.spec.js:439:3 › Mocked UI smoke @mock › shows system trust indicators for backup freshness, update readiness, import health, and audit confidence (701ms)
+  ✓  13 tests/mocked.smoke.spec.js:454:3 › Mocked UI smoke @mock › shows operator-specific dashboard primary action (677ms)
+  ✓  14 tests/mocked.smoke.spec.js:464:3 › Mocked UI smoke @mock › uses one coherent admin navigation surface (746ms)
+  ✓  15 tests/mocked.smoke.spec.js:476:3 › Mocked UI smoke @mock › paginates jobs and records consistently for large datasets (1.7s)
+
+
+  1) tests/shell-layout.spec.js:183:3 › shell layout @mock › stays within the viewport at desktop and tablet widths 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: getByText('InspectFlow Login')
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 5000ms[22m
+    [2m  - waiting for getByText('InspectFlow Login')[22m
+
+
+      169 |
+      170 | async function loginAsAdmin(page) {
+    > 171 |   await expect(page.getByText("InspectFlow Login")).toBeVisible();
+          |                                                     ^
+      172 |   await page.getByLabel("Username").fill("Admin User");
+      173 |   await page.getByLabel("Password").fill("inspectflow");
+      174 |   await page.getByRole("button", { name: "Sign In" }).click();
+        at loginAsAdmin (/Users/joshlane/Documents/Playground 2/inspectflow/frontend/tests/shell-layout.spec.js:171:53)
+        at /Users/joshlane/Documents/Playground 2/inspectflow/frontend/tests/shell-layout.spec.js:194:13
+
+  1 failed
+    tests/shell-layout.spec.js:183:3 › shell layout @mock › stays within the viewport at desktop and tablet widths 
+  14 passed (14.4s)

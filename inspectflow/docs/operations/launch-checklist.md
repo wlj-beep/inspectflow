@@ -18,8 +18,9 @@ Use this checklist before starting any non-trivial implementation run.
 1. Collect all sub-agent outputs.
 2. Resolve overlap and conflicts.
 3. Run final verification pass.
-4. Publish run report using `docs/operations/cycle-control-ledger-template.md`.
+4. Publish run report using `docs/operations/cycle-control-ledger-template.md` or generate it with `npm run ops:cycle:report -- ...`.
 5. Set gate status (`Green | Yellow | Red`) and list required mitigation.
+6. Record token and cost metrics for controller + sub-agent prompts and completions.
 
 ## Closure
 1. Update `STATUS.md`.

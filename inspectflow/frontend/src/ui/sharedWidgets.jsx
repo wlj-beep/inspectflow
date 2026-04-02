@@ -3,10 +3,10 @@ import { TOOL_TYPES } from "./adminConstants.js";
 import { isToolSelectable } from "./appHelpers.js";
 
 export function TypeBadge({ type, small }){
-  const s=small?{fontSize:".58rem",padding:".08rem .3rem"}:{};
-  if(type==="Go/No-Go") return <span className="tbadge tbadge-gng" style={s}>Go/No-Go</span>;
-  if(type==="Attribute") return <span className="tbadge tbadge-attr" style={s}>Attribute</span>;
-  return <span className="tbadge tbadge-var" style={s}>Variable</span>;
+  const sizeClass = small ? " tbadge-sm" : "";
+  if(type==="Go/No-Go") return <span className={`tbadge tbadge-gng${sizeClass}`}>Go/No-Go</span>;
+  if(type==="Attribute") return <span className={`tbadge tbadge-attr${sizeClass}`}>Attribute</span>;
+  return <span className={`tbadge tbadge-var${sizeClass}`}>Variable</span>;
 }
 
 export function AutocompleteInput({ value, onChange, options, placeholder, style, renderOption, filterFn }) {
@@ -23,6 +23,9 @@ export function AutocompleteInput({ value, onChange, options, placeholder, style
   return (
     <div className="ac-wrap" ref={ref}>
       <input value={value} placeholder={placeholder} style={style} autoComplete="off"
+        aria-expanded={show}
+        aria-autocomplete="list"
+        aria-haspopup="listbox"
         onChange={e=>{onChange(e.target.value);setOpen(true);setCursor(-1);}}
         onFocus={()=>setOpen(true)}
         onKeyDown={e=>{
@@ -33,10 +36,10 @@ export function AutocompleteInput({ value, onChange, options, placeholder, style
           if(e.key==="Escape")setOpen(false);
         }} />
       {show&&(
-        <div className="ac-list">
+        <div className="ac-list" role="listbox">
           {filtered.map((o,i)=>{
             const v=typeof o==="object"?o.value:o;
-            return <div key={v} className={`ac-item${cursor===i?" hi":""}`} onMouseDown={()=>pick(v)}>
+            return <div key={v} role="option" aria-selected={cursor===i} className={`ac-item${cursor===i?" hi":""}`} onMouseDown={()=>pick(v)}>
               {renderOption?renderOption(o):<span>{v}</span>}
             </div>;
           })}
@@ -69,14 +72,14 @@ export function ToolSearchPopover({ toolLibrary, selectedIds, onAdd, onRemove })
           return <span className="dim-tool-tag" key={id}><TypeBadge type={t.type} small/>{t.name}<button className="rm" onClick={()=>onRemove(id)}>×</button></span>;
         })}
       </div>
-      <button className="btn btn-ghost btn-xs" onClick={()=>setOpen(o=>!o)}>+ Add Tool</button>
+      <button type="button" className="btn btn-ghost btn-xs" aria-expanded={open} onClick={()=>setOpen(o=>!o)}>+ Add Tool</button>
       {open&&(
         <div className="tool-popover">
           <input className="search-inp" style={{marginBottom:".45rem"}} placeholder="Search name or IT #…"
             value={search} onChange={e=>setSearch(e.target.value)} autoFocus />
           <div className="tool-pop-filters">
             {["All",...TOOL_TYPES].map(t=>(
-              <button key={t} className={`tpf-btn${tf===t?" on":""}`} onClick={()=>setTf(t)}>{t}</button>
+              <button type="button" key={t} className={`tpf-btn${tf===t?" on":""}`} onClick={()=>setTf(t)}>{t}</button>
             ))}
           </div>
           <div className="tool-pop-list">
