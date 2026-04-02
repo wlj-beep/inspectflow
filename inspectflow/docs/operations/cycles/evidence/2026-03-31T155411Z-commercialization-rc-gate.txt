@@ -1,0 +1,8 @@
+Commercialization RC gate started at 2026-03-31T155411Z
+Repository: /Users/joshlane/Documents/Playground 2/inspectflow
+Status file: /Users/joshlane/Documents/Playground 2/inspectflow/STATUS.md
+Worklog file: /Users/joshlane/Documents/Playground 2/inspectflow/WORKLOG.md
+Evidence file: /Users/joshlane/Documents/Playground 2/inspectflow/docs/operations/cycles/evidence/2026-03-31T155411Z-commercialization-rc-gate.txt
+Standardized command: npm run test:standardized
+Checking prerequisite backlog recoveries...
+FAIL: BL-084 must be marked completed in STATUS.md before the RC gate can close.

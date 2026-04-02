@@ -43,7 +43,15 @@ export async function attachAuthSession(req, res, next) {
       return next();
     }
     const session = await getAuthSessionByToken(token);
-    req.auth = session ? { sessionId: session.sessionId, expiresAt: session.expiresAt, user: session.user } : null;
+    req.auth = session
+      ? {
+          sessionId: session.sessionId,
+          expiresAt: session.expiresAt,
+          user: session.user,
+          seatAssignment: session.seatAssignment || null,
+          seatWarning: session.seatWarning || null
+        }
+      : null;
     next();
   } catch (err) {
     next(err);

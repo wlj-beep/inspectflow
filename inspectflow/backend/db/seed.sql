@@ -38,7 +38,7 @@ INSERT INTO role_capabilities (role, capability) VALUES
 ON CONFLICT DO NOTHING;
 
 INSERT INTO platform_entitlements
-  (id, contract_id, license_tier, seat_pack, seat_soft_limit, diagnostics_opt_in, module_flags)
+  (id, contract_id, license_tier, seat_pack, seat_soft_limit, seat_policy_option_id, hard_seat_enabled, directory_auth_enabled, directory_auth_mode, directory_auth_label, directory_auth_issuer, directory_auth_tenant, diagnostics_opt_in, module_flags)
 VALUES
   (
     1,
@@ -46,6 +46,13 @@ VALUES
     'core',
     25,
     25,
+    'soft_visibility',
+    false,
+    false,
+    'local',
+    NULL,
+    NULL,
+    NULL,
     false,
     '{"CORE": true, "QUALITY_PRO": false, "INTEGRATION_SUITE": false, "ANALYTICS_SUITE": false, "MULTISITE": false, "EDGE": false}'::JSONB
   )
@@ -54,6 +61,13 @@ SET contract_id = EXCLUDED.contract_id,
     license_tier = EXCLUDED.license_tier,
     seat_pack = EXCLUDED.seat_pack,
     seat_soft_limit = EXCLUDED.seat_soft_limit,
+    seat_policy_option_id = EXCLUDED.seat_policy_option_id,
+    hard_seat_enabled = EXCLUDED.hard_seat_enabled,
+    directory_auth_enabled = EXCLUDED.directory_auth_enabled,
+    directory_auth_mode = EXCLUDED.directory_auth_mode,
+    directory_auth_label = EXCLUDED.directory_auth_label,
+    directory_auth_issuer = EXCLUDED.directory_auth_issuer,
+    directory_auth_tenant = EXCLUDED.directory_auth_tenant,
     diagnostics_opt_in = EXCLUDED.diagnostics_opt_in,
     module_flags = EXCLUDED.module_flags,
     updated_at = NOW();

@@ -1,0 +1,98 @@
+{
+  "contractId": "PLAT-PERF-v1",
+  "backlogId": "BL-103",
+  "mode": "fixture_budget_eval",
+  "generatedAt": "2026-04-01T23:58:52.752Z",
+  "baseline": {
+    "sourceFile": "/Users/joshlane/Documents/Playground 2/inspectflow/var/load/bl056/load-gate-summary.json",
+    "contractId": "PLAT-TEST-v1",
+    "backlogId": "BL-056",
+    "startedAt": "2026-03-15T12:42:46.000Z",
+    "completedAt": "2026-03-15T12:42:46.000Z",
+    "pass": true,
+    "multiplier": 10,
+    "totalJobs": 250,
+    "totalMeasurementRows": 2500
+  },
+  "targetProfile": {
+    "multiplier": 25,
+    "totalJobs": 625,
+    "totalMeasurementRows": 6250,
+    "budgets": {
+      "importP95Ms": 1200,
+      "dashboardP95Ms": 900,
+      "queueDrainSeconds": 900,
+      "errorRatePct": 1,
+      "duplicateWrites": 0,
+      "replayFailures": 0
+    }
+  },
+  "observed": {
+    "totalJobs": 625,
+    "totalMeasurementRows": 6250,
+    "importP95Ms": 980,
+    "dashboardP95Ms": 760,
+    "queueDrainSeconds": 540,
+    "errorRatePct": 0.2,
+    "duplicateWrites": 0,
+    "replayFailures": 0,
+    "supportBundleLeak": false
+  },
+  "observedSource": {
+    "file": "/Users/joshlane/Documents/Playground 2/inspectflow/scripts/load/commercialization-target.fixture.json",
+    "fixtureId": "bl103-commercialization-target"
+  },
+  "checks": [
+    {
+      "id": "baseline_passed",
+      "description": "BL-056 baseline artifact passed",
+      "pass": true
+    },
+    {
+      "id": "baseline_multiplier_floor",
+      "description": "BL-056 baseline multiplier is at least 10x",
+      "pass": true
+    },
+    {
+      "id": "commercialization_volume",
+      "description": "Observed volume meets 25x commercialization target",
+      "pass": true
+    },
+    {
+      "id": "import_latency_budget",
+      "description": "Import p95 stays within 1200 ms",
+      "pass": true
+    },
+    {
+      "id": "dashboard_latency_budget",
+      "description": "Dashboard p95 stays within 900 ms",
+      "pass": true
+    },
+    {
+      "id": "queue_drain_budget",
+      "description": "Queue drain finishes within 900 seconds",
+      "pass": true
+    },
+    {
+      "id": "error_rate_budget",
+      "description": "Error rate stays within 1%",
+      "pass": true
+    },
+    {
+      "id": "duplicate_write_budget",
+      "description": "Duplicate writes stay within 0",
+      "pass": true
+    },
+    {
+      "id": "replay_failure_budget",
+      "description": "Replay failures stay within 0",
+      "pass": true
+    },
+    {
+      "id": "support_bundle_safety",
+      "description": "Support bundle summary remains metadata-only",
+      "pass": true
+    }
+  ],
+  "pass": true
+}

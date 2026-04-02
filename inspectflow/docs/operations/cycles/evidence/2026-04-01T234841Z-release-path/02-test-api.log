@@ -1,0 +1,77 @@
+Step: 02-test-api
+Started: 2026-04-01T23:48:42Z
+Command: npm run test:api
+
+
+> inspectflow@0.1.0 test:api
+> npm run test --prefix backend
+
+
+> inspectflow-backend@0.1.0 test
+> NODE_ENV=test npm run db:test:setup && NODE_ENV=test vitest run
+
+
+> inspectflow-backend@0.1.0 db:test:setup
+> npm run db:migrate:test && npm run db:seed:test
+
+
+> inspectflow-backend@0.1.0 db:migrate:test
+> NODE_ENV=test node src/scripts/migrate.js
+
+Schema applied.
+
+> inspectflow-backend@0.1.0 db:seed:test
+> NODE_ENV=test node src/scripts/seed.js
+
+Seeded local credentials for 161 users.
+Seed applied.
+
+ RUN  v2.1.9 /Users/joshlane/Documents/Playground 2/inspectflow/backend
+
+ ✓ test/backlog-validation-imports.test.js (13 tests) 247ms
+ ✓ test/backlog-validation.test.js (15 tests) 241ms
+ ✓ test/quality-export.test.js (4 tests) 200ms
+ ✓ test/auth-hardening-entitlements.test.js (7 tests) 2107ms
+   ✓ Auth hardening + entitlement contract > records login failure and lockout events 352ms
+   ✓ Auth hardening + entitlement contract > records password change and reset events 1144ms
+ ✓ test/analytics-pilot-readiness.test.js (2 tests) 85ms
+ ✓ test/analytics-multisite-kpi.test.js (3 tests) 87ms
+ ✓ test/analytics-calibration-impact.test.js (2 tests) 277ms
+ ✓ test/capa-workflow.test.js (1 test) 88ms
+ ✓ test/technical-ops-api.test.js (5 tests) 117ms
+ ✓ test/controlled-documents.test.js (1 test) 114ms
+ ✓ test/analytics-kpi-dashboard-risk-workflow.test.js (2 tests) 282ms
+ ✓ test/quality-workflows.test.js (2 tests) 88ms
+ ✓ test/integration-adapter-support-bundle.test.js (3 tests) 100ms
+ ✓ test/integration-envelope.test.js (8 tests) 5ms
+ ✓ test/analytics-mart-runtime.test.js (2 tests) 276ms
+ ✓ test/analytics-spc.test.js (1 test) 203ms
+ ✓ test/ops-routing-workflows.test.js (3 tests) 179ms
+ ✓ test/idempotency-entrypoints.test.js (3 tests) 111ms
+ ✓ test/operational-regression.test.js (3 tests) 90ms
+ ✓ test/analytics-measurement-system.test.js (1 test) 205ms
+ ✓ test/integration-connector-runtime.test.js (4 tests) 5ms
+ ✓ test/platform-entitlements-packaging.test.js (2 tests) 3ms
+ ✓ test/auth.test.js (3 tests) 224ms
+ ✓ test/future-analytics-anomaly.test.js (6 tests) 3ms
+ ✓ test/future-analytics-kpi.test.js (5 tests) 4ms
+ ✓ test/analytics-contracts.test.js (5 tests) 3ms
+ ✓ test/future-quality-export-engine.test.js (4 tests) 4ms
+ ✓ test/import-scheduler-worker.test.js (3 tests) 4ms
+ ✓ test/customer-proof-center.test.js (2 tests) 100ms
+ ✓ test/import-onboarding-toolkit.test.js (3 tests) 35ms
+ ✓ test/integration-runtime-policy.test.js (4 tests) 3ms
+ ✓ test/future-quality-risk-escalation.test.js (4 tests) 3ms
+ ✓ test/future-idempotency-envelope.test.js (4 tests) 3ms
+ ✓ test/future-integration-policy.test.js (4 tests) 2ms
+ ✓ test/permissions.test.js (4 tests) 41ms
+ ✓ test/stream-routes-contract.test.js (1 test) 72ms
+ ✓ test/ecosystem-compatibility.test.js (1 test) 28ms
+ ✓ test/revisions.test.js (2 tests) 2ms
+ ✓ test/smoke.test.js (2 tests) 28ms
+
+ Test Files  39 passed (39)
+      Tests  144 passed (144)
+   Start at  19:48:48
+   Duration  12.88s (transform 245ms, setup 24ms, collect 3.47s, tests 5.67s, environment 4ms, prepare 1.03s)
+

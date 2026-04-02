@@ -28,16 +28,22 @@ async function getFirstDimensionId(operationId) {
 }
 
 async function getAllowedToolForDimension(dimensionId) {
-  const { rows } = await query(
-    `SELECT t.id, t.it_num
-     FROM dimension_tools dt
-     JOIN tools t ON t.id=dt.tool_id
-     WHERE dt.dimension_id=$1
-     ORDER BY t.id DESC
-     LIMIT 1`,
-    [dimensionId]
+  const suffix = crypto.randomUUID().slice(0, 8).toUpperCase();
+  const insertTool = await query(
+    `INSERT INTO tools (name, type, it_num, active, visible)
+     VALUES ($1, 'Variable', $2, true, true)
+     RETURNING id, it_num`,
+    [`KPI TOOL ${suffix}`, `IT-KPI-${suffix}`]
   );
-  return rows[0] || null;
+  const tool = insertTool.rows[0] || null;
+  if (!tool) return null;
+  await query(
+    `INSERT INTO dimension_tools (dimension_id, tool_id)
+     VALUES ($1, $2)
+     ON CONFLICT (dimension_id, tool_id) DO NOTHING`,
+    [dimensionId, tool.id]
+  );
+  return tool;
 }
 
 async function createRecordWithTool({ jobId, operationId, dimensionId, toolId, itNum, isOot, operatorUserId = 1 }) {

@@ -122,3 +122,40 @@ export function buildReplayMetadata({
   };
 }
 
+export function buildDeadLetterRecord({
+  runId,
+  attempt,
+  envelope,
+  classification,
+  now = new Date(),
+  reason = "terminal_failure",
+  errorCount = 1
+}) {
+  const sourceType = String(envelope?.sourceType || "");
+  const importType = String(envelope?.importType || "");
+  const token = String(envelope?.idempotencyToken || "");
+  const externalKey = String(envelope?.externalKey || "");
+
+  return {
+    schemaVersion: "int-dead-letter-v1",
+    runId: runId || null,
+    recordedAt: now.toISOString(),
+    reason: String(reason || "terminal_failure"),
+    sourceType,
+    importType,
+    externalKey,
+    idempotencyToken: token,
+    attempt: Number(attempt || 1),
+    errorCount: Number(errorCount || 0),
+    classification: {
+      category: String(classification?.category || "unknown"),
+      code: String(classification?.code || "UNCLASSIFIED"),
+      retryable: Boolean(classification?.retryable)
+    },
+    replayControl: {
+      replayable: true,
+      strategy: "resubmit_with_new_token",
+      requiresNewIdempotencyToken: true
+    }
+  };
+}

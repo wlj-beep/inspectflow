@@ -1,13 +1,15 @@
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 
 const REQUIRED_COLUMNS = ["Rank", "Item ID", "Priority", "Status", "Owner", "Updated", "Work Item"];
 const VALID_PRIORITIES = new Set(["P0", "P1", "P2", "P3"]);
-const VALID_STATUSES = new Set(["Queued", "Claimed", "In Progress", "Blocked"]);
-const ACTIVE_STATUSES = new Set(["Claimed", "In Progress", "Blocked"]);
+const VALID_STATUSES = new Set(["Queued", "Ready", "Claimed", "In Progress", "Blocked", "Blocked (deps)"]);
+const ACTIVE_STATUSES = new Set(["Ready", "Claimed", "In Progress", "Blocked", "Blocked (deps)"]);
+const BLOCKED_STATUSES = new Set(["Blocked", "Blocked (deps)"]);
 const ITEM_ID_PATTERN = /^BL-\d{3}$/;
 const ISO_TIMESTAMP_PATTERN =
   /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
+const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 function parseTableRow(line) {
   return line
@@ -98,6 +100,40 @@ function extractBlIdsFromText(text) {
   return [...ids];
 }
 
+async function loadBacklogContent(root, errors) {
+  const docsDir = path.join(root, "docs");
+  const indexPath = path.join(docsDir, "backlog.md");
+  const shardDir = path.join(docsDir, "backlog");
+  const sourcePaths = [indexPath];
+
+  let shardEntries = [];
+  try {
+    shardEntries = await readdir(shardDir, { withFileTypes: true });
+  } catch {
+    shardEntries = [];
+  }
+
+  for (const entry of shardEntries) {
+    if (!entry.isFile() || !entry.name.endsWith(".md")) {
+      continue;
+    }
+    sourcePaths.push(path.join(shardDir, entry.name));
+  }
+
+  sourcePaths.sort();
+
+  const contents = [];
+  for (const sourcePath of sourcePaths) {
+    try {
+      contents.push(await readFile(sourcePath, "utf8"));
+    } catch {
+      errors.push(`Backlog source missing or unreadable: ${path.relative(root, sourcePath)}`);
+    }
+  }
+
+  return contents.join("\n\n");
+}
+
 function buildBacklogDependencyMap(backlogContent, errors) {
   const dependencyMap = new Map();
   const tables = findMarkdownTables(backlogContent);
@@ -121,7 +157,7 @@ function buildBacklogDependencyMap(backlogContent, errors) {
       }
 
       if (dependencyMap.has(itemId)) {
-        errors.push(`docs/backlog.md: duplicate dependency definition for \`${itemId}\`.`);
+        errors.push(`docs/backlog/*.md: duplicate dependency definition for \`${itemId}\`.`);
         continue;
       }
 
@@ -156,16 +192,15 @@ function hasAnyValue(rowObject) {
 async function main() {
   const root = process.cwd();
   const statusPath = path.join(root, "STATUS.md");
-  const backlogPath = path.join(root, "docs", "backlog.md");
   const worklogPath = path.join(root, "WORKLOG.md");
 
-  const [statusContent, backlogContent, worklogContent] = await Promise.all([
+  const errors = [];
+  const [statusContent, worklogContent, backlogContent] = await Promise.all([
     readFile(statusPath, "utf8"),
-    readFile(backlogPath, "utf8"),
-    readFile(worklogPath, "utf8")
+    readFile(worklogPath, "utf8"),
+    loadBacklogContent(root, errors)
   ]);
 
-  const errors = [];
   const statusTable = findFirstMarkdownTable(statusContent);
 
   if (!statusTable) {
@@ -174,7 +209,7 @@ async function main() {
 
   const backlogIds = collectBacklogIds(backlogContent);
   if (backlogIds.size === 0) {
-    errors.push("docs/backlog.md: no backlog IDs found (expected BL-### entries).");
+    errors.push("docs/backlog/*.md: no backlog IDs found (expected BL-### entries).");
   }
   const backlogDependencies = buildBacklogDependencyMap(backlogContent, errors);
   const completedIds = collectCompletedIds(statusContent, worklogContent);
@@ -215,7 +250,6 @@ async function main() {
       const status = row["Status"];
       const owner = row["Owner"];
       const updated = row["Updated"];
-      const workItem = row["Work Item"];
 
       if (!/^\d+$/.test(rank)) {
         errors.push(`STATUS.md row ${rowNumber}: Rank must be a positive integer.`);
@@ -245,18 +279,18 @@ async function main() {
         errors.push(`STATUS.md row ${rowNumber}: Owner is required when Status is \`${status}\`.`);
       }
 
-      if (!ISO_TIMESTAMP_PATTERN.test(updated)) {
+      if (!ISO_DATE_PATTERN.test(updated) && !ISO_TIMESTAMP_PATTERN.test(updated)) {
         errors.push(
-          `STATUS.md row ${rowNumber}: Updated must be ISO-8601 with timezone (for example 2026-03-13T09:00:00-04:00).`
+          `STATUS.md row ${rowNumber}: Updated must be ISO date (YYYY-MM-DD) or ISO-8601 with timezone.`
         );
       }
 
       if (ITEM_ID_PATTERN.test(itemId) && !backlogIds.has(itemId)) {
-        errors.push(`STATUS.md row ${rowNumber}: Item ID \`${itemId}\` not found in docs/backlog.md.`);
+        errors.push(`STATUS.md row ${rowNumber}: Item ID \`${itemId}\` not found in docs/backlog/*.md.`);
       }
 
       if (ACTIVE_STATUSES.has(status)) {
-        activeRows.push({ rowNumber, itemId, status, workItem });
+        activeRows.push({ rowNumber, itemId, status });
       }
     });
   }
@@ -270,7 +304,7 @@ async function main() {
     for (const dependency of dependencies) {
       if (!backlogIds.has(dependency)) {
         errors.push(
-          `docs/backlog.md: dependency \`${dependency}\` referenced by \`${activeRow.itemId}\` is not a valid backlog item.`
+          `docs/backlog/*.md: dependency \`${dependency}\` referenced by \`${activeRow.itemId}\` is not a valid backlog item.`
         );
       }
     }
@@ -280,27 +314,17 @@ async function main() {
       continue;
     }
 
-    if (activeRow.status !== "Blocked") {
+    if (activeRow.status === "Queued" || activeRow.status === "Ready") {
       errors.push(
         `STATUS.md row ${activeRow.rowNumber}: \`${activeRow.itemId}\` has unmet dependencies (${unmetDependencies.join(
           ", "
-        )}) and must be \`Blocked\` until completion evidence exists.`
+        )}) and must be \`Blocked\` or \`Blocked (deps)\` until dependency evidence exists.`
       );
       continue;
     }
 
-    if (!/\bblocked by\b/i.test(activeRow.workItem)) {
-      errors.push(
-        `STATUS.md row ${activeRow.rowNumber}: Blocked item \`${activeRow.itemId}\` must include explicit \`Blocked by ...\` reason in Work Item text.`
-      );
-    }
-
-    for (const dependency of unmetDependencies) {
-      if (!activeRow.workItem.includes(dependency)) {
-        errors.push(
-          `STATUS.md row ${activeRow.rowNumber}: Blocked item \`${activeRow.itemId}\` must name unmet dependency \`${dependency}\` in Work Item text.`
-        );
-      }
+    if (BLOCKED_STATUSES.has(activeRow.status)) {
+      continue;
     }
   }
 

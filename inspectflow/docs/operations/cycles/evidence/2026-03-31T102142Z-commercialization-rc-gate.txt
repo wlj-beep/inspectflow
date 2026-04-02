@@ -1,0 +1,107 @@
+Commercialization RC gate started at 2026-03-31T102142Z
+Repository: /Users/joshlane/Documents/Playground 2/inspectflow
+Running standardized gate checks...
+
+> inspectflow@0.1.0 test:coordination
+> npm run coordination:check && npm run context:budget
+
+
+> inspectflow@0.1.0 coordination:check
+> node scripts/validate-coordination.mjs
+
+Coordination validation passed.
+
+> inspectflow@0.1.0 context:budget
+> node scripts/context/enforce-context-budget.mjs
+
+PASS: context budget within policy.
+
+> inspectflow@0.1.0 test:api
+> npm run test --prefix backend
+
+
+> inspectflow-backend@0.1.0 test
+> NODE_ENV=test npm run db:test:setup && NODE_ENV=test vitest run
+
+
+> inspectflow-backend@0.1.0 db:test:setup
+> npm run db:migrate:test && npm run db:seed:test
+
+
+> inspectflow-backend@0.1.0 db:migrate:test
+> NODE_ENV=test node src/scripts/migrate.js
+
+Schema applied.
+
+> inspectflow-backend@0.1.0 db:seed:test
+> NODE_ENV=test node src/scripts/seed.js
+
+Seeded local credentials for 107 users.
+Seed applied.
+
+ RUN  v2.1.9 /Users/joshlane/Documents/Playground 2/inspectflow/backend
+
+ ✓ test/backlog-validation.test.js (15 tests) 215ms
+ ✓ test/backlog-validation-imports.test.js (13 tests) 237ms
+ ✓ test/quality-export.test.js (3 tests) 114ms
+ ✓ test/analytics-kpi-dashboard-risk-workflow.test.js (2 tests) 250ms
+ ✓ test/auth-hardening-entitlements.test.js (4 tests) 1528ms
+   ✓ Auth hardening + entitlement contract > records password change and reset events 1069ms
+ ✓ test/analytics-multisite-kpi.test.js (2 tests) 71ms
+ ✓ test/analytics-calibration-impact.test.js (2 tests) 177ms
+ ✓ test/technical-ops-api.test.js (5 tests) 110ms
+ ✓ test/analytics-mart-runtime.test.js (2 tests) 212ms
+ ✓ test/ops-routing-workflows.test.js (3 tests) 153ms
+ ✓ test/integration-adapter-support-bundle.test.js (3 tests) 67ms
+ ✓ test/idempotency-entrypoints.test.js (3 tests) 106ms
+ ✓ test/integration-envelope.test.js (7 tests) 4ms
+ ✓ test/operational-regression.test.js (3 tests) 79ms
+ ✓ test/integration-connector-runtime.test.js (4 tests) 4ms
+ ✓ test/capa-workflow.test.js (1 test) 66ms
+ ✓ test/auth.test.js (3 tests) 195ms
+ ✓ test/future-analytics-anomaly.test.js (6 tests) 3ms
+ ✓ test/future-analytics-kpi.test.js (5 tests) 3ms
+ ✓ test/analytics-contracts.test.js (5 tests) 3ms
+ ✓ test/future-quality-export-engine.test.js (4 tests) 4ms
+ ✓ test/analytics-spc.test.js (1 test) 141ms
+ ✓ test/integration-runtime-policy.test.js (4 tests) 3ms
+ ✓ test/future-quality-risk-escalation.test.js (4 tests) 3ms
+ ✓ test/future-idempotency-envelope.test.js (4 tests) 3ms
+ ✓ test/future-integration-policy.test.js (4 tests) 2ms
+ ✓ test/permissions.test.js (4 tests) 31ms
+ ✓ test/stream-routes-contract.test.js (1 test) 56ms
+ ✓ test/revisions.test.js (2 tests) 2ms
+ ✓ test/smoke.test.js (2 tests) 26ms
+
+ Test Files  30 passed (30)
+      Tests  121 passed (121)
+   Start at  06:21:47
+   Duration  8.82s (transform 156ms, setup 19ms, collect 2.20s, tests 3.87s, environment 3ms, prepare 767ms)
+
+
+> inspectflow@0.1.0 test:ui:mock
+> npm run test:ui --prefix frontend -- --grep @mock
+
+
+> inspectflow-frontend@0.1.0 test:ui
+> playwright test --grep @mock
+
+[2m[WebServer] [22m(node:63254) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[2m[WebServer] [22m(Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 11 tests using 1 worker
+
+  ✓   1 tests/mocked.smoke.spec.js:242:3 › Mocked UI smoke @mock › loads the InspectFlow shell (727ms)
+  ✓   2 tests/mocked.smoke.spec.js:251:3 › Mocked UI smoke @mock › shows loading and success transitions during part creation (1.5s)
+  ✓   3 tests/mocked.smoke.spec.js:270:3 › Mocked UI smoke @mock › shows failure transition when part creation fails (612ms)
+  ✓   4 tests/mocked.smoke.spec.js:288:3 › Mocked UI smoke @mock › reuses original base prefix and increments family run index for duplicate lot jobs (474ms)
+  ✓   5 tests/mocked.smoke.spec.js:325:3 › Mocked UI smoke @mock › allows admins to import tools via CSV from the Data Imports tab (539ms)
+  ✓   6 tests/mocked.smoke.spec.js:347:3 › Mocked UI smoke @mock › restores route state on reload and browser back/forward (704ms)
+  ✓   7 tests/mocked.smoke.spec.js:369:3 › Mocked UI smoke @mock › scopes '?' shortcut and restores focus when help closes (485ms)
+  ✓   8 tests/mocked.smoke.spec.js:391:3 › Mocked UI smoke @mock › shows role-aware dashboard primary actions (433ms)
+  ✓   9 tests/mocked.smoke.spec.js:405:3 › Mocked UI smoke @mock › guides first-run onboarding and can reset the walkthrough (477ms)
+  ✓  10 tests/mocked.smoke.spec.js:425:3 › Mocked UI smoke @mock › shows operator-specific dashboard primary action (415ms)
+  ✓  11 tests/mocked.smoke.spec.js:435:3 › Mocked UI smoke @mock › uses one coherent admin navigation surface (461ms)
+
+  11 passed (8.5s)
+FAIL: DATABASE_URL_TEST must be set for live UI gate.

@@ -3,8 +3,8 @@
 Parallel frontend workstream has started.
 
 ## Current State
-- Demo UI copied into new workspace as baseline.
-- App now enforces auth-aware shell entry and renders legacy UI in authenticated mode.
+- Demo UI remains the migration baseline while the live shell is decomposed into focused modules.
+- App now enforces auth-aware shell entry and renders the new shell directly.
 - BL-028 modularization slice landed for `OPS-JOBFLOW-v1`:
   - domain constants extracted to `frontend/src/domains/jobflow/constants.js`,
   - API-to-view mappers extracted to `frontend/src/domains/jobflow/mappers.js`,
@@ -12,7 +12,6 @@ Parallel frontend workstream has started.
   - legacy shell bootstrap/session flows rewired through the domain adapter.
 
 ## Files
-- `frontend/src/legacy/InspectFlowDemo.jsx`
 - `frontend/src/App.jsx`
 - `frontend/src/domains/jobflow/constants.js`
 - `frontend/src/domains/jobflow/mappers.js`

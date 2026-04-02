@@ -1,0 +1,5 @@
+Release path bundle directory: /Users/joshlane/Documents/Playground 2/inspectflow/docs/operations/cycles/evidence/2026-04-01T232914Z-release-path
+Running 01-test-coordination: npm run test:coordination
+FAIL: 01-test-coordination
+Release path failed.
+Bundle written to /Users/joshlane/Documents/Playground 2/inspectflow/docs/operations/cycles/evidence/2026-04-01T232914Z-release-path

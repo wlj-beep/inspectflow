@@ -27,19 +27,47 @@ test.describe("Live UI critical path @live", () => {
   }
 
   async function login(page, userLabel) {
-    await page.getByLabel("User").selectOption({ label: userLabel });
+    const username = page.getByLabel("Username");
+    const nav = page.getByRole("navigation", { name: "Primary navigation" });
+    await expect.poll(async () => {
+      const usernameVisible = await username.isVisible().catch(() => false);
+      const navVisible = await nav.isVisible().catch(() => false);
+      return usernameVisible || navVisible;
+    }, { timeout: 15000 }).toBe(true);
+    if (await nav.isVisible().catch(() => false)) {
+      return;
+    }
+    await username.fill(userLabel);
     await page.getByLabel("Password").fill(DEFAULT_PASSWORD);
     await page.getByRole("button", { name: "Sign In" }).click();
-    await expect(page.getByText("Manufacturing Inspection System")).toBeVisible();
+    await expect(nav).toBeVisible();
   }
 
   test("admin creates job, operator submits measurements, record persists", async ({ page }) => {
+    page.on("pageerror", (error) => {
+      console.log(`[live][pageerror] ${error.stack || error.message}`);
+    });
+    page.on("console", (message) => {
+      if (message.type() === "error" || message.type() === "warning") {
+        console.log(`[live][console:${message.type()}] ${message.text()}`);
+      }
+    });
+    page.on("response", (response) => {
+      if (response.status() >= 400) {
+        console.log(`[live][response:${response.status()}] ${response.url()}`);
+      }
+    });
     const jobId = `J-UI-${Date.now()}`;
     const lot = `Lot-${Date.now()}`;
     const partId = "1234";
 
+    await page.context().clearCookies();
+    await page.addInitScript(() => {
+      window.localStorage.clear();
+      window.sessionStorage.clear();
+    });
     await page.goto("/");
-    await login(page, "S. Admin - Admin");
+    await login(page, "S. Admin");
     const partBaselineRes = await page.request.get(`${API_URL}/api/parts/${partId}`, {
       headers: { "x-user-role": "Admin" }
     });
@@ -47,7 +75,7 @@ test.describe("Live UI critical path @live", () => {
 
     await expect(page.locator(".data-chip")).toContainText(/Live Data|Local Demo/);
 
-    await page.getByRole("button", { name: "Admin" }).click();
+    await page.getByRole("button", { name: "Admin", exact: true }).click();
 
     const createCard = page.locator(".card").filter({ hasText: "Create New Job" });
     await createCard.getByPlaceholder("J-10045").fill(jobId);
@@ -87,7 +115,7 @@ test.describe("Live UI critical path @live", () => {
 
     await page.request.post(`${API_URL}/api/auth/logout`);
     await page.goto("/");
-    await login(page, "J. Morris - Operator");
+    await login(page, "J. Morris");
 
     await page.getByRole("button", { name: "Operator Entry" }).click();
     const jobEntryCard = page.locator(".card").filter({ hasText: "Job Entry" });

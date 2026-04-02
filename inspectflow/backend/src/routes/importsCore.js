@@ -7,6 +7,7 @@ import {
 } from "../revisions.js";
 import { executeConnectorRuntime } from "../services/integration/connectorRuntime.js";
 import { mapErpJobBatchToCanonical } from "../services/integration/erpJobAdapter.js";
+import { adaptMetrologyPayload } from "../services/integration/metrologyAdapter.js";
 import { buildIntegrationSupportBundle } from "../services/observability/integrationSupportBundle.js";
 import {
   createPayloadFingerprint
@@ -217,19 +218,30 @@ export function parseAdapterPack(value) {
   if (["erp_job_v1", "erp_jobs_v1", "erp_job", "erp_jobs"].includes(v)) {
     return "erp_job_v1";
   }
+  if ([
+    "metrology_cmm_v1",
+    "metrology_v1",
+    "cmm_results_v1",
+    "cmm_measurements_v1",
+    "cmm_v1",
+    "cmm_results",
+    "metrology_cmm"
+  ].includes(v)) {
+    return "metrology_cmm_v1";
+  }
   return null;
 }
 
 export function resolveAdapterPack({ importType, payload = null, options = {} }) {
   const normalizedImportType = parseImportType(importType);
-  if (normalizedImportType !== "jobs") return null;
-
   const fromOptions = parseAdapterPack(options?.adapterPack || options?.adapter_pack || options?.adapter);
-  if (fromOptions) return fromOptions;
-  if (payload && typeof payload === "object") {
-    const fromPayload = parseAdapterPack(payload.adapterPack || payload.adapter_pack || payload.adapter);
-    if (fromPayload) return fromPayload;
-  }
+  const fromPayload = payload && typeof payload === "object"
+    ? parseAdapterPack(payload.adapterPack || payload.adapter_pack || payload.adapter)
+    : null;
+  const candidate = fromOptions || fromPayload;
+  if (!candidate) return null;
+  if (normalizedImportType === "jobs" && candidate === "erp_job_v1") return candidate;
+  if (normalizedImportType === "measurements" && candidate === "metrology_cmm_v1") return candidate;
   return null;
 }
 
@@ -600,7 +612,7 @@ async function registerIdempotencyLedgerEntry({
   };
 }
 
-async function finalizeIdempotencyLedgerEntry({ idempotencyKey, runId, runStatus }) {
+export async function finalizeIdempotencyLedgerEntry({ idempotencyKey, runId, runStatus }) {
   if (!idempotencyKey) return;
   await query(
     `UPDATE import_idempotency_ledger
@@ -1177,7 +1189,7 @@ async function getDefaultOperatorUserId(client) {
   return fallback.rows[0] ? Number(fallback.rows[0].id) : null;
 }
 
-async function importMeasurementsRows(rows, options = {}) {
+export async function importMeasurementsRows(rows, options = {}) {
   const sourceType = String(options.sourceType || "manual");
   const role = options.role || null;
   const requireOpenJob = options.requireOpenJob !== false;
@@ -1466,7 +1478,7 @@ async function importMeasurementsRows(rows, options = {}) {
   };
 }
 
-async function persistUnresolvedItems(items, meta = {}) {
+export async function persistUnresolvedItems(items, meta = {}) {
   if (!Array.isArray(items) || !items.length) return;
   for (const item of items) {
     await query(
@@ -1485,7 +1497,7 @@ async function persistUnresolvedItems(items, meta = {}) {
   }
 }
 
-async function persistExternalEntityRefs(items, meta = {}) {
+export async function persistExternalEntityRefs(items, meta = {}) {
   if (!Array.isArray(items) || !items.length) return;
   for (const item of items) {
     const importType = parseImportType(item.importType || meta.importType);
@@ -1534,6 +1546,7 @@ export function summarizeForRun(result, runtime = null) {
       attempts: Array.isArray(runtime.attempts) ? runtime.attempts : [],
       idempotencyKey: runtime.idempotencyKey || null,
       replayMetadata: runtime.replayMetadata || null,
+      deadLetter: runtime.deadLetter || null,
       supportBundle: runtime.supportBundle || null
     };
   }
@@ -1573,7 +1586,7 @@ export function deriveSupportBundleFromRunRow(runRow) {
   });
 }
 
-async function insertRunLog({ integrationId = null, sourceType, importType, triggerMode, result, runtime = null }) {
+export async function insertRunLog({ integrationId = null, sourceType, importType, triggerMode, result, runtime = null }) {
   const summary = summarizeForRun(result, runtime);
   const status = runtime?.status || deriveRunStatus(summary);
   const errors = Array.isArray(result?.errors) ? result.errors : [];
@@ -1672,7 +1685,7 @@ async function fetchIntegrationPayload(integration) {
   return { csvText: text };
 }
 
-async function executeConnectorManagedImport({
+export async function executeConnectorManagedImport({
   integrationId = null,
   sourceType,
   importType,
@@ -1689,6 +1702,13 @@ async function executeConnectorManagedImport({
         triggerMode,
         integrationId
       })
+    : adapterPack === "metrology_cmm_v1"
+      ? adaptMetrologyPayload({
+          payload,
+          sourceType,
+          triggerMode,
+          integrationId
+        })
     : null;
   const runtimePayload = adapterResult?.payload || payload;
 
@@ -1750,6 +1770,7 @@ async function executeConnectorManagedImport({
       idempotencyKey: runtime.idempotencyKey || null,
       runtimeAttempts: Array.isArray(runtime.attempts) ? runtime.attempts : [],
       replayMetadata: runtime.replayMetadata || null,
+      deadLetter: runtime.deadLetter || null,
       supportBundle: runtime.supportBundle || null
     },
     runtime,
@@ -1885,7 +1906,7 @@ export async function runConfiguredIntegration(integration, { triggerMode = "man
   };
 }
 
-async function pollScheduledIntegrations() {
+export async function pollScheduledIntegrations() {
   const { rows } = await query(
     `SELECT *
      FROM import_integrations
@@ -1919,6 +1940,7 @@ async function pollScheduledIntegrations() {
 
 export function startImportScheduler() {
   if (process.env.NODE_ENV === "test") return;
+  if (String(process.env.IMPORT_SCHEDULER_ALLOW_LEGACY || "").toLowerCase() !== "true") return;
   if (schedulerHandle) return;
   schedulerHandle = setInterval(() => {
     pollScheduledIntegrations().catch(() => {});

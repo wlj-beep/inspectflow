@@ -17,16 +17,18 @@ trap cleanup EXIT
 cd "${ROOT_DIR}"
 
 if [[ -z "${DATABASE_URL_TEST:-}" ]]; then
-  echo "DATABASE_URL_TEST is required for live UI tests."
-  exit 1
+  export DATABASE_URL_TEST="postgres://postgres@localhost:5432/inspectflow_test"
+  echo "[ui-live] DATABASE_URL_TEST not set; defaulting to ${DATABASE_URL_TEST}."
 fi
 
 echo "[ui-live] Preparing test database..."
 npm run db:test:setup
 
 export DATABASE_URL="${DATABASE_URL:-${DATABASE_URL_TEST}}"
-export VITE_API_URL="${VITE_API_URL:-http://127.0.0.1:4000}"
+export VITE_API_URL="${VITE_API_URL:-http://localhost:4000}"
 export PLAYWRIGHT_API_URL="${PLAYWRIGHT_API_URL:-${VITE_API_URL}}"
+export AUTH_TOKEN_PEPPER="${AUTH_TOKEN_PEPPER:-inspectflow-ui-live-pepper}"
+export FRONTEND_ORIGIN="${FRONTEND_ORIGIN:-http://127.0.0.1:5173,http://localhost:5173}"
 
 echo "[ui-live] Starting backend API..."
 ALLOW_LEGACY_ROLE_HEADER=true npm run dev --prefix backend > "${BACKEND_LOG}" 2>&1 &
@@ -46,4 +48,5 @@ if ! curl -fsS "http://127.0.0.1:4000/health" >/dev/null 2>&1; then
 fi
 
 echo "[ui-live] Running live Playwright suite..."
+export CI="${CI:-1}"
 PLAYWRIGHT_LIVE=1 npm run test:ui --prefix frontend -- --grep @live

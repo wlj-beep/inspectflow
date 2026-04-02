@@ -1,0 +1,17 @@
+Step: 01-test-coordination
+Started: 2026-04-01T23:29:14Z
+Command: npm run test:coordination
+
+
+> inspectflow@0.1.0 test:coordination
+> npm run coordination:check && npm run context:budget
+
+
+> inspectflow@0.1.0 coordination:check
+> node scripts/validate-coordination.mjs
+
+Coordination validation failed:
+
+- STATUS.md row 1: column count mismatch (expected 7, got 6).
+- STATUS.md row 2: column count mismatch (expected 7, got 6).
+- STATUS.md row 3: column count mismatch (expected 7, got 6).

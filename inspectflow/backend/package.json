@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "node src/index.js",
     "start": "node src/index.js",
+    "worker:imports": "node src/scripts/importSchedulerWorker.js",
     "db:migrate": "node src/scripts/migrate.js",
     "db:seed": "node src/scripts/seed.js",
     "db:migrate:test": "NODE_ENV=test node src/scripts/migrate.js",
@@ -17,6 +18,8 @@
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
+    "express-rate-limit": "^8.3.1",
+    "helmet": "^8.1.0",
     "pg": "^8.11.5"
   },
   "devDependencies": {

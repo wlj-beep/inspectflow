@@ -10,6 +10,15 @@ Use this ledger format for each controller run.
 - `Sub-Agents Active`: list track aliases
 - `Overall Gate`: `Green | Yellow | Red`
 
+## Token and Cost Metrics
+- `Controller Prompt Tokens`: `<int>`
+- `Sub-Agent Prompt Tokens (Total)`: `<int>`
+- `Completion Tokens (Total)`: `<int>`
+- `Total Tokens`: `<int>`
+- `Estimated Cost`: `<currency>`
+- `Tokens per BL`: `<int>`
+- `Tokens per Accepted Change`: `<int>`
+
 ## Findings Table
 | Cycle | Gate | Severity | BL IDs | Track | Evidence | Required Action | Due By | Block New Work (Y/N) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |

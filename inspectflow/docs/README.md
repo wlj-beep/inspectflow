@@ -12,7 +12,6 @@
 9. `deployment-governance.md`
 10. `test-plan.md`
 11. `roadmap-v2-v3-beyond.md`
-12. `conflict-audit-2026-03.md`
 
 ## Core Product Docs
 - Target State: `target-state.md`
@@ -37,7 +36,6 @@
 - Direct Push Mode: `direct-push-mode.md`
 - Test Plan: `test-plan.md`
 - Roadmap v2/v3/beyond: `roadmap-v2-v3-beyond.md`
-- Conflict Audit: `conflict-audit-2026-03.md`
 
 ## Stream Interface Contracts
 - Platform: `stream-contracts-plat.md`
@@ -52,3 +50,8 @@
 - Agent Roles: `agent-roles.md`
 - ADRs: `adr/`
 - Import Templates: `templates/`
+
+## Archived Review Notes
+- `ui-analysis-2026-03-28.md`
+- `conflict-audit-2026-03.md`
+- `operations/cycles/2026-03-30-C1-audit-review-report.md`
