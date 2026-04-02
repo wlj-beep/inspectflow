@@ -78,6 +78,37 @@ describe("technical ops API", () => {
       contractId: "PLAT-DEPLOY-v1"
     });
     expect(res.body.health?.service).toBe("inspectflow-backend");
+    expect(res.body.posture).toMatchObject({
+      contractId: "PLAT-OPS-v1",
+      status: expect.stringMatching(/healthy|warning|degraded|down/),
+      tone: expect.stringMatching(/success|warning|danger/)
+    });
+    expect(res.body.runtimeSlo).toMatchObject({
+      contractId: "PLAT-SLO-v1",
+      current: {
+        status: expect.stringMatching(/healthy|warning|degraded|down/),
+        tone: expect.stringMatching(/success|warning|danger/)
+      },
+      targets: {
+        uptime: {
+          targetPct: 99.5
+        },
+        importSuccess: {
+          targetPct: 99
+        }
+      }
+    });
+    expect(Array.isArray(res.body.runtimeSlo?.signals)).toBe(true);
+    expect(Array.isArray(res.body.posture?.signals)).toBe(true);
+    expect(res.body.runtimeSlo?.alertThresholds).toMatchObject({
+      backupFreshnessHours: {
+        warning: 24,
+        degraded: 72
+      }
+    });
+    expect(res.body.runtimeSlo?.incidentResponse).toMatchObject({
+      runbookPath: "docs/technical-ops-runbook.md"
+    });
     expect(typeof res.body.database?.counts?.users_count).toBe("number");
     expect(res.body.storage?.directories?.backups).toMatchObject({ exists: true });
     expect(res.body.backups?.recentBackups?.length).toBeGreaterThan(0);
@@ -153,6 +184,23 @@ describe("technical ops API", () => {
       .set("x-user-role", "Admin");
     expect(before.status).toBe(200);
     expect(before.body.policy).toBeTruthy();
+    expect(before.body.dataGrowth).toMatchObject({
+      reviewCadenceDays: 30,
+      archivalRollbackWindowDays: 14
+    });
+    expect(before.body.operatorControls?.policyEvidenceEndpoint).toBe("/api/technical-ops/lifecycle/summary");
+    expect(before.body.operatorControls?.runbookPath).toBe("docs/technical-ops-runbook.md");
+
+    const recordsRecommendation = before.body.dataGrowth?.recommendations?.find((item) => item.table === "records");
+    expect(recordsRecommendation).toBeTruthy();
+    expect(recordsRecommendation.partitionKey).toBe("timestamp");
+    expect(Array.isArray(recordsRecommendation.indexGuidance)).toBe(true);
+
+    const recordsFootprint = before.body.dataGrowth?.currentFootprint?.tables?.find((item) => item.table === "records");
+    expect(recordsFootprint).toBeTruthy();
+    expect(typeof recordsFootprint.rowCount).toBe("number");
+    expect(["within_policy", "review_required"]).toContain(recordsFootprint.reviewStatus);
+    expect(Array.isArray(before.body.dataGrowth?.operatorNotes)).toBe(true);
 
     const updated = await request(app)
       .post("/api/technical-ops/lifecycle/retention")
@@ -171,6 +219,7 @@ describe("technical ops API", () => {
         targetLogBudgetMb: 1536
       }
     });
+    expect(updated.body.policy?.dataGrowthPolicy?.schemaVersion).toBe("tech-ops-data-growth-v1");
 
     const after = await request(app)
       .get("/api/technical-ops/lifecycle/summary")
@@ -182,5 +231,6 @@ describe("technical ops API", () => {
       targetLogBudgetMb: 1536
     });
     expect(after.body.operatorControls?.retentionUpdateEndpoint).toBe("/api/technical-ops/lifecycle/retention");
+    expect(after.body.dataGrowth?.currentFootprint?.backupBytes).toBe(after.body.footprint?.backupBytes);
   });
 });

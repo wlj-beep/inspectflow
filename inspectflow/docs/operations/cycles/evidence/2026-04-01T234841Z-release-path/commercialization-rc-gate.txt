@@ -1,0 +1,261 @@
+Commercialization RC gate started at 2026-04-01T234841Z
+Repository: /Users/joshlane/Documents/Playground 2/inspectflow
+Status file: /Users/joshlane/Documents/Playground 2/inspectflow/STATUS.md
+Worklog file: /Users/joshlane/Documents/Playground 2/inspectflow/WORKLOG.md
+Evidence file: /Users/joshlane/Documents/Playground 2/inspectflow/docs/operations/cycles/evidence/2026-04-01T234841Z-release-path/commercialization-rc-gate.txt
+Standardized command: npm run test:standardized
+Checking required evidence artifacts...
+Checking prerequisite backlog recoveries...
+PASS: BL-084 is marked completed in STATUS.md.
+PASS: BL-084 has a matching WORKLOG.md record.
+PASS: BL-085 is marked completed in STATUS.md.
+PASS: BL-085 has a matching WORKLOG.md record.
+PASS: BL-091 is marked completed in STATUS.md.
+PASS: BL-091 has a matching WORKLOG.md record.
+Running standardized commercialization gate...
+
+> inspectflow@0.1.0 test:standardized
+> npm run test:coordination && npm run test:api && npm run test:ui:mock && npm run test:ui:live
+
+
+> inspectflow@0.1.0 test:coordination
+> npm run coordination:check && npm run context:budget
+
+
+> inspectflow@0.1.0 coordination:check
+> node scripts/validate-coordination.mjs
+
+Coordination validation passed.
+
+> inspectflow@0.1.0 context:budget
+> node scripts/context/enforce-context-budget.mjs
+
+PASS: context budget within policy.
+
+> inspectflow@0.1.0 test:api
+> npm run test --prefix backend
+
+
+> inspectflow-backend@0.1.0 test
+> NODE_ENV=test npm run db:test:setup && NODE_ENV=test vitest run
+
+
+> inspectflow-backend@0.1.0 db:test:setup
+> npm run db:migrate:test && npm run db:seed:test
+
+
+> inspectflow-backend@0.1.0 db:migrate:test
+> NODE_ENV=test node src/scripts/migrate.js
+
+Schema applied.
+
+> inspectflow-backend@0.1.0 db:seed:test
+> NODE_ENV=test node src/scripts/seed.js
+
+Seeded local credentials for 163 users.
+Seed applied.
+
+ RUN  v2.1.9 /Users/joshlane/Documents/Playground 2/inspectflow/backend
+
+ ✓ test/backlog-validation-imports.test.js (13 tests) 200ms
+ ✓ test/backlog-validation.test.js (15 tests) 206ms
+ ✓ test/quality-export.test.js (4 tests) 139ms
+ ✓ test/auth-hardening-entitlements.test.js (7 tests) 1847ms
+   ✓ Auth hardening + entitlement contract > records password change and reset events 1024ms
+ ✓ test/analytics-pilot-readiness.test.js (2 tests) 80ms
+ ✓ test/analytics-multisite-kpi.test.js (3 tests) 78ms
+ ✓ test/analytics-calibration-impact.test.js (2 tests) 257ms
+ ✓ test/capa-workflow.test.js (1 test) 83ms
+ ✓ test/technical-ops-api.test.js (5 tests) 112ms
+ ✓ test/controlled-documents.test.js (1 test) 101ms
+ ✓ test/analytics-kpi-dashboard-risk-workflow.test.js (2 tests) 260ms
+ ✓ test/quality-workflows.test.js (2 tests) 80ms
+ ✓ test/integration-adapter-support-bundle.test.js (3 tests) 102ms
+ ✓ test/integration-envelope.test.js (8 tests) 6ms
+ ✓ test/analytics-mart-runtime.test.js (2 tests) 271ms
+ ✓ test/analytics-spc.test.js (1 test) 164ms
+ ✓ test/ops-routing-workflows.test.js (3 tests) 160ms
+ ✓ test/idempotency-entrypoints.test.js (3 tests) 100ms
+ ✓ test/operational-regression.test.js (3 tests) 84ms
+ ✓ test/analytics-measurement-system.test.js (1 test) 199ms
+ ✓ test/integration-connector-runtime.test.js (4 tests) 4ms
+ ✓ test/platform-entitlements-packaging.test.js (2 tests) 3ms
+ ✓ test/auth.test.js (3 tests) 203ms
+ ✓ test/future-analytics-anomaly.test.js (6 tests) 2ms
+ ✓ test/future-analytics-kpi.test.js (5 tests) 3ms
+ ✓ test/analytics-contracts.test.js (5 tests) 3ms
+ ✓ test/future-quality-export-engine.test.js (4 tests) 4ms
+ ✓ test/import-scheduler-worker.test.js (3 tests) 3ms
+ ✓ test/customer-proof-center.test.js (2 tests) 96ms
+ ✓ test/import-onboarding-toolkit.test.js (3 tests) 32ms
+ ✓ test/integration-runtime-policy.test.js (4 tests) 3ms
+ ✓ test/future-quality-risk-escalation.test.js (4 tests) 2ms
+ ✓ test/future-idempotency-envelope.test.js (4 tests) 2ms
+ ✓ test/future-integration-policy.test.js (4 tests) 2ms
+ ✓ test/permissions.test.js (4 tests) 33ms
+ ✓ test/stream-routes-contract.test.js (1 test) 64ms
+ ✓ test/ecosystem-compatibility.test.js (1 test) 27ms
+ ✓ test/revisions.test.js (2 tests) 1ms
+ ✓ test/smoke.test.js (2 tests) 28ms
+
+ Test Files  39 passed (39)
+      Tests  144 passed (144)
+   Start at  19:49:41
+   Duration  11.95s (transform 192ms, setup 18ms, collect 2.94s, tests 5.04s, environment 3ms, prepare 960ms)
+
+
+> inspectflow@0.1.0 test:ui:mock
+> npm run test:ui --prefix frontend -- --grep @mock
+
+
+> inspectflow-frontend@0.1.0 test:ui
+> playwright test --grep @mock
+
+[2m[WebServer] [22m(node:99091) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[2m[WebServer] [22m(Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 15 tests using 3 workers
+
+(node:99094) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:99093) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:99095) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:99093) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:99094) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:99095) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓   3 tests/mocked.smoke.spec.js:250:3 › Mocked UI smoke @mock › loads the InspectFlow shell (992ms)
+  ✓   1 tests/navigation-url-driven.spec.js:142:3 › URL-driven navigation (BL-062) @mock › admin sub-tab is encoded in URL and survives back/forward (1.4s)
+  ✓   2 tests/shell-layout.spec.js:205:3 › shell layout @mock › stays within the viewport at desktop and tablet widths (2.0s)
+  ✓   4 tests/mocked.smoke.spec.js:259:3 › Mocked UI smoke @mock › shows loading and success transitions during part creation (2.0s)
+  ✓   5 tests/mocked.smoke.spec.js:278:3 › Mocked UI smoke @mock › shows failure transition when part creation fails (1.0s)
+  ✓   6 tests/mocked.smoke.spec.js:296:3 › Mocked UI smoke @mock › reuses original base prefix and increments family run index for duplicate lot jobs (636ms)
+  ✓   7 tests/mocked.smoke.spec.js:333:3 › Mocked UI smoke @mock › allows admins to import tools via CSV from the Data Imports tab (713ms)
+  ✓   8 tests/mocked.smoke.spec.js:355:3 › Mocked UI smoke @mock › restores route state on reload and browser back/forward (1.1s)
+  ✓   9 tests/mocked.smoke.spec.js:377:3 › Mocked UI smoke @mock › scopes '?' shortcut and restores focus when help closes (641ms)
+  ✓  10 tests/mocked.smoke.spec.js:399:3 › Mocked UI smoke @mock › shows role-aware dashboard primary actions (567ms)
+  ✓  11 tests/mocked.smoke.spec.js:413:3 › Mocked UI smoke @mock › guides first-run onboarding and can reset the walkthrough (702ms)
+  ✓  12 tests/mocked.smoke.spec.js:439:3 › Mocked UI smoke @mock › shows system trust indicators for backup freshness, update readiness, import health, and audit confidence (501ms)
+  ✓  13 tests/mocked.smoke.spec.js:454:3 › Mocked UI smoke @mock › shows operator-specific dashboard primary action (464ms)
+  ✓  14 tests/mocked.smoke.spec.js:464:3 › Mocked UI smoke @mock › uses one coherent admin navigation surface (834ms)
+  ✓  15 tests/mocked.smoke.spec.js:476:3 › Mocked UI smoke @mock › paginates jobs and records consistently for large datasets (752ms)
+
+  15 passed (12.9s)
+
+> inspectflow@0.1.0 test:ui:live
+> bash scripts/run-ui-live-tests.sh
+
+[ui-live] Preparing test database...
+
+> inspectflow@0.1.0 db:test:setup
+> npm run db:test:setup --prefix backend
+
+
+> inspectflow-backend@0.1.0 db:test:setup
+> npm run db:migrate:test && npm run db:seed:test
+
+
+> inspectflow-backend@0.1.0 db:migrate:test
+> NODE_ENV=test node src/scripts/migrate.js
+
+Schema applied.
+
+> inspectflow-backend@0.1.0 db:seed:test
+> NODE_ENV=test node src/scripts/seed.js
+
+Seeded local credentials for 165 users.
+Seed applied.
+[ui-live] Starting backend API...
+[ui-live] Running live Playwright suite...
+
+> inspectflow-frontend@0.1.0 test:ui
+> playwright test --grep @live
+
+[2m[WebServer] [22m(node:99524) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[2m[WebServer] [22m(Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 1 test using 1 worker
+
+(node:99526) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:99526) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[live][response:401] http://localhost:4000/api/auth/session
+[live][console:error] Failed to load resource: the server responded with a status of 401 (Unauthorized)
+[live][pageerror] TypeError: Cannot read properties of undefined (reading 'jobNumber')
+    at http://localhost:5173/src/AppShell.jsx:519:45
+    at basicStateReducer (http://localhost:5173/node_modules/.vite/deps/chunk-373CG7ZK.js?v=6f5cbfb2:11701:49)
+    at updateReducer (http://localhost:5173/node_modules/.vite/deps/chunk-373CG7ZK.js?v=6f5cbfb2:11792:30)
+    at updateState (http://localhost:5173/node_modules/.vite/deps/chunk-373CG7ZK.js?v=6f5cbfb2:12019:18)
+    at Object.useState (http://localhost:5173/node_modules/.vite/deps/chunk-373CG7ZK.js?v=6f5cbfb2:12751:24)
+    at useState (http://localhost:5173/node_modules/.vite/deps/chunk-REFQX4J5.js?v=6f5cbfb2:1067:29)
+    at AppShell (http://localhost:5173/src/AppShell.jsx:110:27)
+    at renderWithHooks (http://localhost:5173/node_modules/.vite/deps/chunk-373CG7ZK.js?v=6f5cbfb2:11546:26)
+    at updateFunctionComponent (http://localhost:5173/node_modules/.vite/deps/chunk-373CG7ZK.js?v=6f5cbfb2:14580:28)
+    at beginWork (http://localhost:5173/node_modules/.vite/deps/chunk-373CG7ZK.js?v=6f5cbfb2:15922:22)
+[live][pageerror] TypeError: Cannot read properties of undefined (reading 'jobNumber')
+    at http://localhost:5173/src/AppShell.jsx:519:45
+    at basicStateReducer (http://localhost:5173/node_modules/.vite/deps/chunk-373CG7ZK.js?v=6f5cbfb2:11701:49)
+    at updateReducer (http://localhost:5173/node_modules/.vite/deps/chunk-373CG7ZK.js?v=6f5cbfb2:11792:30)
+    at updateState (http://localhost:5173/node_modules/.vite/deps/chunk-373CG7ZK.js?v=6f5cbfb2:12019:18)
+    at Object.useState (http://localhost:5173/node_modules/.vite/deps/chunk-373CG7ZK.js?v=6f5cbfb2:12751:24)
+    at useState (http://localhost:5173/node_modules/.vite/deps/chunk-REFQX4J5.js?v=6f5cbfb2:1067:29)
+    at AppShell (http://localhost:5173/src/AppShell.jsx:110:27)
+    at renderWithHooks (http://localhost:5173/node_modules/.vite/deps/chunk-373CG7ZK.js?v=6f5cbfb2:11546:26)
+    at updateFunctionComponent (http://localhost:5173/node_modules/.vite/deps/chunk-373CG7ZK.js?v=6f5cbfb2:14580:28)
+    at beginWork (http://localhost:5173/node_modules/.vite/deps/chunk-373CG7ZK.js?v=6f5cbfb2:15922:22)
+[live][console:error] The above error occurred in the <AppShell> component:
+
+    at AppShell (http://localhost:5173/src/AppShell.jsx:97:36)
+    at App (http://localhost:5173/src/App.jsx:24:31)
+
+Consider adding an error boundary to your tree to customize error handling behavior.
+Visit https://reactjs.org/link/error-boundaries to learn more about error boundaries.
+[live][pageerror] TypeError: Cannot read properties of undefined (reading 'jobNumber')
+    at http://localhost:5173/src/AppShell.jsx:519:45
+    at basicStateReducer (http://localhost:5173/node_modules/.vite/deps/chunk-373CG7ZK.js?v=6f5cbfb2:11701:49)
+    at updateReducer (http://localhost:5173/node_modules/.vite/deps/chunk-373CG7ZK.js?v=6f5cbfb2:11792:30)
+    at updateState (http://localhost:5173/node_modules/.vite/deps/chunk-373CG7ZK.js?v=6f5cbfb2:12019:18)
+    at Object.useState (http://localhost:5173/node_modules/.vite/deps/chunk-373CG7ZK.js?v=6f5cbfb2:12751:24)
+    at useState (http://localhost:5173/node_modules/.vite/deps/chunk-REFQX4J5.js?v=6f5cbfb2:1067:29)
+    at AppShell (http://localhost:5173/src/AppShell.jsx:110:27)
+    at renderWithHooks (http://localhost:5173/node_modules/.vite/deps/chunk-373CG7ZK.js?v=6f5cbfb2:11546:26)
+    at updateFunctionComponent (http://localhost:5173/node_modules/.vite/deps/chunk-373CG7ZK.js?v=6f5cbfb2:14580:28)
+    at beginWork (http://localhost:5173/node_modules/.vite/deps/chunk-373CG7ZK.js?v=6f5cbfb2:15922:22)
+[live][response:401] http://localhost:4000/api/auth/session
+[live][console:error] Failed to load resource: the server responded with a status of 401 (Unauthorized)
+  ✘  1 tests/live.critical.spec.js:40:3 › Live UI critical path @live › admin creates job, operator submits measurements, record persists (7.2s)
+
+
+  1) tests/live.critical.spec.js:40:3 › Live UI critical path @live › admin creates job, operator submits measurements, record persists 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: getByText('Manufacturing Inspection System')
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 5000ms[22m
+    [2m  - waiting for getByText('Manufacturing Inspection System')[22m
+
+
+      29 |   async function login(page, userLabel) {
+      30 |     if (await page.getByLabel("Username").count() === 0) {
+    > 31 |       await expect(page.getByText("Manufacturing Inspection System")).toBeVisible();
+         |                                                                       ^
+      32 |       return;
+      33 |     }
+      34 |     await page.getByLabel("Username").fill(userLabel);
+        at login (/Users/joshlane/Documents/Playground 2/inspectflow/frontend/tests/live.critical.spec.js:31:71)
+        at /Users/joshlane/Documents/Playground 2/inspectflow/frontend/tests/live.critical.spec.js:112:5
+
+    Error Context: test-results/live.critical-Live-UI-crit-301f1-easurements-record-persists/error-context.md
+
+  1 failed
+    tests/live.critical.spec.js:40:3 › Live UI critical path @live › admin creates job, operator submits measurements, record persists 

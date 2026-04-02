@@ -1,0 +1,12 @@
+{
+  "fixtureId": "bl103-commercialization-target",
+  "totalJobs": 625,
+  "totalMeasurementRows": 6250,
+  "importP95Ms": 980,
+  "dashboardP95Ms": 760,
+  "queueDrainSeconds": 540,
+  "errorRatePct": 0.2,
+  "duplicateWrites": 0,
+  "replayFailures": 0,
+  "supportBundleLeak": false
+}

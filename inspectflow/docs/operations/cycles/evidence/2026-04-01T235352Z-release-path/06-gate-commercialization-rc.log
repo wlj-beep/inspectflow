@@ -1,0 +1,227 @@
+Step: 06-gate-commercialization-rc
+Started: 2026-04-01T23:54:41Z
+Command: npm run gate:commercialization:rc
+
+
+> inspectflow@0.1.0 gate:commercialization:rc
+> bash scripts/release/run-commercialization-rc-gate.sh
+
+Commercialization RC gate started at 2026-04-01T235352Z
+Repository: /Users/joshlane/Documents/Playground 2/inspectflow
+Status file: /Users/joshlane/Documents/Playground 2/inspectflow/STATUS.md
+Worklog file: /Users/joshlane/Documents/Playground 2/inspectflow/WORKLOG.md
+Evidence file: /Users/joshlane/Documents/Playground 2/inspectflow/docs/operations/cycles/evidence/2026-04-01T235352Z-release-path/commercialization-rc-gate.txt
+Standardized command: npm run test:standardized
+Checking required evidence artifacts...
+Checking prerequisite backlog recoveries...
+PASS: BL-084 is marked completed in STATUS.md.
+PASS: BL-084 has a matching WORKLOG.md record.
+PASS: BL-085 is marked completed in STATUS.md.
+PASS: BL-085 has a matching WORKLOG.md record.
+PASS: BL-091 is marked completed in STATUS.md.
+PASS: BL-091 has a matching WORKLOG.md record.
+Running standardized commercialization gate...
+
+> inspectflow@0.1.0 test:standardized
+> npm run test:coordination && npm run test:api && npm run test:ui:mock && npm run test:ui:live
+
+
+> inspectflow@0.1.0 test:coordination
+> npm run coordination:check && npm run context:budget
+
+
+> inspectflow@0.1.0 coordination:check
+> node scripts/validate-coordination.mjs
+
+Coordination validation passed.
+
+> inspectflow@0.1.0 context:budget
+> node scripts/context/enforce-context-budget.mjs
+
+PASS: context budget within policy.
+
+> inspectflow@0.1.0 test:api
+> npm run test --prefix backend
+
+
+> inspectflow-backend@0.1.0 test
+> NODE_ENV=test npm run db:test:setup && NODE_ENV=test vitest run
+
+
+> inspectflow-backend@0.1.0 db:test:setup
+> npm run db:migrate:test && npm run db:seed:test
+
+
+> inspectflow-backend@0.1.0 db:migrate:test
+> NODE_ENV=test node src/scripts/migrate.js
+
+Schema applied.
+
+> inspectflow-backend@0.1.0 db:seed:test
+> NODE_ENV=test node src/scripts/seed.js
+
+Seeded local credentials for 171 users.
+Seed applied.
+
+ RUN  v2.1.9 /Users/joshlane/Documents/Playground 2/inspectflow/backend
+
+ ✓ test/backlog-validation-imports.test.js (13 tests) 222ms
+ ✓ test/backlog-validation.test.js (15 tests) 221ms
+ ✓ test/quality-export.test.js (4 tests) 147ms
+ ✓ test/auth-hardening-entitlements.test.js (7 tests) 1940ms
+   ✓ Auth hardening + entitlement contract > records password change and reset events 1090ms
+ ✓ test/analytics-pilot-readiness.test.js (2 tests) 76ms
+ ✓ test/analytics-multisite-kpi.test.js (3 tests) 80ms
+ ✓ test/analytics-calibration-impact.test.js (2 tests) 231ms
+ ✓ test/capa-workflow.test.js (1 test) 88ms
+ ✓ test/technical-ops-api.test.js (5 tests) 115ms
+ ✓ test/controlled-documents.test.js (1 test) 90ms
+ ✓ test/analytics-kpi-dashboard-risk-workflow.test.js (2 tests) 260ms
+ ✓ test/quality-workflows.test.js (2 tests) 78ms
+ ✓ test/integration-adapter-support-bundle.test.js (3 tests) 95ms
+ ✓ test/integration-envelope.test.js (8 tests) 5ms
+ ✓ test/analytics-mart-runtime.test.js (2 tests) 269ms
+ ✓ test/analytics-spc.test.js (1 test) 183ms
+ ✓ test/ops-routing-workflows.test.js (3 tests) 156ms
+ ✓ test/idempotency-entrypoints.test.js (3 tests) 97ms
+ ✓ test/operational-regression.test.js (3 tests) 85ms
+ ✓ test/analytics-measurement-system.test.js (1 test) 195ms
+ ✓ test/integration-connector-runtime.test.js (4 tests) 4ms
+ ✓ test/platform-entitlements-packaging.test.js (2 tests) 3ms
+ ✓ test/auth.test.js (3 tests) 200ms
+ ✓ test/future-analytics-anomaly.test.js (6 tests) 2ms
+ ✓ test/future-analytics-kpi.test.js (5 tests) 3ms
+ ✓ test/analytics-contracts.test.js (5 tests) 2ms
+ ✓ test/future-quality-export-engine.test.js (4 tests) 4ms
+ ✓ test/import-scheduler-worker.test.js (3 tests) 3ms
+ ✓ test/customer-proof-center.test.js (2 tests) 83ms
+ ✓ test/import-onboarding-toolkit.test.js (3 tests) 35ms
+ ✓ test/integration-runtime-policy.test.js (4 tests) 4ms
+ ✓ test/future-quality-risk-escalation.test.js (4 tests) 2ms
+ ✓ test/future-idempotency-envelope.test.js (4 tests) 2ms
+ ✓ test/future-integration-policy.test.js (4 tests) 2ms
+ ✓ test/permissions.test.js (4 tests) 38ms
+ ✓ test/stream-routes-contract.test.js (1 test) 60ms
+ ✓ test/ecosystem-compatibility.test.js (1 test) 26ms
+ ✓ test/revisions.test.js (2 tests) 1ms
+ ✓ test/smoke.test.js (2 tests) 26ms
+
+ Test Files  39 passed (39)
+      Tests  144 passed (144)
+   Start at  19:54:49
+   Duration  11.98s (transform 187ms, setup 18ms, collect 2.86s, tests 5.14s, environment 3ms, prepare 952ms)
+
+
+> inspectflow@0.1.0 test:ui:mock
+> npm run test:ui --prefix frontend -- --grep @mock
+
+
+> inspectflow-frontend@0.1.0 test:ui
+> playwright test --grep @mock
+
+[2m[WebServer] [22m(node:7287) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[2m[WebServer] [22m(Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 15 tests using 3 workers
+
+(node:7290) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:7291) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:7289) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:7291) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:7290) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:7289) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓   2 tests/mocked.smoke.spec.js:250:3 › Mocked UI smoke @mock › loads the InspectFlow shell (999ms)
+  ✓   3 tests/navigation-url-driven.spec.js:142:3 › URL-driven navigation (BL-062) @mock › admin sub-tab is encoded in URL and survives back/forward (1.8s)
+  ✓   1 tests/shell-layout.spec.js:205:3 › shell layout @mock › stays within the viewport at desktop and tablet widths (2.3s)
+  ✓   4 tests/mocked.smoke.spec.js:259:3 › Mocked UI smoke @mock › shows loading and success transitions during part creation (1.8s)
+  ✓   5 tests/mocked.smoke.spec.js:278:3 › Mocked UI smoke @mock › shows failure transition when part creation fails (797ms)
+  ✓   6 tests/mocked.smoke.spec.js:296:3 › Mocked UI smoke @mock › reuses original base prefix and increments family run index for duplicate lot jobs (821ms)
+  ✓   7 tests/mocked.smoke.spec.js:333:3 › Mocked UI smoke @mock › allows admins to import tools via CSV from the Data Imports tab (658ms)
+  ✓   8 tests/mocked.smoke.spec.js:355:3 › Mocked UI smoke @mock › restores route state on reload and browser back/forward (1.2s)
+  ✓   9 tests/mocked.smoke.spec.js:377:3 › Mocked UI smoke @mock › scopes '?' shortcut and restores focus when help closes (792ms)
+  ✓  10 tests/mocked.smoke.spec.js:399:3 › Mocked UI smoke @mock › shows role-aware dashboard primary actions (781ms)
+  ✓  11 tests/mocked.smoke.spec.js:413:3 › Mocked UI smoke @mock › guides first-run onboarding and can reset the walkthrough (606ms)
+  ✓  12 tests/mocked.smoke.spec.js:439:3 › Mocked UI smoke @mock › shows system trust indicators for backup freshness, update readiness, import health, and audit confidence (664ms)
+  ✓  13 tests/mocked.smoke.spec.js:454:3 › Mocked UI smoke @mock › shows operator-specific dashboard primary action (650ms)
+  ✓  14 tests/mocked.smoke.spec.js:464:3 › Mocked UI smoke @mock › uses one coherent admin navigation surface (779ms)
+  ✓  15 tests/mocked.smoke.spec.js:476:3 › Mocked UI smoke @mock › paginates jobs and records consistently for large datasets (892ms)
+
+  15 passed (13.3s)
+
+> inspectflow@0.1.0 test:ui:live
+> bash scripts/run-ui-live-tests.sh
+
+[ui-live] Preparing test database...
+
+> inspectflow@0.1.0 db:test:setup
+> npm run db:test:setup --prefix backend
+
+
+> inspectflow-backend@0.1.0 db:test:setup
+> npm run db:migrate:test && npm run db:seed:test
+
+
+> inspectflow-backend@0.1.0 db:migrate:test
+> NODE_ENV=test node src/scripts/migrate.js
+
+Schema applied.
+
+> inspectflow-backend@0.1.0 db:seed:test
+> NODE_ENV=test node src/scripts/seed.js
+
+Seeded local credentials for 173 users.
+Seed applied.
+[ui-live] Starting backend API...
+[ui-live] Running live Playwright suite...
+
+> inspectflow-frontend@0.1.0 test:ui
+> playwright test --grep @live
+
+[WebServer] (node:7769) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 1 test using 1 worker
+(node:7771) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:7771) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[live][response:401] http://localhost:4000/api/auth/session
+[live][console:error] Failed to load resource: the server responded with a status of 401 (Unauthorized)
+[live][response:401] http://localhost:4000/api/auth/session
+[live][console:error] Failed to load resource: the server responded with a status of 401 (Unauthorized)
+F
+
+  1) tests/live.critical.spec.js:40:3 › Live UI critical path @live › admin creates job, operator submits measurements, record persists 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: getByRole('navigation', { name: 'Primary navigation' })
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 5000ms[22m
+    [2m  - waiting for getByRole('navigation', { name: 'Primary navigation' })[22m
+
+
+      29 |   async function login(page, userLabel) {
+      30 |     if (await page.getByLabel("Username").count() === 0) {
+    > 31 |       await expect(page.getByRole("navigation", { name: "Primary navigation" })).toBeVisible();
+         |                                                                                  ^
+      32 |       return;
+      33 |     }
+      34 |     await page.getByLabel("Username").fill(userLabel);
+        at login (/Users/joshlane/Documents/Playground 2/inspectflow/frontend/tests/live.critical.spec.js:31:82)
+        at /Users/joshlane/Documents/Playground 2/inspectflow/frontend/tests/live.critical.spec.js:112:5
+
+    Error Context: test-results/live.critical-Live-UI-crit-301f1-easurements-record-persists/error-context.md
+
+  1 failed
+    tests/live.critical.spec.js:40:3 › Live UI critical path @live › admin creates job, operator submits measurements, record persists 

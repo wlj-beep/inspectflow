@@ -22,6 +22,7 @@ stop_pid() {
   rm -f "${pid_file}"
 }
 
+stop_pid "${PID_DIR}/imports-worker.pid"
 stop_pid "${PID_DIR}/frontend.pid"
 stop_pid "${PID_DIR}/backend.pid"
 

@@ -1,0 +1,17 @@
+Release path bundle directory: /Users/joshlane/Documents/Playground 2/inspectflow/docs/operations/cycles/evidence/2026-04-02T000444Z-release-path
+Running 01-test-coordination: npm run test:coordination
+PASS: 01-test-coordination
+Running 02-test-api: npm run test:api
+PASS: 02-test-api
+Running 03-test-ui-mock: npm run test:ui:mock
+PASS: 03-test-ui-mock
+Running 04-test-ui-live: npm run test:ui:live
+PASS: 04-test-ui-live
+Running 05-gate-commercialization-load: npm run gate:commercialization:load
+PASS: 05-gate-commercialization-load
+Running 06-gate-commercialization-rc: npm run gate:commercialization:rc
+PASS: 06-gate-commercialization-rc
+Running 07-cycle-report: npm run ops:cycle:report:auto -- --cycle 2026-04-02T000444Z-release-path --window release\ path --controller release-path --bl BL-114\,BL-115\,BL-116\,BL-117\,BL-118 --tracks release-path\,bundle --usage /Users/joshlane/Documents/Playground\ 2/inspectflow/docs/operations/cycles/evidence/2026-04-02T000444Z-release-path/release-path-usage.json --requireArtifact /Users/joshlane/Documents/Playground\ 2/inspectflow/docs/operations/cycles/evidence/2026-04-02T000444Z-release-path/commercialization-load-gate.txt --requireArtifact /Users/joshlane/Documents/Playground\ 2/inspectflow/docs/operations/cycles/evidence/2026-04-02T000444Z-release-path/commercialization-rc-gate.txt --out /Users/joshlane/Documents/Playground\ 2/inspectflow/docs/operations/cycles/evidence/2026-04-02T000444Z-release-path/cycle-report.md --controllerPromptTokens 1 --acceptedChanges 5 --inputRatePerMillion 0 --outputRatePerMillion 0
+PASS: 07-cycle-report
+Release path completed successfully.
+Bundle written to /Users/joshlane/Documents/Playground 2/inspectflow/docs/operations/cycles/evidence/2026-04-02T000444Z-release-path

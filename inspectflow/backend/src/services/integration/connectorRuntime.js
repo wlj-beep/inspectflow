@@ -7,7 +7,8 @@ import {
 import {
   buildConnectorRunDecision,
   classifyConnectorError,
-  buildReplayMetadata
+  buildReplayMetadata,
+  buildDeadLetterRecord
 } from "./connectorRunPolicy.js";
 import {
   validateAndNormalizeCanonicalEnvelope
@@ -58,12 +59,26 @@ export async function executeConnectorRuntime({
   });
 
   if (!normalized.ok) {
+    const deadLetter = buildDeadLetterRecord({
+      runId,
+      attempt: 1,
+      envelope: envelopeInput || {},
+      classification: {
+        category: "contract",
+        code: "INVALID_ENVELOPE",
+        retryable: false
+      },
+      now: now(),
+      reason: "invalid_envelope",
+      errorCount: normalized.errors.length
+    });
     return {
       ok: false,
       status: "error",
       code: "invalid_envelope",
       errors: normalized.errors,
       attempts: [],
+      deadLetter,
       supportBundle: buildIntegrationSupportBundle({
         run: {
           id: runId,
@@ -123,6 +138,7 @@ export async function executeConnectorRuntime({
   const errorItems = [];
   let finalResult = null;
   let replayMetadata = null;
+  let deadLetter = null;
 
   for (let attempt = 1; attempt <= Math.max(1, Number(maxAttempts || 1)); attempt += 1) {
     const startedAt = now();
@@ -183,6 +199,15 @@ export async function executeConnectorRuntime({
       });
 
       if (!decision.shouldRetry) {
+        deadLetter = buildDeadLetterRecord({
+          runId,
+          attempt,
+          envelope,
+          classification: decision.classification,
+          now: finishedAt,
+          reason: "terminal_failure",
+          errorCount: errorItems.length
+        });
         finalResult = normalizeImportResult({
           status: "error",
           totalRows: 0,
@@ -206,6 +231,7 @@ export async function executeConnectorRuntime({
     idempotencyKey,
     attempts,
     replayMetadata,
+    deadLetter,
     errors: errorItems,
     result: finalResult || normalizeImportResult({
       status: "error",

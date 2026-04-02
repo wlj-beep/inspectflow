@@ -28,16 +28,22 @@ async function getFirstDimensionId(operationId) {
 }
 
 async function getAllowedToolForDimension(dimensionId) {
-  const { rows } = await query(
-    `SELECT t.id, t.it_num
-     FROM dimension_tools dt
-     JOIN tools t ON t.id=dt.tool_id
-     WHERE dt.dimension_id=$1
-     ORDER BY t.id ASC
-     LIMIT 1`,
-    [dimensionId]
+  const suffix = crypto.randomUUID().slice(0, 8).toUpperCase();
+  const insertTool = await query(
+    `INSERT INTO tools (name, type, it_num, active, visible)
+     VALUES ($1, 'Variable', $2, true, true)
+     RETURNING id, it_num`,
+    [`CAL TOOL ${suffix}`, `IT-CAL-${suffix}`]
   );
-  return rows[0] || null;
+  const tool = insertTool.rows[0] || null;
+  if (!tool) return null;
+  await query(
+    `INSERT INTO dimension_tools (dimension_id, tool_id)
+     VALUES ($1, $2)
+     ON CONFLICT (dimension_id, tool_id) DO NOTHING`,
+    [dimensionId, tool.id]
+  );
+  return tool;
 }
 
 async function createRecordWithTool({ jobId, operationId, dimensionId, toolId, itNum, isOot, operatorUserId = 1 }) {
@@ -155,8 +161,23 @@ describe("Calibration impact analytics and BL-042 integration", () => {
         dateTo: "2026-03-31T23:59:59.999Z"
       });
     expect(refresh.status).toBe(200);
-    expect(refresh.body.contractId).toBe("ANA-KPI-v3");
+    expect(refresh.body.contractId).toBe("ANA-MSA-v1");
+    expect(refresh.body.foundationContractId).toBe("ANA-KPI-v3");
     expect(refresh.body.riskIntegration.contractId).toBe("ANA-RISK-v3");
+    expect(refresh.body.measurementSystemSummary).toMatchObject({
+      contractId: "ANA-MSA-v1",
+      correlatedToolCount: expect.any(Number),
+      triggeredToolCount: expect.any(Number),
+      overdueToolCount: expect.any(Number),
+      toolHealthCounts: expect.any(Object),
+      defectRiskCounts: expect.any(Object)
+    });
+    expect(refresh.body.remediationView).toMatchObject({
+      contractId: "ANA-MSA-v1",
+      viewId: "operator_safe_remediation_v1",
+      summary: expect.any(Object),
+      restrictions: expect.any(Array)
+    });
     expect(Array.isArray(refresh.body.toolPerformance)).toBe(true);
 
     const toolRow = refresh.body.toolPerformance.find((row) => Number(row.toolId) === Number(tool.id));
@@ -164,6 +185,25 @@ describe("Calibration impact analytics and BL-042 integration", () => {
     expect(toolRow.overdueMeasurementCount).toBeGreaterThanOrEqual(1);
     expect(toolRow.ontimeMeasurementCount).toBeGreaterThanOrEqual(1);
     expect(toolRow.overdueOotRate).toBeGreaterThan(toolRow.ontimeOotRate);
+    expect(toolRow.toolHealth).toMatchObject({
+      calibrationState: "overdue",
+      defectRiskBand: "high",
+      correlationStatus: "degrades_quality"
+    });
+
+    const remediationItem = refresh.body.remediationView.items.find((item) => Number(item.toolId) === Number(tool.id));
+    expect(remediationItem).toBeTruthy();
+    expect(remediationItem).toMatchObject({
+      calibrationState: "overdue",
+      defectRiskBand: "high",
+      actionPriority: "urgent",
+      linkedRiskEvent: {
+        severity: "high"
+      }
+    });
+    expect(Array.isArray(remediationItem.recommendedActions)).toBe(true);
+    expect(remediationItem.recommendedActions.some((action) => action.code === "hold_tool_use")).toBe(true);
+    expect(remediationItem.recommendedActions.every((action) => action.actorRole === "Operator" && action.safe === true)).toBe(true);
 
     expect(refresh.body.riskIntegration.triggeredCount).toBeGreaterThanOrEqual(1);
     const event = refresh.body.riskIntegration.events[0];
@@ -195,14 +235,41 @@ describe("Calibration impact analytics and BL-042 integration", () => {
       .set("x-user-role", "Admin");
     expect(listResolved.status).toBe(200);
     expect(listResolved.body.some((row) => Number(row.id) === Number(stored.id))).toBe(true);
+
+    const remediationView = await request(app)
+      .get("/api/analytics/performance/calibration-impact/remediation-view")
+      .query({
+        dateFrom: "2026-03-01T00:00:00.000Z",
+        dateTo: "2026-03-31T23:59:59.999Z"
+      })
+      .set("x-user-role", "Operator");
+    expect(remediationView.status).toBe(200);
+    expect(remediationView.body).toMatchObject({
+      contractId: "ANA-MSA-v1",
+      remediationView: {
+        viewId: "operator_safe_remediation_v1"
+      }
+    });
+    expect(remediationView.body.remediationView.items.some((item) => Number(item.toolId) === Number(tool.id))).toBe(true);
   });
 
-  it("requires admin capability for calibration-impact and risk-event endpoints", async () => {
+  it("keeps admin analytics restricted while allowing the operator-safe remediation view", async () => {
     const deniedRefresh = await request(app)
       .post("/api/analytics/performance/calibration-impact/refresh")
       .set("x-user-role", "Operator")
       .send({});
     expect(deniedRefresh.status).toBe(403);
+
+    const allowedRemediationView = await request(app)
+      .get("/api/analytics/performance/calibration-impact/remediation-view")
+      .set("x-user-role", "Operator");
+    expect(allowedRemediationView.status).toBe(200);
+    expect(allowedRemediationView.body).toMatchObject({
+      contractId: "ANA-MSA-v1",
+      remediationView: {
+        viewId: "operator_safe_remediation_v1"
+      }
+    });
 
     const deniedList = await request(app)
       .get("/api/analytics/risk-events")

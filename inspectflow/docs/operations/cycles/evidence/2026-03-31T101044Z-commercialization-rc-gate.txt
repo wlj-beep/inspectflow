@@ -1,0 +1,382 @@
+Commercialization RC gate started at 2026-03-31T101044Z
+Repository: /Users/joshlane/Documents/Playground 2/inspectflow
+Running standardized gate checks...
+
+> inspectflow@0.1.0 test:coordination
+> npm run coordination:check && npm run context:budget
+
+
+> inspectflow@0.1.0 coordination:check
+> node scripts/validate-coordination.mjs
+
+Coordination validation passed.
+
+> inspectflow@0.1.0 context:budget
+> node scripts/context/enforce-context-budget.mjs
+
+PASS: context budget within policy.
+
+> inspectflow@0.1.0 test:api
+> npm run test --prefix backend
+
+
+> inspectflow-backend@0.1.0 test
+> NODE_ENV=test npm run db:test:setup && NODE_ENV=test vitest run
+
+
+> inspectflow-backend@0.1.0 db:test:setup
+> npm run db:migrate:test && npm run db:seed:test
+
+
+> inspectflow-backend@0.1.0 db:migrate:test
+> NODE_ENV=test node src/scripts/migrate.js
+
+Schema applied.
+
+> inspectflow-backend@0.1.0 db:seed:test
+> NODE_ENV=test node src/scripts/seed.js
+
+Seeded local credentials for 105 users.
+Seed applied.
+
+ RUN  v2.1.9 /Users/joshlane/Documents/Playground 2/inspectflow/backend
+
+ ✓ test/backlog-validation.test.js (15 tests) 237ms
+ ✓ test/backlog-validation-imports.test.js (13 tests) 248ms
+ ✓ test/quality-export.test.js (3 tests) 115ms
+ ✓ test/analytics-kpi-dashboard-risk-workflow.test.js (2 tests) 187ms
+ ✓ test/auth-hardening-entitlements.test.js (4 tests) 1685ms
+   ✓ Auth hardening + entitlement contract > records login failure and lockout events 333ms
+   ✓ Auth hardening + entitlement contract > records password change and reset events 1166ms
+ ✓ test/analytics-multisite-kpi.test.js (2 tests) 70ms
+ ✓ test/analytics-calibration-impact.test.js (2 tests) 206ms
+ ✓ test/technical-ops-api.test.js (5 tests) 117ms
+ ✓ test/analytics-mart-runtime.test.js (2 tests) 208ms
+ ✓ test/ops-routing-workflows.test.js (3 tests) 160ms
+ ✓ test/integration-adapter-support-bundle.test.js (3 tests) 91ms
+ ✓ test/idempotency-entrypoints.test.js (3 tests) 102ms
+ ✓ test/integration-envelope.test.js (7 tests) 5ms
+ ✓ test/operational-regression.test.js (3 tests) 82ms
+ ✓ test/integration-connector-runtime.test.js (4 tests) 5ms
+ ✓ test/capa-workflow.test.js (1 test) 66ms
+ ✓ test/auth.test.js (3 tests) 210ms
+ ✓ test/future-analytics-anomaly.test.js (6 tests) 3ms
+ ✓ test/future-analytics-kpi.test.js (5 tests) 4ms
+ ✓ test/analytics-contracts.test.js (5 tests) 3ms
+ ✓ test/future-quality-export-engine.test.js (4 tests) 4ms
+ ✓ test/analytics-spc.test.js (1 test) 134ms
+ ✓ test/integration-runtime-policy.test.js (4 tests) 4ms
+ ✓ test/future-quality-risk-escalation.test.js (4 tests) 3ms
+ ✓ test/future-idempotency-envelope.test.js (4 tests) 3ms
+ ✓ test/future-integration-policy.test.js (4 tests) 2ms
+ ✓ test/permissions.test.js (4 tests) 35ms
+ ✓ test/stream-routes-contract.test.js (1 test) 55ms
+ ✓ test/revisions.test.js (2 tests) 2ms
+ ✓ test/smoke.test.js (2 tests) 25ms
+
+ Test Files  30 passed (30)
+      Tests  121 passed (121)
+   Start at  06:10:50
+   Duration  9.47s (transform 190ms, setup 19ms, collect 2.47s, tests 4.07s, environment 2ms, prepare 821ms)
+
+
+> inspectflow@0.1.0 test:ui:mock
+> npm run test:ui --prefix frontend -- --grep @mock
+
+
+> inspectflow-frontend@0.1.0 test:ui
+> playwright test --grep @mock
+
+[2m[WebServer] [22m(node:54361) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[2m[WebServer] [22m(Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 11 tests using 1 worker
+
+  ✘   1 tests/mocked.smoke.spec.js:203:3 › Mocked UI smoke @mock › loads the InspectFlow shell (5.7s)
+  ✘   2 tests/mocked.smoke.spec.js:212:3 › Mocked UI smoke @mock › shows loading and success transitions during part creation (5.3s)
+  ✘   3 tests/mocked.smoke.spec.js:231:3 › Mocked UI smoke @mock › shows failure transition when part creation fails (5.4s)
+  ✘   4 tests/mocked.smoke.spec.js:249:3 › Mocked UI smoke @mock › reuses original base prefix and increments family run index for duplicate lot jobs (5.3s)
+  ✘   5 tests/mocked.smoke.spec.js:286:3 › Mocked UI smoke @mock › allows admins to import tools via CSV from the Data Imports tab (5.4s)
+  ✘   6 tests/mocked.smoke.spec.js:308:3 › Mocked UI smoke @mock › restores route state on reload and browser back/forward (5.3s)
+  ✘   7 tests/mocked.smoke.spec.js:330:3 › Mocked UI smoke @mock › scopes '?' shortcut and restores focus when help closes (5.4s)
+  ✘   8 tests/mocked.smoke.spec.js:352:3 › Mocked UI smoke @mock › shows role-aware dashboard primary actions (5.3s)
+  ✘   9 tests/mocked.smoke.spec.js:366:3 › Mocked UI smoke @mock › guides first-run onboarding and can reset the walkthrough (5.4s)
+  ✘  10 tests/mocked.smoke.spec.js:386:3 › Mocked UI smoke @mock › shows operator-specific dashboard primary action (5.4s)
+  ✘  11 tests/mocked.smoke.spec.js:396:3 › Mocked UI smoke @mock › uses one coherent admin navigation surface (5.5s)
+
+
+  1) tests/mocked.smoke.spec.js:203:3 › Mocked UI smoke @mock › loads the InspectFlow shell ────────
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: getByText('Manufacturing Inspection System')
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 5000ms[22m
+    [2m  - waiting for getByText('Manufacturing Inspection System')[22m
+
+
+      195 |   await page.getByLabel("Password").fill("inspectflow");
+      196 |   await page.getByRole("button", { name: "Sign In" }).click();
+    > 197 |   await expect(page.getByText("Manufacturing Inspection System")).toBeVisible();
+          |                                                                   ^
+      198 |   await expect(page.getByText("Admin User")).toBeVisible();
+      199 |   await expect(page.locator(".user-ctrl select")).toHaveCount(0);
+      200 | }
+        at loginAsAdmin (/Users/joshlane/Documents/Playground 2/inspectflow/frontend/tests/mocked.smoke.spec.js:197:67)
+        at /Users/joshlane/Documents/Playground 2/inspectflow/frontend/tests/mocked.smoke.spec.js:208:5
+
+  2) tests/mocked.smoke.spec.js:212:3 › Mocked UI smoke @mock › shows loading and success transitions during part creation 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: getByText('Manufacturing Inspection System')
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 5000ms[22m
+    [2m  - waiting for getByText('Manufacturing Inspection System')[22m
+
+
+      195 |   await page.getByLabel("Password").fill("inspectflow");
+      196 |   await page.getByRole("button", { name: "Sign In" }).click();
+    > 197 |   await expect(page.getByText("Manufacturing Inspection System")).toBeVisible();
+          |                                                                   ^
+      198 |   await expect(page.getByText("Admin User")).toBeVisible();
+      199 |   await expect(page.locator(".user-ctrl select")).toHaveCount(0);
+      200 | }
+        at loginAsAdmin (/Users/joshlane/Documents/Playground 2/inspectflow/frontend/tests/mocked.smoke.spec.js:197:67)
+        at /Users/joshlane/Documents/Playground 2/inspectflow/frontend/tests/mocked.smoke.spec.js:215:5
+
+  3) tests/mocked.smoke.spec.js:231:3 › Mocked UI smoke @mock › shows failure transition when part creation fails 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: getByText('Manufacturing Inspection System')
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 5000ms[22m
+    [2m  - waiting for getByText('Manufacturing Inspection System')[22m
+
+
+      195 |   await page.getByLabel("Password").fill("inspectflow");
+      196 |   await page.getByRole("button", { name: "Sign In" }).click();
+    > 197 |   await expect(page.getByText("Manufacturing Inspection System")).toBeVisible();
+          |                                                                   ^
+      198 |   await expect(page.getByText("Admin User")).toBeVisible();
+      199 |   await expect(page.locator(".user-ctrl select")).toHaveCount(0);
+      200 | }
+        at loginAsAdmin (/Users/joshlane/Documents/Playground 2/inspectflow/frontend/tests/mocked.smoke.spec.js:197:67)
+        at /Users/joshlane/Documents/Playground 2/inspectflow/frontend/tests/mocked.smoke.spec.js:234:5
+
+  4) tests/mocked.smoke.spec.js:249:3 › Mocked UI smoke @mock › reuses original base prefix and increments family run index for duplicate lot jobs 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: getByText('Manufacturing Inspection System')
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 5000ms[22m
+    [2m  - waiting for getByText('Manufacturing Inspection System')[22m
+
+
+      195 |   await page.getByLabel("Password").fill("inspectflow");
+      196 |   await page.getByRole("button", { name: "Sign In" }).click();
+    > 197 |   await expect(page.getByText("Manufacturing Inspection System")).toBeVisible();
+          |                                                                   ^
+      198 |   await expect(page.getByText("Admin User")).toBeVisible();
+      199 |   await expect(page.locator(".user-ctrl select")).toHaveCount(0);
+      200 | }
+        at loginAsAdmin (/Users/joshlane/Documents/Playground 2/inspectflow/frontend/tests/mocked.smoke.spec.js:197:67)
+        at /Users/joshlane/Documents/Playground 2/inspectflow/frontend/tests/mocked.smoke.spec.js:271:5
+
+  5) tests/mocked.smoke.spec.js:286:3 › Mocked UI smoke @mock › allows admins to import tools via CSV from the Data Imports tab 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: getByText('Manufacturing Inspection System')
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 5000ms[22m
+    [2m  - waiting for getByText('Manufacturing Inspection System')[22m
+
+
+      195 |   await page.getByLabel("Password").fill("inspectflow");
+      196 |   await page.getByRole("button", { name: "Sign In" }).click();
+    > 197 |   await expect(page.getByText("Manufacturing Inspection System")).toBeVisible();
+          |                                                                   ^
+      198 |   await expect(page.getByText("Admin User")).toBeVisible();
+      199 |   await expect(page.locator(".user-ctrl select")).toHaveCount(0);
+      200 | }
+        at loginAsAdmin (/Users/joshlane/Documents/Playground 2/inspectflow/frontend/tests/mocked.smoke.spec.js:197:67)
+        at /Users/joshlane/Documents/Playground 2/inspectflow/frontend/tests/mocked.smoke.spec.js:289:5
+
+  6) tests/mocked.smoke.spec.js:308:3 › Mocked UI smoke @mock › restores route state on reload and browser back/forward 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: getByText('Manufacturing Inspection System')
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 5000ms[22m
+    [2m  - waiting for getByText('Manufacturing Inspection System')[22m
+
+
+      195 |   await page.getByLabel("Password").fill("inspectflow");
+      196 |   await page.getByRole("button", { name: "Sign In" }).click();
+    > 197 |   await expect(page.getByText("Manufacturing Inspection System")).toBeVisible();
+          |                                                                   ^
+      198 |   await expect(page.getByText("Admin User")).toBeVisible();
+      199 |   await expect(page.locator(".user-ctrl select")).toHaveCount(0);
+      200 | }
+        at loginAsAdmin (/Users/joshlane/Documents/Playground 2/inspectflow/frontend/tests/mocked.smoke.spec.js:197:67)
+        at /Users/joshlane/Documents/Playground 2/inspectflow/frontend/tests/mocked.smoke.spec.js:311:5
+
+  7) tests/mocked.smoke.spec.js:330:3 › Mocked UI smoke @mock › scopes '?' shortcut and restores focus when help closes 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: getByText('Manufacturing Inspection System')
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 5000ms[22m
+    [2m  - waiting for getByText('Manufacturing Inspection System')[22m
+
+
+      195 |   await page.getByLabel("Password").fill("inspectflow");
+      196 |   await page.getByRole("button", { name: "Sign In" }).click();
+    > 197 |   await expect(page.getByText("Manufacturing Inspection System")).toBeVisible();
+          |                                                                   ^
+      198 |   await expect(page.getByText("Admin User")).toBeVisible();
+      199 |   await expect(page.locator(".user-ctrl select")).toHaveCount(0);
+      200 | }
+        at loginAsAdmin (/Users/joshlane/Documents/Playground 2/inspectflow/frontend/tests/mocked.smoke.spec.js:197:67)
+        at /Users/joshlane/Documents/Playground 2/inspectflow/frontend/tests/mocked.smoke.spec.js:333:5
+
+  8) tests/mocked.smoke.spec.js:352:3 › Mocked UI smoke @mock › shows role-aware dashboard primary actions 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: getByText('Manufacturing Inspection System')
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 5000ms[22m
+    [2m  - waiting for getByText('Manufacturing Inspection System')[22m
+
+
+      195 |   await page.getByLabel("Password").fill("inspectflow");
+      196 |   await page.getByRole("button", { name: "Sign In" }).click();
+    > 197 |   await expect(page.getByText("Manufacturing Inspection System")).toBeVisible();
+          |                                                                   ^
+      198 |   await expect(page.getByText("Admin User")).toBeVisible();
+      199 |   await expect(page.locator(".user-ctrl select")).toHaveCount(0);
+      200 | }
+        at loginAsAdmin (/Users/joshlane/Documents/Playground 2/inspectflow/frontend/tests/mocked.smoke.spec.js:197:67)
+        at /Users/joshlane/Documents/Playground 2/inspectflow/frontend/tests/mocked.smoke.spec.js:355:5
+
+  9) tests/mocked.smoke.spec.js:366:3 › Mocked UI smoke @mock › guides first-run onboarding and can reset the walkthrough 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: getByText('Manufacturing Inspection System')
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 5000ms[22m
+    [2m  - waiting for getByText('Manufacturing Inspection System')[22m
+
+
+      195 |   await page.getByLabel("Password").fill("inspectflow");
+      196 |   await page.getByRole("button", { name: "Sign In" }).click();
+    > 197 |   await expect(page.getByText("Manufacturing Inspection System")).toBeVisible();
+          |                                                                   ^
+      198 |   await expect(page.getByText("Admin User")).toBeVisible();
+      199 |   await expect(page.locator(".user-ctrl select")).toHaveCount(0);
+      200 | }
+        at loginAsAdmin (/Users/joshlane/Documents/Playground 2/inspectflow/frontend/tests/mocked.smoke.spec.js:197:67)
+        at /Users/joshlane/Documents/Playground 2/inspectflow/frontend/tests/mocked.smoke.spec.js:369:5
+
+  10) tests/mocked.smoke.spec.js:386:3 › Mocked UI smoke @mock › shows operator-specific dashboard primary action 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: getByRole('heading', { name: 'Operator start point' })
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 5000ms[22m
+    [2m  - waiting for getByRole('heading', { name: 'Operator start point' })[22m
+
+
+      390 |     await page.getByLabel("Password").fill("inspectflow");
+      391 |     await page.getByRole("button", { name: "Sign In" }).click();
+    > 392 |     await expect(page.getByRole("heading", { name: "Operator start point" })).toBeVisible();
+          |                                                                               ^
+      393 |     await expect(page.locator("article").filter({ hasText: "Primary Action" }).getByRole("button", { name: "Start operator entry" })).toBeVisible();
+      394 |   });
+      395 |
+        at /Users/joshlane/Documents/Playground 2/inspectflow/frontend/tests/mocked.smoke.spec.js:392:79
+
+  11) tests/mocked.smoke.spec.js:396:3 › Mocked UI smoke @mock › uses one coherent admin navigation surface 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: getByText('Manufacturing Inspection System')
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 5000ms[22m
+    [2m  - waiting for getByText('Manufacturing Inspection System')[22m
+
+
+      195 |   await page.getByLabel("Password").fill("inspectflow");
+      196 |   await page.getByRole("button", { name: "Sign In" }).click();
+    > 197 |   await expect(page.getByText("Manufacturing Inspection System")).toBeVisible();
+          |                                                                   ^
+      198 |   await expect(page.getByText("Admin User")).toBeVisible();
+      199 |   await expect(page.locator(".user-ctrl select")).toHaveCount(0);
+      200 | }
+        at loginAsAdmin (/Users/joshlane/Documents/Playground 2/inspectflow/frontend/tests/mocked.smoke.spec.js:197:67)
+        at /Users/joshlane/Documents/Playground 2/inspectflow/frontend/tests/mocked.smoke.spec.js:399:5
+
+  11 failed
+    tests/mocked.smoke.spec.js:203:3 › Mocked UI smoke @mock › loads the InspectFlow shell ─────────
+    tests/mocked.smoke.spec.js:212:3 › Mocked UI smoke @mock › shows loading and success transitions during part creation 
+    tests/mocked.smoke.spec.js:231:3 › Mocked UI smoke @mock › shows failure transition when part creation fails 
+    tests/mocked.smoke.spec.js:249:3 › Mocked UI smoke @mock › reuses original base prefix and increments family run index for duplicate lot jobs 
+    tests/mocked.smoke.spec.js:286:3 › Mocked UI smoke @mock › allows admins to import tools via CSV from the Data Imports tab 
+    tests/mocked.smoke.spec.js:308:3 › Mocked UI smoke @mock › restores route state on reload and browser back/forward 
+    tests/mocked.smoke.spec.js:330:3 › Mocked UI smoke @mock › scopes '?' shortcut and restores focus when help closes 
+    tests/mocked.smoke.spec.js:352:3 › Mocked UI smoke @mock › shows role-aware dashboard primary actions 
+    tests/mocked.smoke.spec.js:366:3 › Mocked UI smoke @mock › guides first-run onboarding and can reset the walkthrough 
+    tests/mocked.smoke.spec.js:386:3 › Mocked UI smoke @mock › shows operator-specific dashboard primary action 
+    tests/mocked.smoke.spec.js:396:3 › Mocked UI smoke @mock › uses one coherent admin navigation surface 

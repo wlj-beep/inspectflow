@@ -1,0 +1,82 @@
+Step: 02-test-api
+Started: 2026-04-02T00:02:09Z
+Command: npm run test:api
+
+
+> inspectflow@0.1.0 test:api
+> npm run test --prefix backend
+
+
+> inspectflow-backend@0.1.0 test
+> NODE_ENV=test npm run db:test:setup && NODE_ENV=test vitest run
+
+
+> inspectflow-backend@0.1.0 db:test:setup
+> npm run db:migrate:test && npm run db:seed:test
+
+
+> inspectflow-backend@0.1.0 db:migrate:test
+> NODE_ENV=test node src/scripts/migrate.js
+
+Schema applied.
+
+> inspectflow-backend@0.1.0 db:seed:test
+> NODE_ENV=test node src/scripts/seed.js
+
+Seeded local credentials for 183 users.
+Seed applied.
+
+ RUN  v2.1.9 /Users/joshlane/Documents/Playground 2/inspectflow/backend
+
+ ✓ test/backlog-validation-imports.test.js (13 tests) 330ms
+ ✓ test/backlog-validation.test.js (15 tests) 272ms
+ ✓ test/quality-export.test.js (4 tests) 231ms
+ ✓ test/auth-hardening-entitlements.test.js (7 tests) 4722ms
+   ✓ Auth hardening + entitlement contract > records login failure and lockout events 938ms
+   ✓ Auth hardening + entitlement contract > records logout events for authenticated sessions 406ms
+   ✓ Auth hardening + entitlement contract > exposes the auth profile and enforces hard named-seat capacity 759ms
+   ✓ Auth hardening + entitlement contract > surfaces soft seat warnings in session state and audit logs without blocking login 371ms
+   ✓ Auth hardening + entitlement contract > records password change and reset events 1996ms
+ ✓ test/analytics-pilot-readiness.test.js (2 tests) 96ms
+ ✓ test/analytics-multisite-kpi.test.js (3 tests) 94ms
+ ✓ test/analytics-calibration-impact.test.js (2 tests) 317ms
+ ✓ test/capa-workflow.test.js (1 test) 118ms
+ ✓ test/technical-ops-api.test.js (5 tests) 149ms
+ ✓ test/controlled-documents.test.js (1 test) 126ms
+ ✓ test/analytics-kpi-dashboard-risk-workflow.test.js (2 tests) 303ms
+ ✓ test/quality-workflows.test.js (2 tests) 104ms
+ ✓ test/integration-adapter-support-bundle.test.js (3 tests) 131ms
+ ✓ test/integration-envelope.test.js (8 tests) 9ms
+ ✓ test/analytics-mart-runtime.test.js (2 tests) 364ms
+   ✓ Analytics mart runtime build (BL-039) > rebuilds marts from traceable source contracts with reproducible output snapshots 358ms
+ ✓ test/analytics-spc.test.js (1 test) 242ms
+ ✓ test/ops-routing-workflows.test.js (3 tests) 217ms
+ ✓ test/idempotency-entrypoints.test.js (3 tests) 129ms
+ ✓ test/operational-regression.test.js (3 tests) 103ms
+ ✓ test/analytics-measurement-system.test.js (1 test) 378ms
+   ✓ measurement-system analytics > correlates tool health with defects and produces operator-safe remediation guidance 377ms
+ ✓ test/integration-connector-runtime.test.js (4 tests) 8ms
+ ✓ test/platform-entitlements-packaging.test.js (2 tests) 5ms
+ ✓ test/auth.test.js (3 tests) 347ms
+ ✓ test/future-analytics-anomaly.test.js (6 tests) 5ms
+ ✓ test/future-analytics-kpi.test.js (5 tests) 6ms
+ ✓ test/analytics-contracts.test.js (5 tests) 5ms
+ ✓ test/future-quality-export-engine.test.js (4 tests) 7ms
+ ✓ test/import-scheduler-worker.test.js (3 tests) 7ms
+ ✓ test/customer-proof-center.test.js (2 tests) 129ms
+ ✓ test/import-onboarding-toolkit.test.js (3 tests) 48ms
+ ✓ test/integration-runtime-policy.test.js (4 tests) 5ms
+ ✓ test/future-quality-risk-escalation.test.js (4 tests) 4ms
+ ✓ test/future-idempotency-envelope.test.js (4 tests) 4ms
+ ✓ test/future-integration-policy.test.js (4 tests) 3ms
+ ✓ test/permissions.test.js (4 tests) 45ms
+ ✓ test/stream-routes-contract.test.js (1 test) 92ms
+ ✓ test/ecosystem-compatibility.test.js (1 test) 31ms
+ ✓ test/revisions.test.js (2 tests) 2ms
+ ✓ test/smoke.test.js (2 tests) 33ms
+
+ Test Files  39 passed (39)
+      Tests  144 passed (144)
+   Start at  20:02:19
+   Duration  19.62s (transform 316ms, setup 37ms, collect 5.19s, tests 9.22s, environment 6ms, prepare 1.51s)
+

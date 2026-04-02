@@ -15,6 +15,7 @@ import {
 import { requireAuthenticated } from "../middleware/authSession.js";
 import {
   getPlatformEntitlements,
+  summarizePackagingForAudit,
   updatePlatformEntitlements
 } from "../services/platform/entitlements.js";
 
@@ -58,14 +59,9 @@ async function emitAuthEvent(payload) {
   }
 }
 
-async function resolveLoginUser(client, { userId, username }) {
+async function resolveLoginUser(client, { username }) {
   const normalizedName = normalizeUserInput(username);
-  const parsedUserId = Number(userId);
-  if (!normalizedName && !Number.isInteger(parsedUserId)) return null;
-  if (Number.isInteger(parsedUserId)) {
-    const byId = await client.query("SELECT id, name, role, active FROM users WHERE id=$1 LIMIT 1", [parsedUserId]);
-    return byId.rows[0] || null;
-  }
+  if (!normalizedName) return null;
   const byName = await client.query("SELECT id, name, role, active FROM users WHERE name=$1 LIMIT 1", [normalizedName]);
   return byName.rows[0] || null;
 }
@@ -76,43 +72,38 @@ function parseEventLimit(value) {
   return Math.min(parsed, AUTH_EVENTS_LIMIT_MAX);
 }
 
-router.get("/users", async (req, res, next) => {
-  try {
-    const { rows } = await query(
-      "SELECT id, name, role FROM users WHERE active=true ORDER BY name ASC",
-      []
-    );
-    res.json(rows);
-  } catch (err) {
-    next(err);
-  }
-});
-
 router.post("/login", async (req, res, next) => {
   try {
-    const { userId, username, name, password } = req.body || {};
+    const { username, name, password } = req.body || {};
     const loginPassword = String(password || "");
     const attemptedUsername = normalizeUserInput(username || name) || null;
-    const attemptedUserId = parseOptionalUserId(userId);
     const requestContext = authRequestContext(req);
+    const entitlements = await getPlatformEntitlements();
 
     if (!loginPassword) {
       await emitAuthEvent({
         eventType: "login_failure",
-        userId: attemptedUserId,
         username: attemptedUsername,
         ...requestContext,
         metadata: { reason: "password_required" }
       });
       return res.status(400).json({ error: "password_required" });
     }
+    if (!attemptedUsername) {
+      await emitAuthEvent({
+        eventType: "login_failure",
+        username: null,
+        ...requestContext,
+        metadata: { reason: "username_required" }
+      });
+      return res.status(400).json({ error: "username_required" });
+    }
 
     const result = await transaction(async (client) => {
-      const user = await resolveLoginUser(client, { userId, username: username || name });
+      const user = await resolveLoginUser(client, { username: attemptedUsername });
       if (!user || user.active === false) {
         return {
           error: "invalid_credentials",
-          userId: attemptedUserId,
           username: attemptedUsername,
           reason: "user_not_found"
         };
@@ -216,8 +207,25 @@ router.post("/login", async (req, res, next) => {
 
     const session = await createAuthSession({
       userId: result.user.id,
-      ...requestContext
+      ...requestContext,
+      deviceId: req.header("x-device-id") || req.header("x-client-device-id") || null,
+      seatPolicy: entitlements?.packaging?.seatPolicy || null
     });
+    if (session?.error === "seat_limit_reached") {
+      await emitAuthEvent({
+        eventType: "login_failure",
+        userId: result.user.id,
+        actorRole: result.user.role,
+        username: result.user.name,
+        ...requestContext,
+        metadata: {
+          reason: "seat_limit_reached",
+          seatPolicy: entitlements?.packaging?.seatPolicy || null,
+          seatAssignment: session.seatAssignment || null
+        }
+      });
+      return res.status(409).json({ error: "seat_limit_reached" });
+    }
     setSessionCookie(res, session.token, session.expiresAt);
 
     await emitAuthEvent({
@@ -227,14 +235,40 @@ router.post("/login", async (req, res, next) => {
       username: result.user.name,
       sessionId: session.sessionId,
       ...requestContext,
-      metadata: { source: "local_auth" }
+      metadata: {
+        source: "local_auth",
+        seatPolicy: entitlements?.packaging?.seatPolicy || null,
+        seatAssignment: session.seatAssignment || null
+      }
     });
+    if (session.seatWarning) {
+      await emitAuthEvent({
+        eventType: "seat_warning",
+        userId: result.user.id,
+        actorRole: result.user.role,
+        username: result.user.name,
+        sessionId: session.sessionId,
+        ...requestContext,
+        metadata: {
+          contractId: session.seatWarning.contractId || null,
+          status: session.seatWarning.status,
+          activeSessionCount: session.seatWarning.activeSessionCount,
+          warningThreshold: session.seatWarning.warningThreshold,
+          seatPack: session.seatWarning.seatPack,
+          remainingSeats: session.seatWarning.remainingSeats,
+          seatPolicy: entitlements?.packaging?.seatPolicy || null
+        }
+      });
+    }
 
     res.json({
       ok: true,
       user: mapAuthUser(result.user),
       expiresAt: session.expiresAt.toISOString(),
-      entitlements: await getPlatformEntitlements()
+      entitlements,
+      authProfile: entitlements.authProfile,
+      seatAssignment: session.seatAssignment,
+      seatWarning: session.seatWarning
     });
   } catch (err) {
     next(err);
@@ -268,10 +302,14 @@ router.post("/logout", async (req, res, next) => {
 
 router.get("/me", requireAuthenticated, async (req, res, next) => {
   try {
+    const entitlements = await getPlatformEntitlements();
     res.json({
       user: req.auth.user,
       expiresAt: req.auth.expiresAt,
-      entitlements: await getPlatformEntitlements()
+      entitlements,
+      authProfile: entitlements.authProfile,
+      seatAssignment: req.auth.seatAssignment || null,
+      seatWarning: req.auth.seatWarning || null
     });
   } catch (err) {
     next(err);
@@ -280,15 +318,28 @@ router.get("/me", requireAuthenticated, async (req, res, next) => {
 
 router.get("/session", async (req, res, next) => {
   try {
+    const entitlements = await getPlatformEntitlements();
     if (!req.auth?.user?.id) {
-      return res.status(401).json({ valid: false });
+      return res.status(401).json({ valid: false, authProfile: entitlements.authProfile });
     }
     return res.json({
       valid: true,
       user: req.auth.user,
       expiresAt: req.auth.expiresAt,
-      entitlements: await getPlatformEntitlements()
+      entitlements,
+      authProfile: entitlements.authProfile,
+      seatAssignment: req.auth.seatAssignment || null,
+      seatWarning: req.auth.seatWarning || null
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/profile", async (req, res, next) => {
+  try {
+    const entitlements = await getPlatformEntitlements();
+    res.json(entitlements.authProfile);
   } catch (err) {
     next(err);
   }
@@ -485,7 +536,8 @@ router.put("/entitlements", requireAuthenticated, async (req, res, next) => {
         moduleFlags: updated.moduleFlags,
         licenseTier: updated.licenseTier,
         seatPack: updated.seatPack,
-        seatSoftLimit: updated.seatSoftLimit
+        seatSoftLimit: updated.seatSoftLimit,
+        packaging: summarizePackagingForAudit(updated.packaging)
       }
     });
 

@@ -2,12 +2,13 @@ import { apiFetch, apiFetchText } from "./client.js";
 
 export const api = {
   auth: {
-    users: () => apiFetch("/api/auth/users"),
     login: (payload) => apiFetch("/api/auth/login", { method: "POST", body: payload }),
     logout: () => apiFetch("/api/auth/logout", { method: "POST" }),
     me: () => apiFetch("/api/auth/me"),
     session: () => apiFetch("/api/auth/session"),
-    setPassword: (payload) => apiFetch("/api/auth/set-password", { method: "POST", body: payload })
+    profile: () => apiFetch("/api/auth/profile"),
+    setPassword: (payload) => apiFetch("/api/auth/set-password", { method: "POST", body: payload }),
+    entitlements: () => apiFetch("/api/auth/entitlements")
   },
   users: {
     list: (role) => apiFetch("/api/users", { role }),
@@ -86,7 +87,11 @@ export const api = {
       const qs = new URLSearchParams(filters).toString();
       return apiFetch(`/api/records/trace${qs ? `?${qs}` : ""}`, { role });
     },
-    exportCsv: (id, role) => apiFetchText(`/api/records/${id}/export`, { role })
+    exportCsv: (id, role) => apiFetchText(`/api/records/${id}/export`, { role }),
+    exportAs9102: (id, profileId = "as9102-basic", role) => {
+      const qs = new URLSearchParams(profileId ? { profile: profileId } : {}).toString();
+      return apiFetch(`/api/records/${id}/export/as9102${qs ? `?${qs}` : ""}`, { role });
+    }
   },
   roles: {
     list: (role) => apiFetch("/api/roles", { role }),
@@ -146,5 +151,25 @@ export const api = {
     acknowledgeRiskEvent: (id, payload, role) => apiFetch(`/api/analytics/risk-events/${encodeURIComponent(id)}/acknowledge`, { method: "POST", body: payload, role }),
     escalateRiskEventToIssue: (id, payload, role) => apiFetch(`/api/analytics/risk-events/${encodeURIComponent(id)}/escalate-issue`, { method: "POST", body: payload, role }),
     resolveRiskEvent: (id, payload, role) => apiFetch(`/api/analytics/risk-events/${encodeURIComponent(id)}/resolve`, { method: "POST", body: payload, role })
+  },
+  proofCenter: {
+    summary: (filters = {}, role) => {
+      const qs = new URLSearchParams(filters).toString();
+      return apiFetch(`/api/proof-center/summary${qs ? `?${qs}` : ""}`, { role });
+    },
+    exportText: (filters = {}, role) => {
+      const qs = new URLSearchParams(filters).toString();
+      return apiFetchText(`/api/proof-center/export${qs ? `?${qs}` : ""}`, { role });
+    }
+  },
+  integration: {
+    ecosystemCompatibility: (filters = {}, role) => {
+      const qs = new URLSearchParams(filters).toString();
+      return apiFetch(`/api/integration/ecosystem/compatibility${qs ? `?${qs}` : ""}`, { role });
+    }
+  },
+  technicalOps: {
+    summary: (role) => apiFetch("/api/technical-ops/summary", { role }),
+    lifecycleSummary: (role) => apiFetch("/api/technical-ops/lifecycle/summary", { role })
   }
 };

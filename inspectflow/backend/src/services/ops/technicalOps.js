@@ -20,6 +20,13 @@ function asIso(value) {
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
+function hoursSince(value) {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return (Date.now() - date.getTime()) / (1000 * 60 * 60);
+}
+
 async function statSafe(targetPath) {
   try {
     return await fs.stat(targetPath);
@@ -142,6 +149,161 @@ function parseBackupEvents(lines) {
     }
   }
   return events;
+}
+
+function classifySignalStatus(value) {
+  if (value === "down") return "down";
+  if (value === "degraded") return "degraded";
+  if (value === "warning") return "warning";
+  return "healthy";
+}
+
+function severityRank(status) {
+  if (status === "down") return 3;
+  if (status === "degraded") return 2;
+  if (status === "warning") return 1;
+  return 0;
+}
+
+const RUNTIME_SLO_TARGETS = Object.freeze({
+  uptime: {
+    targetPct: 99.5,
+    warningPct: 99.25,
+    breachPct: 99.0,
+    monthlyErrorBudgetMinutes: 216
+  },
+  importSuccess: {
+    targetPct: 99,
+    warningPct: 97.5,
+    breachPct: 95
+  }
+});
+
+const RUNTIME_SLO_ALERT_THRESHOLDS = Object.freeze({
+  backupFreshnessHours: {
+    warning: 24,
+    degraded: 72
+  },
+  importIssueCount: {
+    warning: 1,
+    degraded: 3
+  },
+  storageBudgetUsagePct: {
+    warning: 80,
+    degraded: 95
+  }
+});
+
+const RUNTIME_SLO_INCIDENT_RESPONSE = Object.freeze({
+  runbookPath: "docs/technical-ops-runbook.md",
+  escalationModes: [
+    {
+      status: "warning",
+      action: "Review the technical-ops watchlist and confirm whether the current window can continue."
+    },
+    {
+      status: "degraded",
+      action: "Mitigate the active signal, validate imports and backups, and document the rollback-safe path."
+    },
+    {
+      status: "down",
+      action: "Open an incident, pause risky changes, and follow the runbook command sequence before resuming."
+    }
+  ],
+  commands: [
+    "npm run backup:create",
+    "npm run backup:verify",
+    "npm run backup:run-scheduled"
+  ]
+});
+
+function buildOperationalPosture({ health, database, lifecycle, backups, events }) {
+  const signals = [];
+
+  signals.push({
+    key: "service",
+    status: "healthy",
+    label: "Service",
+    detail: `${health.service} is responding with process uptime ${health.process.uptimeSeconds}s.`
+  });
+
+  signals.push({
+    key: "database",
+    status: database?.connected ? "healthy" : "down",
+    label: "Database",
+    detail: database?.connected
+      ? `Database heartbeat at ${database.heartbeatAt || "unknown time"}.`
+      : "Database heartbeat is unavailable."
+  });
+
+  const backupFreshnessHours = hoursSince(backups.lastSuccessfulEvent?.ts || backups.recentBackups?.[0]?.createdAt);
+  const backupFreshnessStatus = backupFreshnessHours == null
+    ? "warning"
+    : backupFreshnessHours <= 24
+      ? "healthy"
+      : backupFreshnessHours <= 72
+        ? "warning"
+        : "degraded";
+  signals.push({
+    key: "backup_freshness",
+    status: backupFreshnessStatus,
+    label: "Backup freshness",
+    detail: backupFreshnessHours == null
+      ? "No verified backup timestamp is available."
+      : `Last verified backup was ${Math.round(backupFreshnessHours)} hour${Math.round(backupFreshnessHours) === 1 ? "" : "s"} ago.`
+  });
+
+  const lifecycleCapacity = lifecycle?.capacity || {};
+  const storageWithinBudget = lifecycleCapacity.backupWithinBudget !== false && lifecycleCapacity.logWithinBudget !== false;
+  signals.push({
+    key: "storage_budget",
+    status: storageWithinBudget ? "healthy" : "warning",
+    label: "Storage budget",
+    detail: storageWithinBudget
+      ? "Backup and log usage are within the current lifecycle budget."
+      : "Backup or log usage has crossed the current lifecycle budget."
+  });
+
+  const importIssues = (events?.recentImportErrors || []).length + (events?.importRunStatus7d || [])
+    .reduce((sum, row) => {
+      const key = String(row?.status || "").toLowerCase();
+      return sum + (key === "error" || key === "partial" ? Number(row?.count || 0) : 0);
+    }, 0);
+  const backupIssues = (events?.recentBackupErrors || []).length;
+  const eventIssueCount = importIssues + backupIssues;
+  signals.push({
+    key: "event_pressure",
+    status: eventIssueCount === 0 ? "healthy" : eventIssueCount <= 3 ? "warning" : "degraded",
+    label: "Event pressure",
+    detail: eventIssueCount === 0
+      ? "No recent import or backup anomalies are currently elevated."
+      : `${eventIssueCount} recent import or backup issue${eventIssueCount === 1 ? "" : "s"} need review.`
+  });
+
+  const worstSignal = signals.reduce((currentWorst, signal) => {
+    if (!currentWorst) return signal;
+    return severityRank(signal.status) > severityRank(currentWorst.status) ? signal : currentWorst;
+  }, null);
+  const status = classifySignalStatus(worstSignal?.status);
+  const tone = status === "healthy" ? "success" : status === "warning" ? "warning" : "danger";
+  const label = status === "healthy"
+    ? "Operationally ready"
+    : status === "warning"
+      ? "Watchlist active"
+      : "Operational review required";
+  const summary = status === "healthy"
+    ? "All runtime SLO signals are green."
+    : worstSignal?.detail || "One or more runtime SLO signals need attention.";
+
+  return {
+    contractId: "PLAT-OPS-v1",
+    status,
+    tone,
+    label,
+    summary,
+    generatedAt: health.timestamp,
+    signals
+  };
 }
 
 async function listRecentBackups(limit = 15) {
@@ -324,13 +486,15 @@ export async function getTechnicalOpsHealth() {
 }
 
 export async function getTechnicalOpsSummary() {
-  const [health, database, storage, backups, events] = await Promise.all([
+  const [health, database, storage, backups, events, lifecycle] = await Promise.all([
     getTechnicalOpsHealth(),
     getDatabaseSignals(),
     getStorageSignals(),
     getBackupSignals(),
-    getErrorAndEventSummary()
+    getErrorAndEventSummary(),
+    getDataLifecycleSummary()
   ]);
+  const posture = buildOperationalPosture({ health, database, storage, backups, events, lifecycle });
 
   return {
     contractId: "PLAT-DEPLOY-v1",
@@ -339,7 +503,23 @@ export async function getTechnicalOpsSummary() {
     database,
     storage,
     backups,
-    events
+    events,
+    posture,
+    runtimeSlo: {
+      contractId: "PLAT-SLO-v1",
+      generatedAt: posture.generatedAt,
+      targets: RUNTIME_SLO_TARGETS,
+      alertThresholds: RUNTIME_SLO_ALERT_THRESHOLDS,
+      incidentResponse: RUNTIME_SLO_INCIDENT_RESPONSE,
+      current: {
+        status: posture.status,
+        tone: posture.tone,
+        label: posture.label,
+        summary: posture.summary
+      },
+      signals: posture.signals,
+      signalCount: posture.signals.length
+    }
   };
 }
 
@@ -502,11 +682,92 @@ export async function getIntegrationRunHistory(integrationId, { limit = 50 } = {
   };
 }
 
+async function getDataGrowthTableCounts() {
+  const { rows } = await query(
+    `SELECT
+      (SELECT COUNT(*)::BIGINT FROM records) AS records_count,
+      (SELECT COUNT(*)::BIGINT FROM import_runs) AS import_runs_count,
+      (SELECT COUNT(*)::BIGINT FROM audit_log) AS audit_log_count,
+      (SELECT COUNT(*)::BIGINT FROM ana_risk_event_log) AS risk_event_log_count`
+  );
+
+  return rows[0] || {};
+}
+
 function defaultLifecyclePolicy() {
   return {
     backupRetentionDays: Number(process.env.BACKUP_RETENTION_DAYS || 14),
     targetBackupBudgetMb: 2048,
-    targetLogBudgetMb: 1024
+    targetLogBudgetMb: 1024,
+    dataGrowthPolicy: {
+      schemaVersion: "tech-ops-data-growth-v1",
+      reviewCadenceDays: 30,
+      archivalRollbackWindowDays: 14,
+      largeTables: [
+        {
+          table: "records",
+          reviewRowCount: 5000000,
+          partitionKey: "timestamp",
+          archiveAfterDays: 540,
+          indexGuidance: [
+            "Review lot, job, operation, and timestamp access paths before adding new secondary indexes.",
+            "Build replacement indexes with online or concurrent creation and validate query plans before removing legacy coverage."
+          ],
+          partitionGuidance:
+            "Promote records to monthly timestamp partitions once growth reaches the review threshold or retention pruning becomes slow.",
+          archiveGuidance:
+            "Archive closed inspection history older than 18 months into immutable manifests before detach or delete operations."
+        },
+        {
+          table: "import_runs",
+          reviewRowCount: 1000000,
+          partitionKey: "created_at",
+          archiveAfterDays: 365,
+          indexGuidance: [
+            "Keep status, integration_id, and created_at lookups covered for operator replay and failure triage paths.",
+            "Prefer additive indexes first and remove superseded indexes only after replay and reporting checks pass."
+          ],
+          partitionGuidance:
+            "Use monthly created_at partitions when connector run history and retry evidence exceed the hot-storage budget.",
+          archiveGuidance:
+            "Archive completed run summaries older than 12 months after replay windows expire and support bundles are retained."
+        },
+        {
+          table: "audit_log",
+          reviewRowCount: 3000000,
+          partitionKey: "timestamp",
+          archiveAfterDays: 730,
+          indexGuidance: [
+            "Preserve record_id and timestamp lookup performance for traceability reviews before adding broader audit indexes.",
+            "Create any new audit indexes online and keep pre-change indexes available until export validation succeeds."
+          ],
+          partitionGuidance:
+            "Segment audit history by timestamp when year-over-year growth makes traceability exports or cleanup windows unpredictable.",
+          archiveGuidance:
+            "Export audit rows older than 24 months to signed archive bundles before destructive cleanup."
+        },
+        {
+          table: "ana_risk_event_log",
+          reviewRowCount: 1000000,
+          partitionKey: "created_at",
+          archiveAfterDays: 365,
+          indexGuidance: [
+            "Protect dedupe_key, status, severity, and created_at read paths before adding exploratory analytics indexes.",
+            "Validate open-risk dashboards and acknowledgement flows after any index replacement."
+          ],
+          partitionGuidance:
+            "Move to monthly created_at partitions when risk history growth starts to slow unresolved-event scans or analytics refreshes.",
+          archiveGuidance:
+            "Archive resolved risk events older than 12 months with their escalation context before partition detach or delete."
+        }
+      ],
+      rollbackGuardrails: [
+        "Ship additive changes first: create new indexes, partitions, or archive targets before redirecting readers or writers.",
+        "Backfill in bounded batches with row-count and checksum validation, and keep source structures writable until verification passes.",
+        "Retain restore manifests, legacy indexes, and source partitions for at least the rollback window before irreversible cleanup."
+      ],
+      evidenceSources: ["/api/technical-ops/lifecycle/summary", "docs/technical-ops-runbook.md"]
+    }
   };
 }
 
@@ -515,10 +776,36 @@ async function readLifecyclePolicy() {
   try {
     const raw = await fs.readFile(lifecycleConfigPath, "utf8");
     const parsed = JSON.parse(raw);
+    const configuredGrowthPolicy =
+      parsed?.dataGrowthPolicy && typeof parsed.dataGrowthPolicy === "object" ? parsed.dataGrowthPolicy : {};
+    const defaultGrowthPolicy = defaults.dataGrowthPolicy;
     return {
       backupRetentionDays: Number(parsed?.backupRetentionDays || defaults.backupRetentionDays),
       targetBackupBudgetMb: Number(parsed?.targetBackupBudgetMb || defaults.targetBackupBudgetMb),
       targetLogBudgetMb: Number(parsed?.targetLogBudgetMb || defaults.targetLogBudgetMb),
+      dataGrowthPolicy: {
+        schemaVersion: defaultGrowthPolicy.schemaVersion,
+        reviewCadenceDays:
+          Number(configuredGrowthPolicy.reviewCadenceDays) > 0
+            ? Number(configuredGrowthPolicy.reviewCadenceDays)
+            : defaultGrowthPolicy.reviewCadenceDays,
+        archivalRollbackWindowDays:
+          Number(configuredGrowthPolicy.archivalRollbackWindowDays) > 0
+            ? Number(configuredGrowthPolicy.archivalRollbackWindowDays)
+            : defaultGrowthPolicy.archivalRollbackWindowDays,
+        largeTables:
+          Array.isArray(configuredGrowthPolicy.largeTables) && configuredGrowthPolicy.largeTables.length > 0
+            ? configuredGrowthPolicy.largeTables
+            : defaultGrowthPolicy.largeTables,
+        rollbackGuardrails:
+          Array.isArray(configuredGrowthPolicy.rollbackGuardrails) && configuredGrowthPolicy.rollbackGuardrails.length > 0
+            ? configuredGrowthPolicy.rollbackGuardrails
+            : defaultGrowthPolicy.rollbackGuardrails,
+        evidenceSources:
+          Array.isArray(configuredGrowthPolicy.evidenceSources) && configuredGrowthPolicy.evidenceSources.length > 0
+            ? configuredGrowthPolicy.evidenceSources
+            : defaultGrowthPolicy.evidenceSources
+      },
       updatedAt: asIso(parsed?.updatedAt) || null
     };
   } catch {
@@ -535,6 +822,7 @@ export async function updateLifecycleRetentionPolicy(input = {}) {
     backupRetentionDays: Number(input.backupRetentionDays ?? current.backupRetentionDays),
     targetBackupBudgetMb: Number(input.targetBackupBudgetMb ?? current.targetBackupBudgetMb),
     targetLogBudgetMb: Number(input.targetLogBudgetMb ?? current.targetLogBudgetMb),
+    dataGrowthPolicy: current.dataGrowthPolicy,
     updatedAt: new Date().toISOString()
   };
 
@@ -550,16 +838,24 @@ export async function updateLifecycleRetentionPolicy(input = {}) {
 }
 
 export async function getDataLifecycleSummary() {
-  const [policy, storage, backups] = await Promise.all([
+  const [policy, storage, backups, tableCounts] = await Promise.all([
     readLifecyclePolicy(),
     getStorageSignals(),
-    getBackupSignals()
+    getBackupSignals(),
+    getDataGrowthTableCounts()
   ]);
 
   const backupBudgetBytes = policy.targetBackupBudgetMb * 1024 * 1024;
   const logBudgetBytes = policy.targetLogBudgetMb * 1024 * 1024;
   const backupUsed = Number(backups.totalDatabaseDumpBytes || 0);
   const logUsed = Number(storage?.directories?.logs?.totalBytes || 0);
+  const dataGrowthPolicy = policy.dataGrowthPolicy || defaultLifecyclePolicy().dataGrowthPolicy;
+  const tableCountByName = {
+    records: Number(tableCounts.records_count || 0),
+    import_runs: Number(tableCounts.import_runs_count || 0),
+    audit_log: Number(tableCounts.audit_log_count || 0),
+    ana_risk_event_log: Number(tableCounts.risk_event_log_count || 0)
+  };
 
   return {
     generatedAt: new Date().toISOString(),
@@ -577,8 +873,38 @@ export async function getDataLifecycleSummary() {
       backupRemainingBytes: backupBudgetBytes - backupUsed,
       logRemainingBytes: logBudgetBytes - logUsed
     },
+    dataGrowth: {
+      reviewCadenceDays: dataGrowthPolicy.reviewCadenceDays,
+      archivalRollbackWindowDays: dataGrowthPolicy.archivalRollbackWindowDays,
+      recommendations: dataGrowthPolicy.largeTables.map((tablePolicy) => ({
+        table: tablePolicy.table,
+        reviewRowCount: tablePolicy.reviewRowCount,
+        partitionKey: tablePolicy.partitionKey,
+        archiveAfterDays: tablePolicy.archiveAfterDays,
+        indexGuidance: tablePolicy.indexGuidance,
+        partitionGuidance: tablePolicy.partitionGuidance,
+        archiveGuidance: tablePolicy.archiveGuidance
+      })),
+      currentFootprint: {
+        backupBytes: backupUsed,
+        logBytes: logUsed,
+        tables: dataGrowthPolicy.largeTables.map((tablePolicy) => {
+          const rowCount = tableCountByName[tablePolicy.table] ?? 0;
+          return {
+            table: tablePolicy.table,
+            rowCount,
+            reviewRowCount: tablePolicy.reviewRowCount,
+            reviewStatus: rowCount >= tablePolicy.reviewRowCount ? "review_required" : "within_policy"
+          };
+        })
+      },
+      operatorNotes: dataGrowthPolicy.rollbackGuardrails,
+      evidenceSources: dataGrowthPolicy.evidenceSources
+    },
     operatorControls: {
       retentionUpdateEndpoint: "/api/technical-ops/lifecycle/retention",
+      policyEvidenceEndpoint: "/api/technical-ops/lifecycle/summary",
+      runbookPath: "docs/technical-ops-runbook.md",
       runbookCommands: [
         "npm run backup:create",
         "npm run backup:verify",
